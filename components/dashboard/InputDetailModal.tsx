@@ -18,6 +18,7 @@ interface InputDetailModalProps {
 export default function InputDetailModal({ input, onClose, onSave, onDelete, onUpdate, canEdit = true, canDelete = true }: InputDetailModalProps) {
   const [title, setTitle] = useState(input.file_name || '')
   const [content, setContent] = useState(input.content || '')
+  const [photoCredit, setPhotoCredit] = useState((input.metadata?.photo_credit as string) ?? '')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null)
@@ -80,10 +81,11 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   
   const typeInfo = getTypeInfo()
 
-  // Sync title when input is updated from parent (e.g. after replace)
+  // Sync title and photo credit when input is updated from parent (e.g. after replace)
   useEffect(() => {
     setTitle(input.file_name || '')
-  }, [input.file_name])
+    setPhotoCredit((input.metadata?.photo_credit as string) ?? '')
+  }, [input.file_name, input.metadata?.photo_credit])
 
   // Cover photo: use API so anyone with project access can load it (no signed-URL encoding issues)
   const coverPhotoApiUrl = isCoverPhoto && input.file_path
@@ -128,7 +130,12 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
           file_path: filePath,
           file_name: file.name,
           file_size: file.size,
-          metadata: { ...input.metadata, source: 'upload', storage_url: signedData?.signedUrl ?? null },
+          metadata: {
+            ...input.metadata,
+            source: 'upload',
+            storage_url: signedData?.signedUrl ?? null,
+            photo_credit: photoCredit?.trim() || undefined,
+          },
         })
         .eq('id', input.id)
       if (updateError) throw updateError
@@ -153,7 +160,17 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
     if (!onSave) return
     setSaving(true)
     try {
+      if (isCoverPhoto && (photoCredit !== ((input.metadata?.photo_credit as string) ?? ''))) {
+        const { error: metaError } = await supabase
+          .from('diffuse_project_inputs')
+          .update({
+            metadata: { ...input.metadata, photo_credit: photoCredit?.trim() || undefined },
+          })
+          .eq('id', input.id)
+        if (metaError) throw metaError
+      }
       await onSave(input.id, title, content)
+      onUpdate?.()
       onClose()
     } catch (error) {
       console.error('Error saving input:', error)
@@ -285,9 +302,9 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             </div>
           )}
 
-          {/* Cover Photo: preview only (Replace in header, Delete in header) */}
+          {/* Cover Photo: preview, Replace in header, Photo credit (optional) */}
           {isCoverPhoto && (
-            <div>
+            <div className="space-y-4">
               <input
                 ref={coverReplaceInputRef}
                 type="file"
@@ -295,18 +312,34 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 className="hidden"
                 onChange={handleReplaceCoverPhoto}
               />
-              <label className="block text-caption text-medium-gray mb-2">Cover photo</label>
-              {(coverDisplayUrl ?? input.metadata?.storage_url) ? (
-                <div className="bg-white/5 border border-white/10 rounded-glass p-4">
-                  <img
-                    src={coverDisplayUrl ?? input.metadata?.storage_url ?? ''}
-                    alt={input.file_name || 'Cover photo'}
-                    className="max-w-full max-h-[300px] rounded-lg mx-auto object-contain"
-                  />
-                </div>
-              ) : (
-                <p className="text-body-sm text-medium-gray italic">No image. Use Replace in the header to add one, or Delete to remove this input.</p>
-              )}
+              <div>
+                <label className="block text-caption text-medium-gray mb-2">Cover photo</label>
+                {(coverDisplayUrl ?? input.metadata?.storage_url) ? (
+                  <div className="bg-white/5 border border-white/10 rounded-glass p-4">
+                    <img
+                      src={coverDisplayUrl ?? input.metadata?.storage_url ?? ''}
+                      alt={input.file_name || 'Cover photo'}
+                      className="max-w-full max-h-[300px] rounded-lg mx-auto object-contain"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-body-sm text-medium-gray italic">No image. Use Replace in the header to add one, or Delete to remove this input.</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-caption text-medium-gray mb-2">Photo credit (optional)</label>
+                <input
+                  type="text"
+                  value={photoCredit}
+                  onChange={(e) => canEdit && setPhotoCredit(e.target.value)}
+                  placeholder="e.g. Jane Smith / Spring-Ford Press"
+                  readOnly={!canEdit}
+                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                  }`}
+                />
+                <p className="text-body-sm text-medium-gray mt-1 italic">Used when publishing to integrations. Leave blank if no credit.</p>
+              </div>
             </div>
           )}
 

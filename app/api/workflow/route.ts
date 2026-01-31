@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, requireProjectOwnership, unauthorizedResponse, forbiddenResponse } from '@/lib/security/authorization'
@@ -145,18 +145,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No inputs found for this project' }, { status: 400 })
     }
 
-    // Cover photo: one per project, stored in inputs (type cover_photo). Not sent to the workflow.
-    // The workflow pulls every input except the cover photo and produces output. The cover photo
-    // is attached to every output when saving and populates every input/output in the project; when updated, all get the same cover.
+    // Cover photo: one per project, stored in inputs (type cover_photo). Now sent to workflow for subtitle generation.
+    // The workflow can analyze the cover photo with vision AI and generate a subtitle related to the image and article.
+    // The cover photo is attached to every output when saving and populates every input/output in the project; when updated, all get the same cover.
     const coverPhotoInput = inputs.find((i: any) => i.type === 'cover_photo')
     const coverPhotoPathFromDb = coverPhotoInput?.file_path ?? null
+    const photoCreditFromInput =
+      coverPhotoInput?.metadata?.photo_credit != null && String(coverPhotoInput.metadata.photo_credit).trim() !== ''
+        ? String(coverPhotoInput.metadata.photo_credit).trim()
+        : null
     const inputsForWorkflow = inputs.filter((input: any) => input.type !== 'cover_photo')
 
     if (inputsForWorkflow.length === 0) {
       return NextResponse.json({ error: 'Add at least one content input (text, recording, audio, document, or image) to generate output. Cover photo alone is not enough.' }, { status: 400 })
     }
 
-    // Prepare payload for n8n - exclude cover_photo from inputs (it is not processed by AI)
+    // Generate signed URL for cover photo so n8n can fetch it for vision analysis
+    let coverPhotoSignedUrl: string | null = null
+    if (coverPhotoPathFromDb) {
+      const storageClient = createAdminClient() ?? supabase
+      const { data: signed, error: signedError } = await storageClient.storage
+        .from('project-files')
+        .createSignedUrl(coverPhotoPathFromDb, 3600) // 1 hour expiry
+      
+      if (!signedError && signed?.signedUrl) {
+        coverPhotoSignedUrl = signed.signedUrl
+      } else if (signedError) {
+        console.warn('Failed to generate signed URL for cover photo:', signedError)
+      }
+    }
+
+    // Prepare payload for n8n - now includes cover_photo_url when present for vision-based subtitle generation
     const n8nPayload = {
       project_id,
       output_type, // 'article' or 'ad' - n8n will branch based on this
@@ -167,7 +186,9 @@ export async function POST(request: NextRequest) {
         file_name: input.file_name || 'Untitled',
         image_url: input.type === 'image' ? (input.metadata?.storage_url ?? undefined) : undefined,
         file_path: input.file_path || undefined
-      }))
+      })),
+      cover_photo_url: coverPhotoSignedUrl ?? undefined, // Cover photo URL for vision AI to generate subtitle
+      photo_credit: photoCreditFromInput ?? undefined, // Only include when user set it on cover photo; workflow omits from output if absent
     }
 
     // Call n8n webhook
@@ -195,7 +216,12 @@ export async function POST(request: NextRequest) {
     const n8nResult = await n8nResponse.json()
     
     // Extract the AI-generated content from n8n response
-    const extractedContent = extractArticleContent(n8nResult)
+    let extractedContent = extractArticleContent(n8nResult)
+    // Strip markdown code fences if present (e.g. ```json ... ```)
+    const codeBlockMatch = extractedContent.match(/^[\s\n]*```(?:json)?\s*([\s\S]*?)```[\s\n]*$/m)
+    if (codeBlockMatch) {
+      extractedContent = codeBlockMatch[1].trim()
+    }
     
     // Try to parse as JSON and add author field
     let finalContent = extractedContent

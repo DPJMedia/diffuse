@@ -117,6 +117,8 @@ export default function ProjectDetailPage() {
           subtitle: (parsed.subtitle as string) || null,
           author: (parsed.author as string) || 'Diffuse.AI',
           excerpt: (parsed.excerpt as string) || null,
+          photo_caption: (parsed.photo_caption as string) || null,
+          photo_credit: (parsed.photo_credit as string) || null,
         }
       }
     } catch {
@@ -128,6 +130,8 @@ export default function ProjectDetailPage() {
     const subtitle = extractField(output.content, 'subtitle')
     const author = extractField(output.content, 'author')
     const excerpt = extractField(output.content, 'excerpt')
+    const photo_caption = extractField(output.content, 'photo_caption')
+    const photo_credit = extractField(output.content, 'photo_credit')
 
     if (title) {
       return {
@@ -135,6 +139,8 @@ export default function ProjectDetailPage() {
         subtitle,
         author: author || 'Diffuse.AI',
         excerpt,
+        photo_caption: photo_caption || null,
+        photo_credit: photo_credit || null,
       }
     }
 
@@ -144,6 +150,8 @@ export default function ProjectDetailPage() {
       subtitle: null,
       author: 'Diffuse.AI',
       excerpt: null,
+      photo_caption: null,
+      photo_credit: null,
     }
   }
 

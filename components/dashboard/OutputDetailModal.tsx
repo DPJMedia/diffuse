@@ -22,6 +22,10 @@ interface StructuredArticle {
   subtitle?: string | null
   excerpt: string
   content: string
+  /** Short description of cover image, tied to article (for integration Image caption) */
+  photo_caption?: string | null
+  /** Credit for cover photo; only include when provided (for integration Photo credit) */
+  photo_credit?: string | null
   suggested_sections?: string[]
   category?: string
   tags?: string[]
@@ -167,6 +171,8 @@ export default function OutputDetailModal({
             subtitle: ((parsed.subtitle as string)?.replace(/\\n/g, '\n')) || null,
             excerpt: ((parsed.excerpt as string)?.replace(/\\n/g, '\n')) || '',
             content: ((parsed.content as string)?.replace(/\\n/g, '\n')) || '',
+            photo_caption: ((parsed.photo_caption as string)?.replace(/\\n/g, '\n')) || null,
+            photo_credit: ((parsed.photo_credit as string)?.replace(/\\n/g, '\n')) || null,
             suggested_sections: parsed.suggested_sections as string[] | undefined,
             category: parsed.category as string | undefined,
             tags: parsed.tags as string[] | undefined,
@@ -186,6 +192,8 @@ export default function OutputDetailModal({
             subtitle: extractField(content, 'subtitle') || null,
             excerpt: extractField(content, 'excerpt') || '',
             content: articleContent || '',
+            photo_caption: extractField(content, 'photo_caption') || null,
+            photo_credit: extractField(content, 'photo_credit') || null,
             suggested_sections: extractArrayField(content, 'suggested_sections'),
             category: extractField(content, 'category') || undefined,
             tags: extractArrayField(content, 'tags'),
@@ -260,6 +268,8 @@ export default function OutputDetailModal({
       const sections = [
         article.title && `${article.title}`,
         article.subtitle && `${article.subtitle}`,
+        article.photo_caption && `Image caption: ${article.photo_caption}`,
+        article.photo_credit && `Photo credit: ${article.photo_credit}`,
         article.author && `By ${article.author}`,
         article.excerpt && `${article.excerpt}`,
         article.content && `${article.content}`,
@@ -516,6 +526,68 @@ export default function OutputDetailModal({
                   type="text"
                   value={article.subtitle || ''}
                   onChange={(e) => handleFieldChange('subtitle', e.target.value)}
+                  readOnly={!canEdit}
+                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                  }`}
+                />
+              </div>
+
+              {/* Image caption (for integration Featured Image) */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">Image caption (optional)</label>
+                  <button
+                    onClick={() => handleCopy(article.photo_caption || '', 'photo_caption')}
+                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                  >
+                    {copied === 'photo_caption' ? (
+                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <textarea
+                  value={article.photo_caption || ''}
+                  onChange={(e) => handleFieldChange('photo_caption', e.target.value)}
+                  placeholder="Short description of the cover image, tied to the article"
+                  rows={2}
+                  readOnly={!canEdit}
+                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
+                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                  }`}
+                />
+              </div>
+
+              {/* Photo credit (for integration Featured Image) */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">Photo credit (optional)</label>
+                  <button
+                    onClick={() => handleCopy(article.photo_credit || '', 'photo_credit')}
+                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                  >
+                    {copied === 'photo_credit' ? (
+                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={article.photo_credit || ''}
+                  onChange={(e) => handleFieldChange('photo_credit', e.target.value)}
+                  placeholder="e.g. Jane Smith / Spring-Ford Press"
                   readOnly={!canEdit}
                   className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
                     canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
