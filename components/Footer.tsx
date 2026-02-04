@@ -7,12 +7,11 @@ const footerLinks = {
   product: [
     { name: 'How It Works', href: '#how-it-works' },
     { name: 'Features', href: '#features' },
-    { name: 'Pricing', href: '#pricing' },
     { name: 'FAQ', href: '#faq' },
   ],
   solutions: [
     { name: 'For Individuals', href: '#features' },
-    { name: 'For Teams', href: '#pricing' },
+    { name: 'For Teams', href: '#features' },
     { name: 'Spring-Ford Press', href: 'https://springford.press', external: true },
   ],
   company: [

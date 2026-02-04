@@ -164,7 +164,7 @@ export default function SubscriptionPage() {
       // Silently update - no success message
       fetchProfile()
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Failed to update subscription' })
+      setMessage({ type: 'error', text: error.message || 'Failed to update plan' })
       throw error
     } finally {
       setSaving(false)
@@ -250,9 +250,9 @@ export default function SubscriptionPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Subscription</h1>
+          <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Plans</h1>
           <p className="text-body-md text-medium-gray mt-1">
-            Manage your plan and billing
+            View and change your plan tier
           </p>
         </div>
       </div>
@@ -284,10 +284,6 @@ export default function SubscriptionPage() {
                 className={`glass-container p-6 border ${isCurrentPlan ? 'border-cosmic-orange/50' : 'border-white/10'}`}
               >
                 <h3 className="text-heading-md text-secondary-white mb-2">{sub.name}</h3>
-                <div className="mb-4">
-                  <span className="text-3xl font-bold text-cosmic-orange">{sub.price.split('/')[0]}</span>
-                  <span className="text-body-md text-medium-gray">/{sub.price.split('/')[1]}</span>
-                </div>
                 <p className="text-body-sm text-medium-gray mb-6">
                   {sub.projects} {typeof sub.projects === 'number' ? 'projects' : ''}
                 </p>
@@ -342,10 +338,6 @@ export default function SubscriptionPage() {
                 className={`glass-container p-6 border ${isCurrentPlan ? 'border-cosmic-orange/50' : 'border-white/10'}`}
               >
                 <h3 className="text-heading-md text-secondary-white mb-2">{plan.name}</h3>
-                <div className="mb-4">
-                  <span className="text-3xl font-bold text-cosmic-orange">{plan.price.split('/')[0]}</span>
-                  <span className="text-body-md text-medium-gray">/{plan.price.split('/')[1]}</span>
-                </div>
                 <p className="text-body-sm text-medium-gray mb-6">
                   {plan.projects} {typeof plan.projects === 'number' ? 'projects' : 'projects'}
                 </p>
