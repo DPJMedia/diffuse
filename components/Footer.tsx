@@ -3,8 +3,10 @@
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 
+type FooterLink = { name: string; href: string; external?: boolean }
+
 // Product: main nav sections. Solutions: use cases / capabilities. Company: contact & partners.
-const footerLinks = {
+const footerLinks: { product: FooterLink[]; solutions: FooterLink[]; company: FooterLink[] } = {
   product: [
     { name: 'How It Works', href: '#how-it-works' },
     { name: 'Features', href: '#features' },
