@@ -76,6 +76,21 @@
     }
   }
   
+  @keyframes modal-step-in {
+    from {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .modal-step-enter {
+    animation: modal-step-in 0.2s ease-out forwards;
+  }
+
   @keyframes pulse-once {
     0% {
       transform: scale(1);

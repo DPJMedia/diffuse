@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 
+// Product: main nav sections. Solutions: use cases / capabilities. Company: contact & partners.
 const footerLinks = {
   product: [
     { name: 'How It Works', href: '#how-it-works' },
@@ -10,14 +11,13 @@ const footerLinks = {
     { name: 'FAQ', href: '#faq' },
   ],
   solutions: [
-    { name: 'For Individuals', href: '#features' },
-    { name: 'For Teams', href: '#features' },
-    { name: 'Spring-Ford Press', href: 'https://springford.press', external: true },
+    { name: 'Live Example', href: '#use-cases' },
+    { name: 'Capabilities', href: '#features' },
+    { name: 'Team collaboration', href: '#features' },
   ],
   company: [
-    { name: 'Contact', href: 'mailto:hello@diffuse.ai' },
-    { name: 'Privacy Policy', href: '#' },
-    { name: 'Terms of Service', href: '#' },
+    { name: 'Contact', href: 'mailto:prestonschlagheck@gmail.com' },
+    { name: 'Spring-Ford Press', href: 'https://springford.press', external: true },
   ],
 }
 
@@ -40,7 +40,7 @@ export default function Footer() {
                 diffuse<span className="text-cosmic-orange">.ai</span>
               </h2>
               <p className="text-sm text-medium-gray mb-6">
-                Meeting recordings → published articles. In minutes, not hours.
+                Meeting recordings to published articles. In minutes, not hours.
               </p>
               <Link 
                 href="/login" 
@@ -120,9 +120,16 @@ export default function Footer() {
                   <li key={link.name}>
                     <a
                       href={link.href}
-                      className="text-sm text-medium-gray hover:text-cosmic-orange transition-colors"
+                      target={link.external ? '_blank' : undefined}
+                      rel={link.external ? 'noopener noreferrer' : undefined}
+                      className="text-sm text-medium-gray hover:text-cosmic-orange transition-colors inline-flex items-center gap-1"
                     >
                       {link.name}
+                      {link.external && (
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      )}
                     </a>
                   </li>
                 ))}

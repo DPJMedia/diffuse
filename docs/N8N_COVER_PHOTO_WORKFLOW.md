@@ -9,6 +9,10 @@ The workflow API now sends `cover_photo_url` in the webhook payload when a proje
 The `/api/workflow` route now includes:
 - `cover_photo_url` (string, optional) – A signed URL valid for 1 hour that n8n can use to fetch the cover image
 - `photo_credit` (string, optional) – Only sent when the user has set it on the cover photo input (e.g. in the Cover Photo modal). If not set, the field is omitted from the payload so the workflow does not include it in the output
+- `tone` (string, optional) – Sent when the user chooses "Refine and generate…" and selects or types a tone (e.g. Professional, Conversational, Urgent, Neutral, Friendly, or custom). Use in prompts: "Write in a {tone} tone."
+- `length` (string, optional) – Sent when the user refines: Short (brief), Medium (standard), or Long (in-depth). Use in prompts: "Length: {length}" to control word count and depth.
+- `audience` (string, optional) – Sent when the user refines: e.g. General reader, Local community, Expert/industry, Youth-friendly, or custom. Use in prompts: "Audience: {audience}" to tailor voice and vocabulary.
+- `comments` (string, optional) – Free-form additional instructions from the "Additional comments" box in the refine modal. Use in prompts as extra context (e.g. "Additional instructions: {comments}").
 
 ## Required n8n Workflow Updates
 
@@ -21,9 +25,15 @@ The webhook trigger node receives:
   "output_type": "article" | "ad",
   "inputs": [...],
   "cover_photo_url": "https://...",  // Optional - present when project has cover photo
-  "photo_credit": "Photographer Name"  // Optional - only present when user set it (e.g. in cover photo input)
+  "photo_credit": "Photographer Name",  // Optional - only present when user set it (e.g. in cover photo input)
+  "tone": "Professional",    // Optional - from Refine modal (e.g. Professional, Conversational, Urgent, Neutral, Friendly, or custom)
+  "length": "Medium",        // Optional - Short, Medium, or Long
+  "audience": "Local community",  // Optional - e.g. General reader, Local community, Expert/industry, Youth-friendly, or custom
+  "comments": "Focus on the budget impact."  // Optional - free-form additional instructions from the survey
 }
 ```
+
+When `tone`, `length`, `audience`, or `comments` are present, inject them into your article-generation prompt so the output matches the user's choices. Example: "Write in a **{{ $json.body.tone }}** tone. Length: **{{ $json.body.length }}**. Audience: **{{ $json.body.audience }}**. {{ $json.body.comments ? 'Additional instructions: ' + $json.body.comments : '' }}"
 
 **Integration output:** The workflow must return article JSON that includes:
 - **photo_caption** – Short description of exactly what is in the cover image, with a slight connection to the article text. Always generate when `cover_photo_url` is present. Used by the integration for "Image caption (optional)".

@@ -119,7 +119,10 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
       const filePath = `${currentUser.id}/${input.project_id}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
       const { error: uploadError } = await supabase.storage
         .from('project-files')
-        .upload(filePath, file, { contentType: file.type, upsert: false })
+        .upload(filePath, file, {
+          contentType: (file.type && /^image\/(jpeg|png|jpg)$/i.test(file.type)) ? file.type : 'image/jpeg',
+          upsert: false,
+        })
       if (uploadError) throw uploadError
       const { data: signedData } = await supabase.storage
         .from('project-files')

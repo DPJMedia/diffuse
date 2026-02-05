@@ -120,7 +120,10 @@ export default function OutputDetailModal({
       const filePath = `${currentUser.id}/${output.project_id}/cover-${output.id}-${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('project-files')
-        .upload(filePath, file, { contentType: file.type, upsert: true })
+        .upload(filePath, file, {
+          contentType: (file.type && /^image\/(jpeg|png|jpg)$/i.test(file.type)) ? file.type : 'image/jpeg',
+          upsert: true,
+        })
       if (uploadError) throw uploadError
       const { error: updateError } = await supabase
         .from('diffuse_project_outputs')

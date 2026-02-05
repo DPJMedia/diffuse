@@ -773,10 +773,9 @@ export default function OrganizationDetailPage() {
                         </span>
                       )}
                     </div>
-                    <p className={`text-heading-lg mb-1 ${isCurrentPlan ? 'text-cosmic-orange' : 'text-secondary-white'}`}>
-                      {plan.price}
+                    <p className="text-body-sm text-medium-gray">
+                      {isCurrentPlan ? 'Current plan' : 'Organization plan'}
                     </p>
-                    <p className="text-body-sm text-medium-gray">{plan.projects} projects</p>
                   </button>
                 )
               })}

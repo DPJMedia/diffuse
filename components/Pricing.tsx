@@ -6,12 +6,9 @@ import { useRef, useState } from 'react'
 const individualPlans = [
   {
     name: 'Free',
-    price: '$0',
-    period: 'forever',
-    projects: 3,
     description: 'Perfect for trying out Diffuse',
     features: [
-      'Up to 3 projects',
+      'Project capacity',
       'AI article generation',
       'In-app recording',
     ],
@@ -20,12 +17,9 @@ const individualPlans = [
   },
   {
     name: 'Pro',
-    price: '$20',
-    period: '/month',
-    projects: 15,
     description: 'For independent journalists',
     features: [
-      'Up to 15 projects',
+      'More project capacity',
       'Everything in Free',
       'File uploads',
     ],
@@ -35,14 +29,11 @@ const individualPlans = [
   },
   {
     name: 'Pro Max',
-    price: '$60',
-    period: '/month',
-    projects: 40,
     description: 'For power users',
     features: [
-      'Up to 40 projects',
-      'Everything in Pro',
       'Extended capacity',
+      'Everything in Pro',
+      'Additional features',
     ],
     cta: 'Get Pro Max',
     highlight: false,
@@ -52,12 +43,9 @@ const individualPlans = [
 const enterprisePlans = [
   {
     name: 'Team',
-    price: '$100',
-    period: '/month',
-    projects: '50',
     description: 'For small newsrooms',
     features: [
-      'Up to 50 projects',
+      'Organization project capacity',
       'Create an organization',
       'Invite team members',
     ],
@@ -65,12 +53,9 @@ const enterprisePlans = [
   },
   {
     name: 'Team Max',
-    price: '$500',
-    period: '/month',
-    projects: 'Unlimited',
     description: 'For large teams',
     features: [
-      'Unlimited projects',
+      'Extended organization capacity',
       'Everything in Team',
       'Unlimited team members',
     ],
@@ -173,16 +158,7 @@ export default function Pricing() {
                   <h3 className="text-xl md:text-2xl font-bold text-secondary-white mb-2">
                     {plan.name}
                   </h3>
-                  <p className="text-sm text-medium-gray mb-4">{plan.description}</p>
-
-                  <div className="mb-6">
-                    <span className="text-3xl md:text-4xl font-bold gradient-text">{plan.price}</span>
-                    <span className="text-medium-gray text-sm">{plan.period}</span>
-                  </div>
-
-                  <div className="mb-6 pb-6 border-b border-white/10">
-                    <span className="text-cosmic-orange font-semibold">{plan.projects} projects</span>
-                  </div>
+                  <p className="text-sm text-medium-gray mb-6">{plan.description}</p>
 
                   <ul className="space-y-3 mb-8">
                     {plan.features.map((feature, i) => (
@@ -224,16 +200,7 @@ export default function Pricing() {
                   <h3 className="text-xl md:text-2xl font-bold text-secondary-white mb-2">
                     {plan.name}
                   </h3>
-                  <p className="text-sm text-medium-gray mb-4">{plan.description}</p>
-
-                  <div className="mb-6">
-                    <span className="text-3xl md:text-4xl font-bold text-accent-purple">{plan.price}</span>
-                    <span className="text-medium-gray text-sm">{plan.period}</span>
-                  </div>
-
-                  <div className="mb-6 pb-6 border-b border-white/10">
-                    <span className="text-accent-purple font-semibold">{plan.projects} projects</span>
-                  </div>
+                  <p className="text-sm text-medium-gray mb-6">{plan.description}</p>
 
                   <ul className="space-y-3 mb-8">
                     {plan.features.map((feature, i) => (

@@ -285,7 +285,7 @@ export default function SubscriptionPage() {
               >
                 <h3 className="text-heading-md text-secondary-white mb-2">{sub.name}</h3>
                 <p className="text-body-sm text-medium-gray mb-6">
-                  {sub.projects} {typeof sub.projects === 'number' ? 'projects' : ''}
+                  {sub.name === 'Free' ? 'Get started with project capacity' : 'Includes project capacity'}
                 </p>
 
                 {isCurrentPlan ? (
@@ -339,7 +339,7 @@ export default function SubscriptionPage() {
               >
                 <h3 className="text-heading-md text-secondary-white mb-2">{plan.name}</h3>
                 <p className="text-body-sm text-medium-gray mb-6">
-                  {plan.projects} {typeof plan.projects === 'number' ? 'projects' : 'projects'}
+                  Includes project capacity for your organization
                 </p>
 
                 {isCurrentPlan ? (

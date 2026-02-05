@@ -464,10 +464,9 @@ export default function OrganizationPage() {
                         />
                         <div>
                           <p className="text-body-md text-secondary-white font-medium">{plan.name}</p>
-                          <p className="text-caption text-medium-gray">{plan.projects} projects</p>
+                          <p className="text-caption text-medium-gray">Organization plan</p>
                         </div>
                       </div>
-                      <span className="text-body-md text-accent-purple font-medium">{plan.price}</span>
                     </label>
                   ))}
                 </div>

@@ -2,7 +2,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, requireProjectOwnership, unauthorizedResponse, forbiddenResponse } from '@/lib/security/authorization'
-import { validateSchema, validateProjectId, validateOutputType } from '@/lib/security/validation'
+import { validateSchema, validateProjectId, validateOutputType, sanitizeString } from '@/lib/security/validation'
 
 // N8N webhook URL from environment variable (never hardcode API endpoints)
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL
@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Strict input validation - only allow expected fields
+    const WORKFLOW_OPTION_MAX_LENGTH = 200
     let validatedData
     try {
       validatedData = validateSchema(body, {
@@ -111,6 +112,26 @@ export async function POST(request: NextRequest) {
           type: 'string',
           validator: (val) => val === undefined ? 'article' : validateOutputType(val),
         },
+        tone: {
+          required: false,
+          type: 'string',
+          validator: (val) => (val == null || val === '') ? undefined : sanitizeString(val, WORKFLOW_OPTION_MAX_LENGTH),
+        },
+        length: {
+          required: false,
+          type: 'string',
+          validator: (val) => (val == null || val === '') ? undefined : sanitizeString(val, WORKFLOW_OPTION_MAX_LENGTH),
+        },
+        audience: {
+          required: false,
+          type: 'string',
+          validator: (val) => (val == null || val === '') ? undefined : sanitizeString(val, WORKFLOW_OPTION_MAX_LENGTH),
+        },
+        comments: {
+          required: false,
+          type: 'string',
+          validator: (val) => (val == null || val === '') ? undefined : sanitizeString(val, 2000),
+        },
       })
     } catch (error: any) {
       return NextResponse.json(
@@ -119,7 +140,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { project_id, output_type } = validatedData
+    const { project_id, output_type, tone, length, audience, comments } = validatedData
 
     // Authorization check - verify user owns the project
     try {
@@ -175,7 +196,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Prepare payload for n8n - now includes cover_photo_url when present for vision-based subtitle generation
+    // Prepare payload for n8n - now includes cover_photo_url when present and optional tone/length/audience from refine modal
     const n8nPayload = {
       project_id,
       output_type, // 'article' or 'ad' - n8n will branch based on this
@@ -189,6 +210,10 @@ export async function POST(request: NextRequest) {
       })),
       cover_photo_url: coverPhotoSignedUrl ?? undefined, // Cover photo URL for vision AI to generate subtitle
       photo_credit: photoCreditFromInput ?? undefined, // Only include when user set it on cover photo; workflow omits from output if absent
+      ...(tone != null && tone !== '' && { tone }),
+      ...(length != null && length !== '' && { length }),
+      ...(audience != null && audience !== '' && { audience }),
+      ...(comments != null && comments !== '' && { comments }),
     }
 
     // Call n8n webhook

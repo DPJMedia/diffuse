@@ -18,7 +18,7 @@ const faqs = [
   },
   {
     question: 'Can I use Diffuse as an individual?',
-    answer: 'Absolutely! Diffuse works perfectly for independent journalists, freelancers, and content creators. You don\'t need to create an organization. Just sign up for a free account to get started with 3 projects, or upgrade to Pro ($20/mo) for 15 projects.',
+    answer: 'Absolutely! Diffuse works perfectly for independent journalists, freelancers, and content creators. You don\'t need to create an organization. Just sign up for a free account to get started, or upgrade to a paid plan for more capacity. See Plans in the dashboard for tier options.',
   },
   {
     question: 'What file types can I upload?',
@@ -26,7 +26,7 @@ const faqs = [
   },
   {
     question: 'What\'s included in the free tier?',
-    answer: 'The free tier includes up to 3 projects, full AI article generation, audio transcription, and file uploads. No credit card required. It\'s perfect for trying out Diffuse before committing to a paid plan.',
+    answer: 'The free tier includes project capacity, full AI article generation, audio transcription, and file uploads. No credit card required. It\'s perfect for trying out Diffuse. Paid tiers offer more capacity—see Plans in the dashboard for details.',
   },
   {
     question: 'How accurate is the AI-generated content?',

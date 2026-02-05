@@ -10,6 +10,8 @@ import EmptyState from '@/components/dashboard/EmptyState'
 import InputDetailModal from '@/components/dashboard/InputDetailModal'
 import OutputDetailModal from '@/components/dashboard/OutputDetailModal'
 import SelectRecordingModal from '@/components/dashboard/SelectRecordingModal'
+import GenerateOptionsModal, { WORKFLOW_PREFERENCES_KEY, type WorkflowPreferences } from '@/components/dashboard/GenerateOptionsModal'
+import QuickGenerateModal from '@/components/dashboard/QuickGenerateModal'
 import { addRecentProject } from '@/components/dashboard/DashboardNav'
 import type { DiffuseProject, DiffuseProjectInput, DiffuseProjectOutput, ProjectVisibility, UserRole, InputType, OutputType } from '@/types/database'
 // tus-js-client will be dynamically imported when needed
@@ -57,6 +59,7 @@ export default function ProjectDetailPage() {
   const [savingVisibility, setSavingVisibility] = useState(false)
   const [userProjectRole, setUserProjectRole] = useState<string>('viewer')
   const [generatingArticle, setGeneratingArticle] = useState(false)
+  const [generateSource, setGenerateSource] = useState<'quick' | 'refine' | null>(null)
   const [showProjectSettings, setShowProjectSettings] = useState(false)
   const [deletingAllInputs, setDeletingAllInputs] = useState(false)
   const [deletingAllOutputs, setDeletingAllOutputs] = useState(false)
@@ -64,7 +67,9 @@ export default function ProjectDetailPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showAddInputDropdown, setShowAddInputDropdown] = useState(false)
-  const [showGenerateDropdown, setShowGenerateDropdown] = useState(false)
+  const [showQuickGenerateModal, setShowQuickGenerateModal] = useState(false)
+  const [showGenerateOptionsModal, setShowGenerateOptionsModal] = useState(false)
+  const [generateOptionsInitialValues, setGenerateOptionsInitialValues] = useState<WorkflowPreferences>({})
   const [uploadingFile, setUploadingFile] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
@@ -672,21 +677,32 @@ export default function ProjectDetailPage() {
     )
   }
 
-  const handleGenerate = async (outputType: OutputType) => {
+  const handleGenerate = async (
+    outputType: OutputType,
+    options?: { tone?: string; length?: string; audience?: string; comments?: string },
+    source: 'quick' | 'refine' = 'refine'
+  ) => {
     if (inputs.length === 0) {
       alert('Please add at least one input before generating')
       return
     }
 
+    setGenerateSource(source)
     setGeneratingArticle(true)
-    setShowGenerateDropdown(false)
+    setShowGenerateOptionsModal(false)
+    setShowQuickGenerateModal(false)
     try {
+      const body: Record<string, string> = { project_id: projectId, output_type: outputType }
+      if (options?.tone) body.tone = options.tone
+      if (options?.length) body.length = options.length
+      if (options?.audience) body.audience = options.audience
+      if (options?.comments) body.comments = options.comments
       const response = await fetch('/api/workflow', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ project_id: projectId, output_type: outputType }),
+        body: JSON.stringify(body),
       })
 
       const result = await response.json()
@@ -704,6 +720,7 @@ export default function ProjectDetailPage() {
       alert(error instanceof Error ? error.message : 'Failed to generate')
     } finally {
       setGeneratingArticle(false)
+      setGenerateSource(null)
     }
   }
 
@@ -928,9 +945,12 @@ export default function ProjectDetailPage() {
           
           // Upload image to storage (sanitize filename so signed URLs don't 400 on : ? # etc.)
           const filePath = `${currentUser.id}/${projectId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
+          const uploadOptions = type === 'cover_photo'
+            ? { contentType: (file.type && /^image\/(jpeg|png|jpg)$/i.test(file.type)) ? file.type : 'image/jpeg' }
+            : {}
           const { error: uploadError } = await supabase.storage
             .from('project-files')
-            .upload(filePath, file)
+            .upload(filePath, file, uploadOptions)
 
           if (uploadError) throw uploadError
 
@@ -1471,73 +1491,79 @@ export default function ProjectDetailPage() {
         <div>
           {/* Generate Dropdown - Same position as Inputs buttons */}
           {canEdit && inputs.length > 0 && (
-            <div className="flex justify-end gap-3 mb-4">
-              <div className="relative">
-                <button
-                  onClick={() => setShowGenerateDropdown(!showGenerateDropdown)}
-                  disabled={generatingArticle}
-                  className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
-                    generatingArticle
-                      ? 'btn-primary opacity-50 cursor-not-allowed'
-                      : 'btn-primary'
-                  }`}
-                >
-                  {generatingArticle ? (
-                    <>
-                      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      Generate with diffuse.ai
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </>
-                  )}
-                </button>
-
-                {/* Generate Dropdown Menu */}
-                {showGenerateDropdown && (
-                  <div className="absolute right-0 mt-2 w-56 glass-container py-2 z-50">
-                    {/* Generate Article */}
-                    <button
-                      onClick={() => handleGenerate('article')}
-                      className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                    >
-                      <svg className="w-5 h-5 text-accent-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      <div>
-                        <p className="text-body-sm text-secondary-white">Generate Article</p>
-                        <p className="text-caption text-medium-gray">Standard news article</p>
-                      </div>
-                    </button>
-
-                    <div className="border-t border-white/10 my-2" />
-
-                    {/* Generate Ad */}
-                    <button
-                      onClick={() => handleGenerate('ad')}
-                      className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                    >
-                      <svg className="w-5 h-5 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-                      </svg>
-                      <div>
-                        <p className="text-body-sm text-secondary-white">Generate Ad</p>
-                        <p className="text-caption text-medium-gray">Sponsored content article</p>
-                      </div>
-                    </button>
-                  </div>
+            <div className="flex justify-end gap-3 mb-4 flex-wrap">
+              {/* Secondary: Quick → type-only modal (Article/Ad) */}
+              <button
+                onClick={() => setShowQuickGenerateModal(true)}
+                disabled={generatingArticle}
+                className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
+                  generatingArticle && generateSource === 'quick'
+                    ? 'btn-secondary opacity-50 cursor-not-allowed'
+                    : 'btn-secondary'
+                }`}
+              >
+                {generatingArticle && generateSource === 'quick' ? (
+                  <>
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Quick
+                  </>
                 )}
-              </div>
+              </button>
+
+              {/* Primary: Generate → refinements quiz (tone, length, audience, comments) */}
+              <button
+                onClick={async () => {
+                  let prefs: WorkflowPreferences = {}
+                  try {
+                    const res = await fetch('/api/user/workflow-preferences')
+                    if (res.ok) {
+                      const data = await res.json()
+                      if (data && typeof data === 'object') prefs = data
+                    }
+                  } catch (_) {}
+                  if (Object.keys(prefs).length === 0 && typeof window !== 'undefined') {
+                    try {
+                      const raw = localStorage.getItem(WORKFLOW_PREFERENCES_KEY)
+                      if (raw) prefs = JSON.parse(raw)
+                    } catch (_) {}
+                  }
+                  setGenerateOptionsInitialValues(prefs)
+                  setShowGenerateOptionsModal(true)
+                }}
+                disabled={generatingArticle}
+                className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
+                  generatingArticle && generateSource === 'refine'
+                    ? 'btn-primary opacity-50 cursor-not-allowed'
+                    : 'btn-primary'
+                }`}
+              >
+                {generatingArticle && generateSource === 'refine' ? (
+                  <>
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                    Generate
+                  </>
+                )}
+              </button>
             </div>
           )}
 
@@ -1556,7 +1582,7 @@ export default function ProjectDetailPage() {
               title="No Outputs Yet"
               description={inputs.length === 0 
                 ? "Add inputs before generating your article." 
-                : "Click 'Generate with diffuse.ai' above to create an article from your inputs."
+                : "Click Generate above to create an article from your inputs."
               }
             />
           ) : (
@@ -1604,88 +1630,113 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* Visibility Tab */}
+      {/* Visibility Tab - Same layout as Inputs/Outputs: top buttons + grid of cards */}
       {activeTab === 'visibility' && (
         <div>
-          {/* Visibility Options */}
-          <h3 className="text-body-md text-secondary-white mb-2">Visibility</h3>
-          <p className="text-caption text-medium-gray mb-4">
-            Choose who can see this project.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 mb-6">
-            {/* Private Option - Left Side */}
-              <button
-                onClick={() => {
-                  setVisibility('private')
-                  setSelectedOrgs([])
-                }}
-              className={`glass-container p-6 flex flex-col items-center justify-center text-center transition-colors min-h-[200px] ${
-                  visibility === 'private' 
-                  ? 'bg-cosmic-orange/20 border-cosmic-orange/30' 
-                  : 'hover:bg-white/10'
-                }`}
-              >
-              <h3 className={`text-heading-lg font-medium mb-2 ${visibility === 'private' ? 'text-cosmic-orange' : 'text-secondary-white'}`}>
-                  Private
-              </h3>
-              <p className="text-caption text-medium-gray uppercase tracking-wider">
-                ONLY YOU CAN ACCESS
-              </p>
-                {visibility === 'private' && (
-                <div className="mt-4">
-                  <svg className="w-6 h-6 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                )}
-              </button>
+          {/* Private / Public - Same position and style as Outputs Quick / Generate */}
+          <div className="flex justify-end gap-3 mb-4 flex-wrap">
+            {/* Private - deselects all; orange when selected, gray when not */}
+            <button
+              onClick={() => {
+                setVisibility('private')
+                setSelectedOrgs([])
+              }}
+              className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
+                visibility === 'private' ? 'btn-primary' : 'btn-secondary'
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Private
+            </button>
 
-            {/* Organization Options - Right Side */}
-            {workspaces.length > 0 ? (
-              <div className="flex flex-col gap-2">
-                  {workspaces.map(({ workspace }) => {
-                    const isSelected = selectedOrgs.includes(workspace.id)
-                    return (
-                      <button
-                        key={workspace.id}
-                        onClick={() => {
-                          if (isSelected) {
-                            const newOrgs = selectedOrgs.filter(id => id !== workspace.id)
-                            setSelectedOrgs(newOrgs)
-                            if (newOrgs.length === 0) {
-                              setVisibility('private')
-                            }
-                          } else {
-                            setVisibility('public')
-                            setSelectedOrgs([...selectedOrgs, workspace.id])
-                          }
-                        }}
-                      className={`glass-container p-4 flex items-center justify-between transition-colors flex-1 ${
-                          isSelected 
-                          ? 'bg-cosmic-orange/20 border-cosmic-orange/30' 
-                          : 'hover:bg-white/10'
-                        }`}
-                      >
-                        <span className={`text-body-md font-medium ${isSelected ? 'text-cosmic-orange' : 'text-secondary-white'}`}>
-                          {workspace.name}
-                        </span>
-                        {isSelected && (
-                        <svg className="w-5 h-5 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {/* Orange: Public - selects all */}
+            <button
+              onClick={() => {
+                setVisibility('public')
+                setSelectedOrgs(workspaces.map(({ workspace }) => workspace.id))
+              }}
+              className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
+                visibility === 'public' ? 'btn-primary' : 'btn-secondary'
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              Public
+            </button>
+          </div>
+
+          {/* Organization list - Same grid as Inputs/Outputs */}
+          {workspaces.length === 0 ? (
+            <EmptyState
+              icon={
+                <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                  />
+                </svg>
+              }
+              title="No Organizations"
+              description="Join an organization to share this project with others."
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 mb-6">
+              {workspaces.map(({ workspace }) => {
+                const isSelected = selectedOrgs.includes(workspace.id)
+                return (
+                  <div
+                    key={workspace.id}
+                    onClick={() => {
+                      if (visibility === 'private') {
+                        setVisibility('public')
+                        setSelectedOrgs([workspace.id])
+                      } else if (isSelected) {
+                        const newOrgs = selectedOrgs.filter(id => id !== workspace.id)
+                        setSelectedOrgs(newOrgs)
+                        if (newOrgs.length === 0) {
+                          setVisibility('private')
+                        }
+                      } else {
+                        setSelectedOrgs([...selectedOrgs, workspace.id])
+                      }
+                    }}
+                    className={`glass-container p-6 transition-colors cursor-pointer ${
+                      isSelected && visibility === 'public'
+                        ? 'bg-cosmic-orange/20 border-cosmic-orange/30 hover:bg-cosmic-orange/25'
+                        : 'hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-white/5 text-cosmic-orange">
+                        {isSelected && visibility === 'public' ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
                         )}
-                      </button>
-                    )
-                  })}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-heading-md text-secondary-white font-medium mb-1 break-words">
+                          {workspace.name}
+                        </h3>
+                        <p className="text-caption text-medium-gray uppercase tracking-wider">
+                          {isSelected && visibility === 'public' ? 'SHARED' : 'ORGANIZATION'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-            ) : (
-              <div className="glass-container p-6 flex flex-col items-center justify-center text-center min-h-[200px]">
-                <p className="text-body-md text-medium-gray">
-                  Join an organization to share projects
-                </p>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Save Button */}
           <button
@@ -1879,6 +1930,29 @@ export default function ProjectDetailPage() {
           projectId={projectId}
           onClose={() => setShowRecordingModal(false)}
           onSuccess={fetchProjectData}
+        />
+      )}
+      {showGenerateOptionsModal && (
+        <GenerateOptionsModal
+          onClose={() => setShowGenerateOptionsModal(false)}
+          onGenerate={(payload) => handleGenerate(payload.outputType, payload, 'refine')}
+          initialValues={generateOptionsInitialValues}
+          onSavePreferences={async (prefs) => {
+            await fetch('/api/user/workflow-preferences', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(prefs),
+            })
+            try {
+              if (typeof window !== 'undefined') localStorage.setItem(WORKFLOW_PREFERENCES_KEY, JSON.stringify(prefs))
+            } catch (_) {}
+          }}
+        />
+      )}
+      {showQuickGenerateModal && (
+        <QuickGenerateModal
+          onClose={() => setShowQuickGenerateModal(false)}
+          onGenerate={(outputType) => handleGenerate(outputType, undefined, 'quick')}
         />
       )}
 
