@@ -679,7 +679,14 @@ export default function ProjectDetailPage() {
 
   const handleGenerate = async (
     outputType: OutputType,
-    options?: { tone?: string; length?: string; audience?: string; comments?: string },
+    options?: {
+      tone?: string
+      length?: string
+      audience?: string
+      comments?: string
+      numberOfOutputs?: number
+      articleTopics?: string
+    },
     source: 'quick' | 'refine' = 'refine'
   ) => {
     if (inputs.length === 0) {
@@ -692,11 +699,13 @@ export default function ProjectDetailPage() {
     setShowGenerateOptionsModal(false)
     setShowQuickGenerateModal(false)
     try {
-      const body: Record<string, string> = { project_id: projectId, output_type: outputType }
+      const body: Record<string, string | number> = { project_id: projectId, output_type: outputType }
       if (options?.tone) body.tone = options.tone
       if (options?.length) body.length = options.length
       if (options?.audience) body.audience = options.audience
       if (options?.comments) body.comments = options.comments
+      if (options?.numberOfOutputs != null && options.numberOfOutputs > 1) body.number_of_outputs = options.numberOfOutputs
+      if (options?.articleTopics) body.article_topics = options.articleTopics
       const response = await fetch('/api/workflow', {
         method: 'POST',
         headers: {

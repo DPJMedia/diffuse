@@ -5,6 +5,7 @@ import { useState } from 'react'
 const TONE_OPTIONS = ['Professional', 'Conversational', 'Urgent', 'Neutral', 'Friendly'] as const
 const LENGTH_OPTIONS = ['Short', 'Medium', 'Long'] as const
 const AUDIENCE_OPTIONS = ['General reader', 'Local community', 'Expert/industry', 'Youth-friendly'] as const
+const ARTICLE_COUNT_OPTIONS = ['One', 'Two', 'Three'] as const
 
 export const WORKFLOW_PREFERENCES_KEY = 'diffuse_workflow_preferences'
 
@@ -13,6 +14,8 @@ export interface WorkflowPreferences {
   length?: string
   audience?: string
   comments?: string
+  numberOfOutputs?: number
+  articleTopics?: string
 }
 
 export interface GenerateOptionsModalProps {
@@ -23,6 +26,8 @@ export interface GenerateOptionsModalProps {
     length?: string
     audience?: string
     comments?: string
+    numberOfOutputs?: number
+    articleTopics?: string
   }) => void
   initialValues?: WorkflowPreferences
   onSavePreferences?: (prefs: WorkflowPreferences) => Promise<void>
@@ -59,13 +64,22 @@ export default function GenerateOptionsModal({
     const a = initialValues?.audience ?? ''
     return AUDIENCE_OPTIONS.includes(a as any) ? '' : a
   })
-  const [comments, setComments] = useState<string>(initialValues?.comments ?? '')
+  const [comments, setComments] = useState<string>('')
   const [outputType, setOutputType] = useState<'article' | 'ad'>('article')
   const [saveAsDefault, setSaveAsDefault] = useState(false)
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [toneOtherFocused, setToneOtherFocused] = useState(false)
   const [lengthOtherFocused, setLengthOtherFocused] = useState(false)
   const [audienceOtherFocused, setAudienceOtherFocused] = useState(false)
+  const [numberOfOutputs, setNumberOfOutputs] = useState<number>(() => initialValues?.numberOfOutputs ?? 1)
+  const [numberOfOutputsOther, setNumberOfOutputsOther] = useState<string>(() => {
+    const n = initialValues?.numberOfOutputs
+    return n != null && n > 3 ? String(n) : ''
+  })
+  const [numberOfOutputsOtherFocused, setNumberOfOutputsOtherFocused] = useState(false)
+  const [articleTopicsFocused, setArticleTopicsFocused] = useState(false)
+  const [articleTopics, setArticleTopics] = useState<string>('')
+  const [commentsFocused, setCommentsFocused] = useState(false)
 
   const SELECT_DELAY_MS = 320
 
@@ -88,7 +102,7 @@ export default function GenerateOptionsModal({
   const handleAudiencePreset = (value: string) => {
     setAudiencePreset(value)
     setAudienceOther('')
-    setTimeout(() => setStep(3), SELECT_DELAY_MS)
+    setTimeout(() => setStep(4), SELECT_DELAY_MS)
   }
 
   const handleToneOtherEnter = () => {
@@ -103,10 +117,47 @@ export default function GenerateOptionsModal({
 
   const handleAudienceOtherEnter = () => {
     if (!audienceOther.trim()) return
-    setTimeout(() => setStep(3), SELECT_DELAY_MS)
+    setTimeout(() => setStep(4), SELECT_DELAY_MS)
   }
 
-  const stepTitles = ['What tone do you want?', 'How long should the article be?', 'Who is the audience?', 'Choose output type']
+  const handleArticleCountSelect = (value: 'One' | 'Two' | 'Three') => {
+    const num = value === 'One' ? 1 : value === 'Two' ? 2 : 3
+    setNumberOfOutputs(num)
+    setNumberOfOutputsOther('')
+    if (value === 'One') {
+      setTimeout(() => setStep(3), SELECT_DELAY_MS)
+    }
+  }
+
+  const handleArticleCountOther = () => {
+    const parsed = parseInt(numberOfOutputsOther, 10)
+    if (Number.isNaN(parsed) || parsed < 4 || parsed > 10 || !Number.isInteger(parsed)) return
+    setNumberOfOutputs(parsed)
+  }
+
+  const finalNumberOfOutputs = numberOfOutputsOther.trim()
+    ? (() => {
+        const n = parseInt(numberOfOutputsOther, 10)
+        return Number.isNaN(n) || n < 4 || n > 10 ? 0 : n
+      })()
+    : numberOfOutputs
+
+  const showSpecifyTopics = finalNumberOfOutputs >= 2 || numberOfOutputsOtherFocused || numberOfOutputsOther.trim().length > 0
+
+  const isOtherInvalid =
+    numberOfOutputsOther.trim().length > 0 &&
+    (() => {
+      const n = parseInt(numberOfOutputsOther, 10)
+      return Number.isNaN(n) || n < 4 || n > 10
+    })()
+
+  const stepTitles = [
+    'What tone do you want?',
+    'How long should the article be?',
+    'How many articles do you want generated from this?',
+    'Who is the audience?',
+    'Choose output type',
+  ]
 
   const handleGenerate = async () => {
     if (saveAsDefault) {
@@ -114,7 +165,7 @@ export default function GenerateOptionsModal({
       if (finalTone) prefs.tone = finalTone
       if (finalLength) prefs.length = finalLength
       if (finalAudience) prefs.audience = finalAudience
-      if (comments.trim()) prefs.comments = comments.trim()
+      if (finalNumberOfOutputs > 1) prefs.numberOfOutputs = finalNumberOfOutputs
       if (onSavePreferences) {
         setSavingPrefs(true)
         try {
@@ -133,6 +184,8 @@ export default function GenerateOptionsModal({
       ...(finalLength && { length: finalLength }),
       ...(finalAudience && { audience: finalAudience }),
       ...(comments.trim() && { comments: comments.trim() }),
+      ...(finalNumberOfOutputs > 1 && { numberOfOutputs: finalNumberOfOutputs }),
+      ...(articleTopics.trim() && { articleTopics: articleTopics.trim() }),
     })
     onClose()
   }
@@ -148,6 +201,11 @@ export default function GenerateOptionsModal({
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
     </svg>
   )
+  const xIcon = (
+    <svg className="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  )
 
   return (
     <div
@@ -157,14 +215,14 @@ export default function GenerateOptionsModal({
       aria-modal="true"
     >
       <div
-        className="glass-container p-8 max-w-md w-full"
+        className="glass-container p-8 max-w-md w-full h-[600px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-heading-lg text-secondary-white mb-6">
+        <h2 className="text-heading-lg text-secondary-white mb-6 flex-shrink-0">
           {stepTitles[step]}
         </h2>
 
-        <div className="min-h-[320px] overflow-hidden relative">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
           {step === 0 && (
           <div key={0} className="modal-step-enter space-y-2">
             {TONE_OPTIONS.map((opt) => (
@@ -195,8 +253,14 @@ export default function GenerateOptionsModal({
               <input
                 type="text"
                 value={toneOther}
-                onChange={(e) => setToneOther(e.target.value)}
-                onFocus={() => setToneOtherFocused(true)}
+                onChange={(e) => {
+                  setToneOther(e.target.value)
+                  if (e.target.value.trim()) setTonePreset('')
+                }}
+                onFocus={() => {
+                  setToneOtherFocused(true)
+                  setTonePreset('')
+                }}
                 onBlur={() => setToneOtherFocused(false)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -241,8 +305,14 @@ export default function GenerateOptionsModal({
               <input
                 type="text"
                 value={lengthOther}
-                onChange={(e) => setLengthOther(e.target.value)}
-                onFocus={() => setLengthOtherFocused(true)}
+                onChange={(e) => {
+                  setLengthOther(e.target.value)
+                  if (e.target.value.trim()) setLengthPreset('')
+                }}
+                onFocus={() => {
+                  setLengthOtherFocused(true)
+                  setLengthPreset('')
+                }}
                 onBlur={() => setLengthOtherFocused(false)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -259,6 +329,85 @@ export default function GenerateOptionsModal({
 
         {step === 2 && (
           <div key={2} className="modal-step-enter space-y-2">
+            {ARTICLE_COUNT_OPTIONS.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => handleArticleCountSelect(opt)}
+                className={`${optionRowClass} ${
+                  !numberOfOutputsOther && numberOfOutputs === (opt === 'One' ? 1 : opt === 'Two' ? 2 : 3)
+                    ? 'border-cosmic-orange bg-white/10 text-secondary-white'
+                    : 'border-white/10 hover:bg-white/5 text-secondary-white'
+                }`}
+              >
+                {!numberOfOutputsOther && numberOfOutputs === (opt === 'One' ? 1 : opt === 'Two' ? 2 : 3) && checkIcon}
+                <span>{opt}</span>
+              </button>
+            ))}
+            <div
+              className={`${optionRowClass} ${
+                isOtherInvalid
+                  ? 'border-red-500 bg-red-500/5 text-secondary-white'
+                  : numberOfOutputsOther.trim() || numberOfOutputsOtherFocused
+                    ? 'border-cosmic-orange bg-white/10 text-secondary-white'
+                    : 'border-white/10 hover:bg-white/5 text-secondary-white'
+              }`}
+            >
+              {isOtherInvalid ? xIcon : (numberOfOutputsOther.trim() || numberOfOutputsOtherFocused) && checkIcon}
+              <input
+                type="text"
+                inputMode="numeric"
+                value={numberOfOutputsOther}
+                onChange={(e) => {
+                  setNumberOfOutputsOther(e.target.value.replace(/\D/g, '').slice(0, 2))
+                  if (e.target.value.trim()) setNumberOfOutputs(0)
+                }}
+                onFocus={() => {
+                  setNumberOfOutputsOtherFocused(true)
+                  setNumberOfOutputs(0)
+                }}
+                onBlur={() => setNumberOfOutputsOtherFocused(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleArticleCountOther()
+                  }
+                }}
+                placeholder="Other (4–10)"
+                className={otherInputClass}
+              />
+            </div>
+            {showSpecifyTopics && (
+              <>
+                <label htmlFor="article-topics" className="block text-body-sm text-secondary-white mb-2 mt-4">
+                  Specify Topics <span className="text-medium-gray">(optional)</span>
+                </label>
+                <div
+                  className={`${optionRowClass} ${
+                    articleTopics.trim() || articleTopicsFocused
+                      ? 'border-cosmic-orange bg-white/10 text-secondary-white'
+                      : 'border-white/10 hover:bg-white/5 text-secondary-white'
+                  }`}
+                >
+                  {(articleTopics.trim() || articleTopicsFocused) && checkIcon}
+                  <input
+                    id="article-topics"
+                    type="text"
+                    value={articleTopics}
+                    onChange={(e) => setArticleTopics(e.target.value)}
+                    onFocus={() => setArticleTopicsFocused(true)}
+                    onBlur={() => setArticleTopicsFocused(false)}
+                    placeholder="Leave blank and Diffuse will decide"
+                    className={otherInputClass}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {step === 3 && (
+          <div key={3} className="modal-step-enter space-y-2">
             {AUDIENCE_OPTIONS.map((opt) => (
               <button
                 key={opt}
@@ -287,8 +436,14 @@ export default function GenerateOptionsModal({
               <input
                 type="text"
                 value={audienceOther}
-                onChange={(e) => setAudienceOther(e.target.value)}
-                onFocus={() => setAudienceOtherFocused(true)}
+                onChange={(e) => {
+                  setAudienceOther(e.target.value)
+                  if (e.target.value.trim()) setAudiencePreset('')
+                }}
+                onFocus={() => {
+                  setAudienceOtherFocused(true)
+                  setAudiencePreset('')
+                }}
                 onBlur={() => setAudienceOtherFocused(false)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -303,8 +458,8 @@ export default function GenerateOptionsModal({
           </div>
         )}
 
-        {step === 3 && (
-          <div key={3} className="modal-step-enter space-y-4">
+        {step === 4 && (
+          <div key={4} className="modal-step-enter space-y-4">
             <button
               type="button"
               onClick={() => setOutputType('article')}
@@ -341,34 +496,46 @@ export default function GenerateOptionsModal({
               )}
               <span>Advertisement</span>
             </button>
-            <div>
-              <label htmlFor="generate-comments" className="block text-body-sm text-secondary-white mb-2">
-                Additional comments (optional)
-              </label>
-              <textarea
+            <label htmlFor="generate-comments" className="block text-body-sm text-secondary-white mb-2">
+              Additional Comments <span className="text-medium-gray">(optional)</span>
+            </label>
+            <div
+              className={`${optionRowClass} ${
+                comments.trim() || commentsFocused
+                  ? 'border-cosmic-orange bg-white/10 text-secondary-white'
+                  : 'border-white/10 hover:bg-white/5 text-secondary-white'
+              }`}
+            >
+              {(comments.trim() || commentsFocused) && checkIcon}
+              <input
                 id="generate-comments"
+                type="text"
                 value={comments}
                 onChange={(e) => setComments(e.target.value)}
-                placeholder="Any extra instructions for the AI..."
-                rows={3}
-                className={`${inputClass} resize-none`}
+                onFocus={() => setCommentsFocused(true)}
+                onBlur={() => setCommentsFocused(false)}
+                placeholder="Any extra instructions for Diffuse..."
+                className={otherInputClass}
               />
             </div>
-            <label className="flex items-center gap-2 cursor-pointer text-body-sm text-secondary-white">
-              <input
-                type="checkbox"
-                checked={saveAsDefault}
-                onChange={(e) => setSaveAsDefault(e.target.checked)}
-                className="accent-cosmic-orange rounded"
-              />
-              Save as default for next time
-            </label>
+            <button
+              type="button"
+              onClick={() => setSaveAsDefault((prev) => !prev)}
+              className={`${optionRowClass} mt-4 ${
+                saveAsDefault
+                  ? 'border-cosmic-orange bg-white/10 text-secondary-white'
+                  : 'border-white/10 hover:bg-white/5 text-secondary-white'
+              }`}
+            >
+              {saveAsDefault && checkIcon}
+              <span>Save all responses as default</span>
+            </button>
           </div>
         )}
         </div>
 
-        <div className="flex gap-4 mt-8">
-          {step < 3 ? (
+        <div className="flex gap-4 mt-8 flex-shrink-0 pt-4 border-t border-white/10">
+          {step < 4 ? (
             <>
               {step > 0 && (
                 <button
@@ -381,17 +548,11 @@ export default function GenerateOptionsModal({
               )}
               <button
                 type="button"
-                onClick={onClose}
-                className="btn-secondary flex-1 py-3"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
                 onClick={() => setStep((s) => s + 1)}
                 disabled={
                   (step === 1 && !finalLength) ||
-                  (step === 2 && !finalAudience)
+                  (step === 2 && finalNumberOfOutputs < 1) ||
+                  (step === 3 && !finalAudience)
                 }
                 className="btn-primary flex-1 py-3 disabled:opacity-50"
               >
@@ -400,15 +561,8 @@ export default function GenerateOptionsModal({
             </>
           ) : (
             <>
-              <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1 py-3">
+              <button type="button" onClick={() => setStep(3)} className="btn-secondary flex-1 py-3">
                 Back
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn-secondary flex-1 py-3"
-              >
-                Cancel
               </button>
               <button
                 type="button"

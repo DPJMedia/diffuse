@@ -132,6 +132,21 @@ export async function POST(request: NextRequest) {
           type: 'string',
           validator: (val) => (val == null || val === '') ? undefined : sanitizeString(val, 2000),
         },
+        number_of_outputs: {
+          required: false,
+          type: 'number',
+          validator: (val) => {
+            if (val == null || val === '') return undefined
+            const n = Number(val)
+            if (Number.isNaN(n) || n < 2 || n > 10 || !Number.isInteger(n)) return undefined
+            return n
+          },
+        },
+        article_topics: {
+          required: false,
+          type: 'string',
+          validator: (val) => (val == null || val === '') ? undefined : sanitizeString(val, 1000),
+        },
       })
     } catch (error: any) {
       return NextResponse.json(
@@ -140,7 +155,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { project_id, output_type, tone, length, audience, comments } = validatedData
+    const { project_id, output_type, tone, length, audience, comments, number_of_outputs, article_topics } = validatedData
 
     // Authorization check - verify user owns the project
     try {
@@ -214,6 +229,8 @@ export async function POST(request: NextRequest) {
       ...(length != null && length !== '' && { length }),
       ...(audience != null && audience !== '' && { audience }),
       ...(comments != null && comments !== '' && { comments }),
+      ...(number_of_outputs != null && number_of_outputs >= 2 && { number_of_outputs }),
+      ...(article_topics != null && article_topics !== '' && { article_topics }),
     }
 
     // Call n8n webhook
