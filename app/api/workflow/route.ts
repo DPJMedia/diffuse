@@ -3,12 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, requireProjectOwnership, unauthorizedResponse, forbiddenResponse } from '@/lib/security/authorization'
 import { validateSchema, validateProjectId, validateOutputType, sanitizeString } from '@/lib/security/validation'
-
-// N8N webhook URL from environment variable (never hardcode API endpoints)
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL
-if (!N8N_WEBHOOK_URL) {
-  throw new Error('N8N_WEBHOOK_URL environment variable is required')
-}
+import { getN8nWebhookUrl } from '@/lib/n8n'
 
 // Helper to extract the actual article JSON from various n8n/OpenAI response formats
 function extractArticleContent(n8nResult: any): string {
@@ -211,37 +206,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Prepare payload for n8n - now includes cover_photo_url when present and optional tone/length/audience from refine modal
+    // Prepare payload for n8n - all fields always present for clean consumption by AI nodes.
+    // See docs/N8N_WEBHOOK_PAYLOAD.md for schema.
     const n8nPayload = {
       project_id,
-      output_type, // 'article' or 'ad' - n8n will branch based on this
+      output_type,
       inputs: inputsForWorkflow.map((input: any) => ({
         id: input.id,
         type: input.type,
         content: input.content || '',
         file_name: input.file_name || 'Untitled',
-        image_url: input.type === 'image' ? (input.metadata?.storage_url ?? undefined) : undefined,
-        file_path: input.file_path || undefined
+        image_url: input.type === 'image' ? (input.metadata?.storage_url ?? null) : null,
+        file_path: input.file_path ?? null,
       })),
-      cover_photo_url: coverPhotoSignedUrl ?? undefined, // Cover photo URL for vision AI to generate subtitle
-      photo_credit: photoCreditFromInput ?? undefined, // Only include when user set it on cover photo; workflow omits from output if absent
-      ...(tone != null && tone !== '' && { tone }),
-      ...(length != null && length !== '' && { length }),
-      ...(audience != null && audience !== '' && { audience }),
-      ...(comments != null && comments !== '' && { comments }),
-      ...(number_of_outputs != null && number_of_outputs >= 2 && { number_of_outputs }),
-      ...(article_topics != null && article_topics !== '' && { article_topics }),
+      cover_photo_url: coverPhotoSignedUrl ?? null,
+      photo_credit: photoCreditFromInput ?? null,
+      tone: (tone != null && tone !== '') ? tone : null,
+      length: (length != null && length !== '') ? length : null,
+      audience: (audience != null && audience !== '') ? audience : null,
+      comments: (comments != null && comments !== '') ? comments : null,
+      number_of_outputs: (number_of_outputs != null && number_of_outputs >= 2) ? number_of_outputs : 1,
+      article_topics: (article_topics != null && article_topics !== '') ? article_topics : null,
     }
 
     // Call n8n webhook
-    if (!N8N_WEBHOOK_URL) {
+    const webhookUrl = getN8nWebhookUrl()
+    if (!webhookUrl) {
       return NextResponse.json(
         { error: 'Workflow service unavailable' },
         { status: 503 }
       )
     }
-    
-    const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
+
+    const n8nResponse = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

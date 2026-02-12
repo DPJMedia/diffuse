@@ -3,12 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, requireRecordingOwnership, unauthorizedResponse, forbiddenResponse } from '@/lib/security/authorization'
 import { validateSchema, validateRecordingId, validateTranscription, validateRecordingTitle } from '@/lib/security/validation'
-
-// N8N webhook URL from environment variable (never hardcode API endpoints)
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL
-if (!N8N_WEBHOOK_URL) {
-  throw new Error('N8N_WEBHOOK_URL environment variable is required')
-}
+import { getN8nWebhookUrl } from '@/lib/n8n'
 
 interface QuickWorkflowResponse {
   project_title: string
@@ -300,15 +295,16 @@ export async function POST(request: NextRequest) {
       transcription: transcription,
     }
 
+    const webhookUrl = getN8nWebhookUrl()
     console.log('Calling n8n webhook...')
-    if (!N8N_WEBHOOK_URL) {
+    if (!webhookUrl) {
       return NextResponse.json(
         { error: 'Workflow service unavailable' },
         { status: 503 }
       )
     }
-    
-    const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
+
+    const n8nResponse = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

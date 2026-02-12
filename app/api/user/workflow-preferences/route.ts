@@ -11,7 +11,7 @@ export async function GET() {
     const { user, supabase } = await requireAuth()
     const { data, error } = await supabase
       .from('user_workflow_preferences')
-      .select('tone, length, audience, comments')
+      .select('tone, length, audience, comments, number_of_outputs')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -26,6 +26,7 @@ export async function GET() {
           ...(data.length != null && data.length !== '' && { length: data.length }),
           ...(data.audience != null && data.audience !== '' && { audience: data.audience }),
           ...(data.comments != null && data.comments !== '' && { comments: data.comments }),
+          ...(data.number_of_outputs != null && data.number_of_outputs >= 2 && { numberOfOutputs: data.number_of_outputs }),
         }
       : {}
     return NextResponse.json(prefs)
@@ -48,7 +49,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    let validated: { tone?: string; length?: string; audience?: string; comments?: string }
+    let validated: { tone?: string; length?: string; audience?: string; comments?: string; numberOfOutputs?: number }
     try {
       validated = validateSchema(body, {
         tone: {
@@ -71,6 +72,16 @@ export async function PUT(request: NextRequest) {
           type: 'string',
           validator: (val) => (val == null || val === '') ? undefined : sanitizeString(val, COMMENTS_MAX_LENGTH),
         },
+        numberOfOutputs: {
+          required: false,
+          type: 'number',
+          validator: (val) => {
+            if (val == null || val === '') return undefined
+            const n = Number(val)
+            if (Number.isNaN(n) || n < 2 || n > 10 || !Number.isInteger(n)) return undefined
+            return n
+          },
+        },
       })
     } catch (err: any) {
       return NextResponse.json(
@@ -88,6 +99,7 @@ export async function PUT(request: NextRequest) {
           length: validated.length ?? null,
           audience: validated.audience ?? null,
           comments: validated.comments ?? null,
+          number_of_outputs: validated.numberOfOutputs ?? null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' }

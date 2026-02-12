@@ -50,6 +50,19 @@ Both URLs point to the same server - use whichever you prefer!
 
 ---
 
+## 🔌 n8n Webhook: Test vs Production
+
+To use the n8n **test webhook** during local development (e.g. when trial expired), add to `.env.local`:
+
+```
+N8N_USE_TEST_WEBHOOK=true
+N8N_WEBHOOK_TEST_URL=https://prestonschlagheck.app.n8n.cloud/webhook-test/diffuse-workflow
+```
+
+With these set, workflow calls hit the test URL instead of `N8N_WEBHOOK_URL`. Omit them to use the production webhook.
+
+---
+
 ## 🚀 Available Commands
 
 ```bash
