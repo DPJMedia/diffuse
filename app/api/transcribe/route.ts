@@ -9,15 +9,14 @@ import { validateSchema, validateRecordingId, validateAudioUrl, validateTranscri
 // Note: Vercel Pro required for >60s, Vercel Hobby max is 10s
 export const maxDuration = 300
 
-// AssemblyAI API key from environment variable
-const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY
-if (!ASSEMBLYAI_API_KEY) {
-  throw new Error('ASSEMBLYAI_API_KEY environment variable is required')
+// Lazy init: read env at request time so build succeeds without ASSEMBLYAI_API_KEY
+function getAssemblyAIClient(): AssemblyAI {
+  const apiKey = process.env.ASSEMBLYAI_API_KEY
+  if (!apiKey) {
+    throw new Error('ASSEMBLYAI_API_KEY environment variable is required')
+  }
+  return new AssemblyAI({ apiKey })
 }
-
-const assemblyai = new AssemblyAI({
-  apiKey: ASSEMBLYAI_API_KEY,
-})
 
 // Generate a title from chapters or transcription content
 function generateTitle(chapters: any[] | null, transcriptionText: string | null): string {
@@ -116,6 +115,7 @@ export async function POST(request: NextRequest) {
     console.log('Starting transcription' + (recordingId ? ` for recording: ${recordingId}` : ' for file upload'))
     console.log('Audio URL:', audioUrl.substring(0, 100) + '...')
 
+    const assemblyai = getAssemblyAIClient()
     // Transcribe using AssemblyAI with auto_chapters for smart title generation
     const transcript = await assemblyai.transcripts.transcribe({
       audio: audioUrl,
