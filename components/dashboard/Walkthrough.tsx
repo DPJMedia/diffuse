@@ -234,7 +234,7 @@ export default function Walkthrough() {
     } else {
       setTargetRect(null)
     }
-  }, [step?.targetSelector])
+  }, [step])
 
   // Reset state when walkthrough opens
   useEffect(() => {

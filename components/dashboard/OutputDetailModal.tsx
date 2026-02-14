@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime } from '@/lib/utils/format'
 import type { DiffuseProjectOutput } from '@/types/database'
@@ -408,11 +409,13 @@ export default function OutputDetailModal({
           )}
           {/* Cover Photo - at top when present (Replace in header), or upload when missing and editable */}
           {coverPhotoUrl ? (
-            <div className="w-full rounded-glass overflow-hidden bg-white/5 mb-5 flex justify-center">
-              <img
+            <div className="w-full rounded-glass overflow-hidden bg-white/5 mb-5 flex justify-center relative h-[40vh] min-h-[200px]">
+              <Image
                 src={coverPhotoUrl}
                 alt="Cover"
-                className="max-w-full max-h-[40vh] w-auto h-auto object-contain"
+                fill
+                className="object-contain"
+                sizes="(max-width: 768px) 100vw, 800px"
               />
             </div>
           ) : canEdit ? (
