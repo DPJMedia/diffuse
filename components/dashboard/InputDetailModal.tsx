@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime, formatDuration, sanitizeStorageFilename } from '@/lib/utils/format'
 import type { DiffuseProjectInput } from '@/types/database'
@@ -294,12 +293,10 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             <div>
               <label className="block text-caption text-medium-gray mb-2">Preview</label>
               <div className="bg-white/5 border border-white/10 rounded-glass p-4 relative w-full h-[300px]">
-                <Image
+                <img
                   src={input.metadata.storage_url}
                   alt={input.file_name || 'Image'}
-                  fill
-                  className="rounded-lg object-contain"
-                  sizes="(max-width: 768px) 100vw, 400px"
+                  className="absolute inset-0 w-full h-full rounded-lg object-contain"
                 />
               </div>
               <p className="text-body-sm text-medium-gray mt-3 italic text-center">
@@ -322,12 +319,11 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 <label className="block text-caption text-medium-gray mb-2">Cover photo</label>
                 {(coverDisplayUrl ?? input.metadata?.storage_url) ? (
                   <div className="bg-white/5 border border-white/10 rounded-glass p-4 relative w-full h-[300px]">
-                    <Image
+                    {/* Plain img so project-file and external URLs work everywhere (no Next.js Image 400 on api routes) */}
+                    <img
                       src={coverDisplayUrl ?? input.metadata?.storage_url ?? ''}
                       alt={input.file_name || 'Cover photo'}
-                      fill
-                      className="rounded-lg object-contain"
-                      sizes="(max-width: 768px) 100vw, 400px"
+                      className="absolute inset-0 w-full h-full rounded-lg object-contain"
                     />
                   </div>
                 ) : (

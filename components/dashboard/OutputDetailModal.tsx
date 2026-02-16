@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime } from '@/lib/utils/format'
 import type { DiffuseProjectOutput } from '@/types/database'
@@ -83,16 +82,61 @@ export default function OutputDetailModal({
   const [isEditing, setIsEditing] = useState(false)
   const [uploadedCoverPath, setUploadedCoverPath] = useState<string | null>(null)
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [photoLightboxOpen, setPhotoLightboxOpen] = useState(false)
   const coverPhotoInputRef = useRef<HTMLInputElement>(null)
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
   const showDeleteButton = canDelete && onDelete
 
-  // Cover photo: one per project, sourced from DB. Use API so anyone with project access can load it (no signed-URL encoding issues).
-  const effectiveCoverPath = output.cover_photo_path || fallbackCoverPhotoPath || null
-  const pathToShow = uploadedCoverPath ?? effectiveCoverPath
-  const coverPhotoUrl = pathToShow ? `/api/project-file?path=${encodeURIComponent(pathToShow)}` : null
+  // Normalize external image URL so it always has https (use <img>, not next/image; avoids next/image 500 / ERR_NAME_NOT_RESOLVED)
+  const normalizeImageUrl = (url: string | undefined): string | undefined => {
+    if (!url || typeof url !== 'string') return undefined
+    const t = url.trim()
+    if (t.startsWith('https://')) return t
+    if (t.startsWith('http://')) return t
+    if (t.startsWith('//')) return `https:${t}`
+    if (t.includes('.') && (t.includes('blob.') || t.includes('amazonaws.') || t.startsWith('www.') || /^[a-z0-9.-]+\.[a-z]{2,}\//i.test(t))) return `https://${t}`
+    return undefined
+  }
+  // Cover photo: user-uploaded > workflow-generated image URL (DB or parsed from content) > output/project file path
+  const generatedImageUrlFromDb = normalizeImageUrl(output.workflow_metadata?.generated_image_url as string | undefined)
+  const generatedImageUrlFromContent = (() => {
+    try {
+      let raw = typeof output.content === 'string' ? output.content.trim() : ''
+      if (!raw) return undefined
+      let parsed: unknown = JSON.parse(raw)
+      if (typeof parsed === 'string') parsed = JSON.parse(parsed)
+      let url: string | undefined
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item && typeof item === 'object') {
+            const o = item as Record<string, unknown>
+            const u = o.generated_image_url ?? o.url ?? o.image_url ?? o.image
+            if (typeof u === 'string' && u.trim()) {
+              url = u.trim()
+              break
+            }
+          }
+        }
+      } else if (parsed && typeof parsed === 'object') {
+        const p = parsed as Record<string, unknown>
+        const u = p.generated_image_url ?? p.url ?? p.image_url ?? p.image
+        if (typeof u === 'string' && u.trim()) url = u.trim()
+      }
+      return normalizeImageUrl(url)
+    } catch {
+      /* ignore */
+    }
+    return undefined
+  })()
+  const generatedImageUrl = generatedImageUrlFromDb ?? generatedImageUrlFromContent
+  // When the output came with a workflow image (URL or path), never show the project cover — only workflow image or stored path.
+  const effectiveCoverPath = output.cover_photo_path ?? (generatedImageUrl ? null : fallbackCoverPhotoPath ?? null)
+  // Prefer stored path; for external URLs use proxy so browser never hits Azure (avoids ERR_NAME_NOT_RESOLVED)
+  const coverPhotoUrl = (uploadedCoverPath ? `/api/project-file?path=${encodeURIComponent(uploadedCoverPath)}` : null)
+    ?? (effectiveCoverPath ? `/api/project-file?path=${encodeURIComponent(effectiveCoverPath)}` : null)
+    ?? (generatedImageUrl ? `/api/proxy-image?url=${encodeURIComponent(generatedImageUrl)}` : null)
 
   useEffect(() => {
     setUploadedCoverPath(null)
@@ -168,7 +212,26 @@ export default function OutputDetailModal({
           }
         }
         
-        if (parsed && typeof parsed === 'object' && (parsed.title || parsed.content)) {
+        // New workflow format: [ { revised_prompt, url }, { article, image_prompt } ]
+        if (Array.isArray(parsed) && parsed.length >= 2 && parsed[1]?.article && typeof parsed[1].article === 'object') {
+          const a = parsed[1].article as Record<string, unknown>
+          const str = (v: unknown) => (typeof v === 'string' ? v.replace(/\\n/g, '\n') : '')
+          return {
+            title: (a.title as string) || '',
+            author: (a.author as string) || 'Diffuse.AI',
+            subtitle: (a.subtitle as string)?.replace(/\\n/g, '\n') ?? null,
+            excerpt: str(a.excerpt) || '',
+            content: str(a.content) || '',
+            photo_caption: (a.photo_caption as string)?.replace(/\\n/g, '\n') ?? null,
+            photo_credit: (a.photo_credit as string)?.replace(/\\n/g, '\n') ?? null,
+            suggested_sections: a.suggested_sections as string[] | undefined,
+            category: a.category as string | undefined,
+            tags: a.tags as string[] | undefined,
+            meta_title: a.meta_title as string | undefined,
+            meta_description: a.meta_description as string | undefined,
+          }
+        }
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed.title || parsed.content)) {
           return {
             title: (parsed.title as string) || '',
             author: (parsed.author as string) || 'Diffuse.AI',
@@ -273,7 +336,7 @@ export default function OutputDetailModal({
         article.title && `${article.title}`,
         article.subtitle && `${article.subtitle}`,
         article.photo_caption && `Image caption: ${article.photo_caption}`,
-        article.photo_credit && `Photo credit: ${article.photo_credit}`,
+        article.photo_credit && `Image credit: ${article.photo_credit}`,
         article.author && `By ${article.author}`,
         article.excerpt && `${article.excerpt}`,
         article.content && `${article.content}`,
@@ -407,18 +470,45 @@ export default function OutputDetailModal({
               onChange={handleUploadCoverPhoto}
             />
           )}
-          {/* Cover Photo - at top when present (Replace in header), or upload when missing and editable */}
-          {coverPhotoUrl ? (
-            <div className="w-full rounded-glass overflow-hidden bg-white/5 mb-5 flex justify-center relative h-[40vh] min-h-[200px]">
-              <Image
+          {/* Cover Photo - at top only when raw view (no article). In article view, cover moves next to caption/credit (desktop) or below subtitle (mobile). */}
+          {!article && coverPhotoUrl ? (
+            <div className="w-full rounded-glass overflow-hidden bg-white/5 mb-5 relative h-[40vh] min-h-[200px]">
+              <img
+                key={coverPhotoUrl}
                 src={coverPhotoUrl}
                 alt="Cover"
-                fill
-                className="object-contain"
-                sizes="(max-width: 768px) 100vw, 800px"
+                className="absolute inset-0 w-full h-full object-contain"
+                referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
+                loading="eager"
               />
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(coverPhotoUrl!, { credentials: 'include' })
+                    if (!res.ok) throw new Error('Download failed')
+                    const blob = await res.blob()
+                    const ext = (res.headers.get('content-type') || '').includes('webp') ? 'webp' : (res.headers.get('content-type') || '').includes('jpeg') || (res.headers.get('content-type') || '').includes('jpg') ? 'jpg' : 'png'
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `cover-${output.id}.${ext}`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  } catch (e) {
+                    console.error('Cover download failed:', e)
+                    alert('Failed to download image')
+                  }
+                }}
+                className="absolute bottom-3 right-3 p-2 rounded-lg bg-black/60 hover:bg-black/80 text-white transition-colors"
+                title="Download image"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </button>
             </div>
-          ) : canEdit ? (
+          ) : !article && canEdit ? (
             <div className="w-full rounded-glass border border-dashed border-white/20 bg-white/5 p-6 mb-5">
               <button
                 type="button"
@@ -539,66 +629,159 @@ export default function OutputDetailModal({
                 />
               </div>
 
-              {/* Image caption (for integration Featured Image) */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Image caption (optional)</label>
-                  <button
-                    onClick={() => handleCopy(article.photo_caption || '', 'photo_caption')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'photo_caption' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
+              {/* Cover image + Image caption + Photo credit: desktop = image left (same-style window), caption/credit right; mobile = image below subtitle, then caption/credit */}
+              <div className="flex flex-col md:flex-row md:gap-5 md:items-stretch">
+                {/* Photo window: same format as other fields (label + copy + bordered box); box aligns top with caption, bottom with credit */}
+                <div className="flex flex-col mb-4 md:mb-0 md:flex-shrink-0 w-full md:w-52 md:max-w-[220px] min-h-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-caption text-medium-gray uppercase tracking-wider">Image</label>
+                    {coverPhotoUrl ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(coverPhotoUrl, { credentials: 'include' })
+                              if (!res.ok) throw new Error('Download failed')
+                              const blob = await res.blob()
+                              const ext = (res.headers.get('content-type') || '').includes('webp') ? 'webp' : (res.headers.get('content-type') || '').includes('jpeg') || (res.headers.get('content-type') || '').includes('jpg') ? 'jpg' : 'png'
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = `cover-${output.id}.${ext}`
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            } catch (e) {
+                              console.error('Cover download failed:', e)
+                              alert('Failed to download image')
+                            }
+                          }}
+                          className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                          title="Download image"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleCopy(coverPhotoUrl, 'photo')}
+                          className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                          title="Copy image URL"
+                        >
+                          {copied === 'photo' ? (
+                            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex-1 min-h-[140px] md:min-h-0 border border-white/10 rounded-glass flex flex-col overflow-hidden bg-white/5">
+                    {coverPhotoUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => setPhotoLightboxOpen(true)}
+                        className="flex-1 min-h-0 w-full h-full relative flex items-center justify-center focus:outline-none focus:ring-0 overflow-hidden"
+                      >
+                        <img
+                          key={coverPhotoUrl}
+                          src={coverPhotoUrl}
+                          alt="Cover"
+                          className="absolute inset-0 w-full h-full object-cover"
+                          referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
+                          loading="eager"
+                        />
+                      </button>
+                    ) : canEdit ? (
+                      <button
+                        type="button"
+                        onClick={() => coverPhotoInputRef.current?.click()}
+                        disabled={uploadingCover}
+                        className="flex-1 min-h-0 w-full flex flex-col items-center justify-center gap-1.5 text-medium-gray hover:text-secondary-white hover:bg-white/5 rounded transition-colors disabled:opacity-50"
+                      >
+                        {uploadingCover ? (
+                          <svg className="w-6 h-6 animate-spin text-cosmic-orange" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-6 h-6 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                        <span className="text-caption uppercase tracking-wider">{uploadingCover ? 'Uploading...' : 'Upload cover'}</span>
+                      </button>
                     ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                      <div className="flex-1 min-h-0 flex items-center justify-center text-medium-gray text-body-sm">No photo</div>
                     )}
-                  </button>
+                  </div>
                 </div>
-                <textarea
-                  value={article.photo_caption || ''}
-                  onChange={(e) => handleFieldChange('photo_caption', e.target.value)}
-                  placeholder="Short description of the cover image, tied to the article"
-                  rows={2}
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
-              </div>
-
-              {/* Photo credit (for integration Featured Image) */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Photo credit (optional)</label>
-                  <button
-                    onClick={() => handleCopy(article.photo_credit || '', 'photo_credit')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'photo_credit' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    )}
-                  </button>
+                {/* Caption + Credit: right on desktop, below image on mobile */}
+                <div className="flex-1 min-w-0 space-y-5">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-caption text-medium-gray uppercase tracking-wider">Image caption (optional)</label>
+                      <button
+                        onClick={() => handleCopy(article.photo_caption || '', 'photo_caption')}
+                        className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                      >
+                        {copied === 'photo_caption' ? (
+                          <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                    <textarea
+                      value={article.photo_caption || ''}
+                      onChange={(e) => handleFieldChange('photo_caption', e.target.value)}
+                      placeholder="Short description of the cover image, tied to the article"
+                      rows={2}
+                      readOnly={!canEdit}
+                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
+                        canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-caption text-medium-gray uppercase tracking-wider">Image credit (optional)</label>
+                      <button
+                        onClick={() => handleCopy(article.photo_credit || '', 'photo_credit')}
+                        className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                      >
+                        {copied === 'photo_credit' ? (
+                          <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={article.photo_credit || ''}
+                      onChange={(e) => handleFieldChange('photo_credit', e.target.value)}
+                      placeholder="e.g. Jane Smith / Spring-Ford Press"
+                      readOnly={!canEdit}
+                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                        canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                      }`}
+                    />
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={article.photo_credit || ''}
-                  onChange={(e) => handleFieldChange('photo_credit', e.target.value)}
-                  placeholder="e.g. Jane Smith / Spring-Ford Press"
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
               </div>
 
               {/* Excerpt */}
@@ -878,6 +1061,34 @@ export default function OutputDetailModal({
           )}
         </div>
       </div>
+
+      {/* Full-size photo lightbox */}
+      {photoLightboxOpen && coverPhotoUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setPhotoLightboxOpen(false)}
+          role="dialog"
+          aria-label="Photo full size"
+        >
+          <button
+            type="button"
+            onClick={() => setPhotoLightboxOpen(false)}
+            className="absolute top-4 right-4 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10 transition-colors z-10"
+            aria-label="Close"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <img
+            src={coverPhotoUrl}
+            alt="Cover full size"
+            className="max-w-full max-h-full w-auto h-auto object-contain"
+            referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }

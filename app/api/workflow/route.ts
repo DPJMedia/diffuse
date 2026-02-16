@@ -1,9 +1,43 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import https from 'https'
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, requireProjectOwnership, unauthorizedResponse, forbiddenResponse } from '@/lib/security/authorization'
 import { validateSchema, validateProjectId, validateOutputType, sanitizeString } from '@/lib/security/validation'
 import { getN8nWebhookUrl } from '@/lib/n8n'
+
+/** Download image via Node https (fallback when fetch fails with "fetch failed" on some networks). */
+function downloadImageViaHttps(url: string, timeoutMs: number): Promise<{ buffer: Buffer; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:') {
+      reject(new Error('Only https URLs supported'))
+      return
+    }
+    const req = https.get(
+      url,
+      { headers: { Accept: 'image/*', 'User-Agent': 'DiffuseWorkflow/1.0 (image-fetch)' } },
+      (res) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`Image fetch ${res.statusCode}`))
+          return
+        }
+        const chunks: Buffer[] = []
+        res.on('data', (chunk: Buffer) => chunks.push(chunk))
+        res.on('end', () => {
+          const buffer = Buffer.concat(chunks)
+          const contentType = res.headers['content-type'] || 'image/png'
+          resolve({ buffer, contentType })
+        })
+      }
+    )
+    req.on('error', reject)
+    req.setTimeout(timeoutMs, () => {
+      req.destroy()
+      reject(new Error('Image fetch timeout'))
+    })
+  })
+}
 
 // Helper to extract the actual article JSON from various n8n/OpenAI response formats
 function extractArticleContent(n8nResult: any): string {
@@ -107,6 +141,11 @@ export async function POST(request: NextRequest) {
           type: 'string',
           validator: (val) => val === undefined ? 'article' : validateOutputType(val),
         },
+        mode: {
+          required: false,
+          type: 'string',
+          validator: (val) => (val == null || val === '') ? undefined : (val === 'quick' || val === 'refine' ? val : undefined),
+        },
         tone: {
           required: false,
           type: 'string',
@@ -150,7 +189,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { project_id, output_type, tone, length, audience, comments, number_of_outputs, article_topics } = validatedData
+    const { project_id, output_type, mode, tone, length, audience, comments, number_of_outputs, article_topics } = validatedData
 
     // Authorization check - verify user owns the project
     try {
@@ -210,7 +249,9 @@ export async function POST(request: NextRequest) {
     // See docs/N8N_WEBHOOK_PAYLOAD.md for schema.
     const n8nPayload = {
       project_id,
+      user_id: user.id, // so n8n can upload to project-files at {user_id}/{project_id}/...
       output_type,
+      mode: mode === 'quick' || mode === 'refine' ? mode : 'refine',
       inputs: inputsForWorkflow.map((input: any) => ({
         id: input.id,
         type: input.type,
@@ -252,28 +293,224 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Workflow execution failed' }, { status: 500 })
     }
 
-    const n8nResult = await n8nResponse.json()
-    
-    // Extract the AI-generated content from n8n response
+    const responseContentType = n8nResponse.headers.get('content-type') || ''
+    let n8nResult: unknown
+    /** When n8n responds with multipart/form-data, we can receive the image as a binary part (no Azure fetch). */
+    let imageBinaryFromMultipart: { buffer: Buffer; contentType: string } | null = null
+
+    if (responseContentType.includes('multipart/form-data')) {
+      const formData = await n8nResponse.formData()
+      const jsonPart = formData.get('json') ?? formData.get('payload') ?? formData.get('data')
+      let imagePart: Blob | File | null = formData.get('image') ?? formData.get('file') ?? formData.get('cover') ?? formData.get('cover_image') ?? formData.get('binary') ?? formData.get('attachment')
+      if (!(imagePart instanceof Blob) || imagePart.size === 0) {
+        for (const [name, value] of formData.entries()) {
+          if (value instanceof Blob && value.size > 0 && (value.type.startsWith('image/') || name.toLowerCase().includes('image') || name.toLowerCase().includes('file') || name.toLowerCase().includes('cover'))) {
+            imagePart = value
+            break
+          }
+        }
+      }
+      if (jsonPart instanceof Blob) {
+        const text = await jsonPart.text()
+        try {
+          n8nResult = JSON.parse(text)
+        } catch {
+          n8nResult = {}
+        }
+      } else {
+        n8nResult = {}
+      }
+      if (imagePart instanceof Blob && imagePart.size > 0) {
+        const ab = await imagePart.arrayBuffer()
+        imageBinaryFromMultipart = {
+          buffer: Buffer.from(ab),
+          contentType: (imagePart.type && imagePart.type.startsWith('image/')) ? imagePart.type : 'image/png',
+        }
+        console.log('[workflow] Received image as binary in multipart response, size:', imageBinaryFromMultipart.buffer.length)
+      } else {
+        const partNames = Array.from(formData.keys())
+        console.log('[workflow] Multipart response had no image part; formData keys:', partNames.join(', ') || '(none)')
+      }
+    } else {
+      n8nResult = await n8nResponse.json()
+    }
+
+    // Normalize external image URL so it always has https (avoids <img> / next/image failing)
+    const normalizeImageUrl = (u: string | undefined): string | undefined => {
+      if (!u || typeof u !== 'string') return undefined
+      const t = u.trim()
+      if (t.startsWith('https://') || t.startsWith('http://')) return t
+      if (t.startsWith('//')) return `https:${t}`
+      if (t.includes('.') && (t.includes('blob.') || t.includes('amazonaws.') || /^[a-z0-9.-]+\.[a-z]{2,}\//i.test(t))) return `https://${t}`
+      return undefined
+    }
+
+    // Recursively find first string that looks like an image URL (so we find it even if n8n put it in a different node)
+    const IMAGE_URL_PATTERN = /^https?:\/\/|^\/\/|\.blob\.|\.amazonaws\.|\.(png|jpg|jpeg|webp|gif)(\?|$)/i
+    function findImageUrlInPayload(obj: unknown, depth = 0): string | undefined {
+      if (depth > 20) return undefined
+      if (typeof obj === 'string') {
+        const normalized = normalizeImageUrl(obj)
+        if (normalized && IMAGE_URL_PATTERN.test(normalized)) return normalized
+        return undefined
+      }
+      if (Array.isArray(obj)) {
+        for (const item of obj) {
+          const u = findImageUrlInPayload(item, depth + 1)
+          if (u) return u
+        }
+        return undefined
+      }
+      if (obj && typeof obj === 'object') {
+        const o = obj as Record<string, unknown>
+        for (const key of ['url', 'image_url', 'image', 'generated_image_url', 'src', 'href']) {
+          const u = findImageUrlInPayload(o[key], depth + 1)
+          if (u) return u
+        }
+        for (const value of Object.values(o)) {
+          const u = findImageUrlInPayload(value, depth + 1)
+          if (u) return u
+        }
+      }
+      return undefined
+    }
+
+    // Recursively find base64 image (workflow can send image bytes so we never need to fetch from Azure)
+    const BASE64_PATTERN = /^[A-Za-z0-9+/]+=*$/
+    function findBase64ImageInPayload(obj: unknown, depth = 0): { data: string; contentType?: string } | undefined {
+      if (depth > 20) return undefined
+      if (typeof obj === 'string') {
+        if (obj.length > 100 && BASE64_PATTERN.test(obj.replace(/\s/g, ''))) return { data: obj }
+        return undefined
+      }
+      if (Array.isArray(obj)) {
+        for (const item of obj) {
+          const b = findBase64ImageInPayload(item, depth + 1)
+          if (b) return b
+        }
+        return undefined
+      }
+      if (obj && typeof obj === 'object') {
+        const o = obj as Record<string, unknown>
+        for (const key of ['image_base64', 'imageBase64', 'image_base64_data', 'image_data']) {
+          const v = o[key]
+          if (typeof v === 'string' && v.length > 100 && BASE64_PATTERN.test(v.replace(/\s/g, ''))) {
+            return { data: v, contentType: typeof o.content_type === 'string' ? o.content_type : undefined }
+          }
+        }
+        if (o.image && typeof o.image === 'object' && o.image !== null && typeof (o.image as Record<string, unknown>).data === 'string') {
+          const d = (o.image as Record<string, unknown>).data as string
+          if (d.length > 100 && BASE64_PATTERN.test(d.replace(/\s/g, ''))) return { data: d }
+        }
+        for (const value of Object.values(o)) {
+          const b = findBase64ImageInPayload(value, depth + 1)
+          if (b) return b
+        }
+      }
+      return undefined
+    }
+
+    // 0) If workflow already uploaded to Supabase and returned the path, use it (best: no Azure fetch, no proxy)
+    const UUID_PATH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/.+$/i
+    function findStoragePathInPayload(obj: unknown, depth = 0): string | undefined {
+      if (depth > 20) return undefined
+      if (typeof obj === 'string') {
+        const t = obj.trim()
+        if (t.length > 10 && t.length < 500 && !t.startsWith('http') && UUID_PATH.test(t) && !t.includes('..')) return t
+        return undefined
+      }
+      if (Array.isArray(obj)) {
+        for (const item of obj) {
+          const p = findStoragePathInPayload(item, depth + 1)
+          if (p) return p
+        }
+        return undefined
+      }
+      if (obj && typeof obj === 'object') {
+        const o = obj as Record<string, unknown>
+        for (const key of ['cover_photo_path', 'storage_path', 'supabase_path', 'image_storage_path', 'image_path']) {
+          const v = o[key]
+          if (typeof v === 'string') {
+            const p = findStoragePathInPayload(v, depth + 1)
+            if (p) return p
+          }
+        }
+        for (const value of Object.values(o)) {
+          const p = findStoragePathInPayload(value, depth + 1)
+          if (p) return p
+        }
+      }
+      return undefined
+    }
+    const workflowStoragePath = findStoragePathInPayload(n8nResult)
+    if (workflowStoragePath) console.log('[workflow] Found Supabase storage path in n8n response:', workflowStoragePath)
+
+    // 1) Prefer base64 image if workflow sent it (no Azure fetch needed)
+    const imageBase64 = findBase64ImageInPayload(n8nResult)
+    if (imageBase64) console.log('[workflow] Found image_base64 in n8n response')
+
+    // 2) Try to find image URL in the raw n8n response (handles different node layouts)
+    let generatedImageUrl = findImageUrlInPayload(n8nResult)
+    // Explicitly handle webhook shape: [{ article: {...}, generated_image_url: "https://..." }]
+    if (!generatedImageUrl && Array.isArray(n8nResult) && n8nResult.length > 0) {
+      const first = n8nResult[0]
+      if (first && typeof first === 'object' && typeof (first as Record<string, unknown>).generated_image_url === 'string') {
+        const url = (first as Record<string, unknown>).generated_image_url as string
+        if (normalizeImageUrl(url)) generatedImageUrl = normalizeImageUrl(url)!
+      }
+    }
+    if (generatedImageUrl) {
+      console.log('[workflow] Found image URL in n8n response (host: ' + new URL(generatedImageUrl).hostname + ')')
+    }
+
+    // Extract the AI-generated content from n8n response (for article + fallback URL)
     let extractedContent = extractArticleContent(n8nResult)
     // Strip markdown code fences if present (e.g. ```json ... ```)
     const codeBlockMatch = extractedContent.match(/^[\s\n]*```(?:json)?\s*([\s\S]*?)```[\s\n]*$/m)
     if (codeBlockMatch) {
       extractedContent = codeBlockMatch[1].trim()
     }
-    
-    // Try to parse as JSON and add author field
+
+    // 2) If we didn't find URL in raw response, try inside extracted content (array/object with url)
+    if (!generatedImageUrl) {
+      try {
+        const parsed = JSON.parse(extractedContent)
+        generatedImageUrl = findImageUrlInPayload(parsed)
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!generatedImageUrl) {
+      const keys = typeof n8nResult === 'object' && n8nResult !== null ? Object.keys(n8nResult as object).join(', ') : 'n/a'
+      const sample = JSON.stringify(n8nResult).slice(0, 600)
+      console.log('[workflow] No image URL found in n8n response. Top-level keys:', keys, '| Sample:', sample + (JSON.stringify(n8nResult).length > 600 ? '...' : ''))
+    }
+
+    // Parse JSON; normalize article and final content
     let finalContent = extractedContent
+    const workflowMetadata: Record<string, unknown> | undefined = generatedImageUrl ? { generated_image_url: generatedImageUrl } : undefined
     try {
       const parsed = JSON.parse(extractedContent)
-      // Add default author
-      parsed.author = 'Diffuse.AI'
-      finalContent = JSON.stringify(parsed)
+      if (Array.isArray(parsed)) {
+        const articleItem = parsed.find((p: any) => p && typeof p === 'object' && p.article)
+        const articleObj = articleItem?.article
+        if (articleObj && typeof articleObj === 'object') {
+          (articleObj as Record<string, unknown>).author = 'Diffuse.AI'
+        }
+        finalContent = JSON.stringify(parsed)
+      } else if (parsed && typeof parsed === 'object') {
+        if (!('author' in parsed)) parsed.author = 'Diffuse.AI'
+        finalContent = JSON.stringify(parsed)
+      }
     } catch {
       // Not valid JSON, use as-is
     }
 
-    // Save the output to Supabase - cover image comes from the database (same place as input: project-files path from diffuse_project_inputs)
+    // Save the output to Supabase. When the workflow returns an image (URL or base64), do NOT use project cover
+    // so the output is overwritten by the incoming image once we download/save it (or we use proxy).
+    const hasWorkflowImage = !!(workflowStoragePath || generatedImageUrl || imageBase64 || imageBinaryFromMultipart)
+    const initialCoverPath = workflowStoragePath ?? (hasWorkflowImage ? null : coverPhotoPathFromDb)
     const primaryInputId = inputsForWorkflow[0]?.id ?? inputs[0]?.id ?? null
     const { data: output, error: outputError } = await supabase
       .from('diffuse_project_outputs')
@@ -283,7 +520,8 @@ export async function POST(request: NextRequest) {
         content: finalContent,
         output_type, // 'article' or 'ad'
         workflow_status: 'completed',
-        cover_photo_path: coverPhotoPathFromDb, // always set from DB: same storage path as project cover input
+        cover_photo_path: initialCoverPath,
+        ...(workflowMetadata && { workflow_metadata: workflowMetadata }),
       })
       .select()
       .single()
@@ -299,6 +537,169 @@ export async function POST(request: NextRequest) {
         ? "You don't have permission to add outputs to this project. Only the project owner can generate outputs until the database policy is updated."
         : 'Failed to save output'
       return NextResponse.json({ error: message }, { status })
+    }
+
+    // When we have a workflow-generated cover (from workflow path or after we upload), we'll add it as an image input so it shows in Inputs and with the output.
+    let generatedImagePathForInput: string | null = workflowStoragePath ?? null
+
+    // Persist workflow image: download from URL (or decode base64) and upload to our bucket so we can display without proxy.
+    // Use admin client for storage so upload succeeds regardless of RLS.
+    const storageClient = createAdminClient() ?? supabase
+    if (!createAdminClient()) {
+      console.warn('[workflow] SUPABASE_SERVICE_ROLE_KEY not set; using user client for storage upload. If uploads fail, set the key so RLS does not block.')
+    }
+    if (output?.id && !workflowStoragePath) {
+      let savedPath: string | null = null
+      if (imageBinaryFromMultipart) {
+        try {
+          const { buffer: buf, contentType } = imageBinaryFromMultipart
+          const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+          const storagePath = `${user.id}/${project_id}/cover-${output.id}-generated.${ext}`
+          const { error: uploadError } = await storageClient.storage
+            .from('project-files')
+            .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
+          if (!uploadError) {
+            savedPath = storagePath
+            console.log('[workflow] Multipart image uploaded to project-files at', storagePath)
+          } else {
+            console.error('[workflow] Multipart binary image upload failed:', uploadError.message)
+          }
+        } catch (e) {
+          console.error('[workflow] Multipart binary image upload failed:', e instanceof Error ? e.message : e)
+        }
+      }
+      if (!savedPath && imageBase64) {
+        try {
+          const buf = Buffer.from(imageBase64.data.replace(/\s/g, ''), 'base64')
+          const contentType = imageBase64.contentType || 'image/png'
+          const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+          const storagePath = `${user.id}/${project_id}/cover-${output.id}-generated.${ext}`
+          const { error: uploadError } = await storageClient.storage
+            .from('project-files')
+            .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
+          if (!uploadError) savedPath = storagePath
+          else console.error('[workflow] Base64 image upload failed:', uploadError.message, 'code:', uploadError.name, uploadError)
+        } catch (e) {
+          console.error('[workflow] Base64 image decode/upload failed:', e instanceof Error ? e.message : e)
+        }
+      }
+      if (!savedPath && generatedImageUrl) {
+        const TIMEOUT_MS = 25000
+        const fetchImageOptions = {
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          headers: {
+            Accept: 'image/*',
+            'User-Agent': 'DiffuseWorkflow/1.0 (image-fetch)',
+          },
+        }
+        let lastError: Error | null = null
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          let buf: Buffer | null = null
+          let contentType = 'image/png'
+          try {
+            console.log('[workflow] Downloading generated image (attempt ' + attempt + ') from workflow URL, host: ' + new URL(generatedImageUrl).hostname)
+            try {
+              const imageRes = await fetch(generatedImageUrl, fetchImageOptions)
+              if (!imageRes.ok) {
+                const errBody = await imageRes.text().catch(() => '')
+                console.error('[workflow] Generated image fetch failed:', imageRes.status, imageRes.statusText, 'body:', errBody.slice(0, 300))
+                lastError = new Error(`Image fetch ${imageRes.status}: ${errBody.slice(0, 100)}`)
+                if (attempt === 2) break
+                continue
+              }
+              const arrayBuffer = await imageRes.arrayBuffer()
+              buf = Buffer.from(arrayBuffer)
+              contentType = imageRes.headers.get('content-type') || 'image/png'
+            } catch (fetchErr) {
+              const fetchErrMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+              const err = fetchErr as Error & { cause?: Error; code?: string }
+              const causeMsg = err.cause instanceof Error ? err.cause.message : String(err.cause ?? '')
+              console.error('[workflow] fetch() failed:', fetchErrMsg, 'code:', err.code, 'cause:', causeMsg || '(none)')
+              if (fetchErrMsg.includes('fetch failed') || fetchErrMsg.includes('ECONNREFUSED') || fetchErrMsg.includes('ENOTFOUND')) {
+                console.log('[workflow] Trying Node https fallback for image download')
+                const result = await downloadImageViaHttps(generatedImageUrl, TIMEOUT_MS)
+                buf = result.buffer
+                contentType = result.contentType
+              } else {
+                throw fetchErr
+              }
+            }
+            if (!buf || buf.length === 0) {
+              lastError = new Error('Empty image body')
+              if (attempt === 2) break
+              continue
+            }
+            const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+            const storagePath = `${user.id}/${project_id}/cover-${output.id}-generated.${ext}`
+            const { error: uploadError } = await storageClient.storage
+              .from('project-files')
+              .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
+            if (!uploadError) {
+              savedPath = storagePath
+              console.log('[workflow] Image uploaded to storage at', storagePath, '; updating output row')
+              break
+            }
+            console.error('[workflow] Generated image upload failed:', uploadError.message, 'code:', uploadError.name, 'full:', JSON.stringify(uploadError))
+            lastError = new Error(uploadError.message)
+            if (attempt === 2) break
+            continue
+          } catch (e) {
+            lastError = e instanceof Error ? e : new Error(String(e))
+            const err = e as Error & { cause?: Error; code?: string }
+            const causeMsg = err.cause instanceof Error ? err.cause.message : String(err.cause ?? '')
+            const code = (err as any).code
+            console.error('[workflow] Failed to persist generated image (attempt ' + attempt + '):', lastError.message, 'code:', code, 'cause:', causeMsg || '(none)')
+            if ((code === 'ENOTFOUND' || (causeMsg && causeMsg.includes('ENOTFOUND'))) && attempt === 2) {
+              console.error('[workflow] This server cannot resolve the image host (DNS). Have n8n send the image as base64 in the webhook response instead. See docs/N8N_IMAGE_RELIABLE_SETUP.md')
+            }
+            if (attempt === 2) break
+          }
+        }
+      }
+      if (savedPath) {
+        const { error: updateErr } = await supabase
+          .from('diffuse_project_outputs')
+          .update({ cover_photo_path: savedPath, updated_at: new Date().toISOString() })
+          .eq('id', output.id)
+        if (updateErr) {
+          console.error('[workflow] DB update failed (cover_photo_path):', updateErr.message)
+        } else {
+          output.cover_photo_path = savedPath
+          generatedImagePathForInput = savedPath
+          console.log('[workflow] Generated image saved to storage; output row updated:', savedPath)
+        }
+      } else {
+        if (generatedImageUrl || imageBase64) {
+          console.log('[workflow] Had image URL/base64 but upload failed; output row not updated (cover_photo_path unchanged)')
+        } else {
+          console.log('[workflow] No image URL or base64 in workflow response; output row not updated (cover_photo_path from project only)')
+        }
+      }
+    }
+
+    // Save the workflow-generated image as an image input so it appears in the Inputs section and with the output.
+    if (output?.id && generatedImagePathForInput) {
+      const ext = generatedImagePathForInput.includes('.') ? generatedImagePathForInput.split('.').pop()?.toLowerCase() || 'png' : 'png'
+      const safeExt = /^(png|jpg|jpeg|webp|gif)$/i.test(ext || '') ? ext : 'png'
+      const { error: inputErr } = await supabase
+        .from('diffuse_project_inputs')
+        .insert({
+          project_id,
+          type: 'image',
+          content: null,
+          file_path: generatedImagePathForInput,
+          file_name: `Generated cover.${safeExt}`,
+          metadata: {
+            source: 'workflow_generated',
+            output_id: output.id,
+          },
+          created_by: user.id,
+        })
+      if (inputErr) {
+        console.error('[workflow] Failed to add generated image as input:', inputErr.message)
+      } else {
+        console.log('[workflow] Generated image added as input; displays with output', output.id)
+      }
     }
 
     const response = NextResponse.json({ 

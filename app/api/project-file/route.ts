@@ -26,7 +26,12 @@ export async function GET(request: NextRequest) {
     }
     let path: string
     try {
-      path = decodeURIComponent(pathParam)
+      path = pathParam
+      for (let i = 0; i < 3; i++) {
+        const decoded = decodeURIComponent(path)
+        if (decoded === path) break
+        path = decoded
+      }
     } catch {
       return NextResponse.json({ error: 'Invalid path encoding' }, { status: 400 })
     }

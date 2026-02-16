@@ -699,7 +699,7 @@ export default function ProjectDetailPage() {
     setShowGenerateOptionsModal(false)
     setShowQuickGenerateModal(false)
     try {
-      const body: Record<string, string | number> = { project_id: projectId, output_type: outputType }
+      const body: Record<string, string | number> = { project_id: projectId, output_type: outputType, mode: source }
       if (options?.tone) body.tone = options.tone
       if (options?.length) body.length = options.length
       if (options?.audience) body.audience = options.audience
