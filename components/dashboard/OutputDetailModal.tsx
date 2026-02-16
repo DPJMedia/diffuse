@@ -741,13 +741,13 @@ export default function OutputDetailModal({
                         )}
                       </button>
                     </div>
-                    <textarea
+                    <input
+                      type="text"
                       value={article.photo_caption || ''}
                       onChange={(e) => handleFieldChange('photo_caption', e.target.value)}
                       placeholder="Short description of the cover image, tied to the article"
-                      rows={2}
                       readOnly={!canEdit}
-                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
+                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
                         canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                       }`}
                     />
