@@ -11,8 +11,10 @@
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
+    "@types/diff": "^7.0.2",
     "assemblyai": "^4.22.1",
     "clsx": "^2.1.0",
+    "diff": "^8.0.3",
     "framer-motion": "^11.0.0",
     "mammoth": "^1.11.0",
     "next": "^14.2.0",

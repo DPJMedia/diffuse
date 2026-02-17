@@ -74,6 +74,7 @@ export interface DiffuseProjectOutput {
   workflow_status: WorkflowStatus
   workflow_metadata?: Record<string, any>
   cover_photo_path?: string | null
+  reedit_count?: number
   created_at: string
   updated_at: string
   deleted_at?: string | null

@@ -301,14 +301,14 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
           {/* Title Field (not for image inputs — they use the layout below) */}
           {!isImage && (
             <div className="shrink-0">
-              <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">Title</label>
+              <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">TITLE</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => canEdit && setTitle(e.target.value)}
                 placeholder={isFromRecording ? 'Recording' : isCoverPhoto ? 'Cover Photo' : isDocument ? 'Document' : isAudio ? 'Audio' : 'Text Input'}
                 readOnly={!canEdit || (isImage && !isCoverPhoto)}
-                className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
                   canEdit && !isImage
                     ? 'focus:outline-none focus:border-cosmic-orange'
                     : 'cursor-default opacity-75'
@@ -323,7 +323,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
               {/* Image window: label row + image (zoom to fill); larger to match taller right column */}
               <div className="flex flex-col flex-shrink-0 w-full md:w-80 md:max-w-[340px] mb-4 md:mb-0 min-h-0">
                 <div className="flex items-center justify-between mb-2 shrink-0">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Image</label>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE</label>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -384,7 +384,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
               <div className="flex-1 min-w-0 flex flex-col justify-center gap-5">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-caption text-medium-gray uppercase tracking-wider">Title</label>
+                    <label className="text-caption text-medium-gray uppercase tracking-wider">TITLE</label>
                     <button
                       type="button"
                       onClick={() => handleCopy(title, 'title')}
@@ -408,14 +408,14 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                     onChange={(e) => canEdit && setTitle(e.target.value)}
                     placeholder="Image"
                     readOnly={!canEdit}
-                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
                       canEdit ? 'focus:outline-none focus:border-cosmic-orange' : 'cursor-default opacity-75'
                     }`}
                   />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-caption text-medium-gray uppercase tracking-wider">Photo caption</label>
+                    <label className="text-caption text-medium-gray uppercase tracking-wider">PHOTO CAPTION</label>
                     <button
                       type="button"
                       onClick={() => handleCopy(photoCaption, 'photo_caption')}
@@ -439,14 +439,14 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                     onChange={(e) => canEdit && setPhotoCaption(e.target.value)}
                     placeholder="Optional caption"
                     readOnly={!canEdit}
-                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
                       canEdit ? 'focus:outline-none focus:border-cosmic-orange' : 'cursor-default opacity-75'
                     }`}
                   />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-caption text-medium-gray uppercase tracking-wider">Photo credit</label>
+                    <label className="text-caption text-medium-gray uppercase tracking-wider">PHOTO CREDIT</label>
                     <button
                       type="button"
                       onClick={() => handleCopy(photoCredit, 'photo_credit')}
@@ -470,7 +470,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                     onChange={(e) => canEdit && setPhotoCredit(e.target.value)}
                     placeholder="e.g. Jane Smith"
                     readOnly={!canEdit}
-                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
                       canEdit ? 'focus:outline-none focus:border-cosmic-orange' : 'cursor-default opacity-75'
                     }`}
                   />
@@ -490,7 +490,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 onChange={handleReplaceCoverPhoto}
               />
               <div>
-                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">Cover photo</label>
+                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">COVER PHOTO</label>
                 {(coverDisplayUrl ?? input.metadata?.storage_url) ? (
                   <div className="bg-white/5 border border-white/10 rounded-glass p-4 relative w-full h-[300px]">
                     <Image
@@ -506,14 +506,14 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 )}
               </div>
               <div>
-                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">Photo credit (optional)</label>
+                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">PHOTO CREDIT (OPTIONAL)</label>
                 <input
                   type="text"
                   value={photoCredit}
                   onChange={(e) => canEdit && setPhotoCredit(e.target.value)}
                   placeholder="e.g. Jane Smith / Spring-Ford Press"
                   readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
                     canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                   }`}
                 />
@@ -534,7 +534,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 placeholder="Enter content..."
                 readOnly={!canEdit}
                 rows={10}
-                className={`w-full min-h-[180px] max-h-[40vh] px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors resize-none overflow-y-auto custom-scrollbar ${
+                className={`w-full min-h-[180px] max-h-[40vh] px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none overflow-y-auto custom-scrollbar ${
                   canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                 }`}
               />

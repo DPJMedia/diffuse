@@ -6,42 +6,90 @@ import { validateSchema, sanitizeString } from '@/lib/security/validation'
 import { getReeditWebhookUrl } from '@/lib/n8n'
 import type { DiffuseProjectOutput } from '@/types/database'
 
-// Extract article JSON from n8n response (reuse pattern from main workflow)
-function extractArticleContent(n8nResult: unknown): string {
-  try {
-    const r = n8nResult as any
-    if (typeof r?.output === 'string') return r.output
-    if (Array.isArray(r)) {
-      const first = r[0]
-      if (first?.output && Array.isArray(first.output)) {
-        const msg = first.output.find((o: any) => o.type === 'message')
-        const content = msg?.content?.find((c: any) => c.type === 'output_text')
-        if (content?.text) return content.text
-      }
-      if (first?.content) {
-        if (Array.isArray(first.content)) {
-          const tc = first.content.find((c: any) => c.type === 'output_text' || c.text)
-          if (tc?.text) return tc.text
-        }
-        return typeof first.content === 'string' ? first.content : JSON.stringify(first.content)
-      }
-    }
-    if (r?.output && Array.isArray(r.output)) {
-      const msg = r.output.find((o: any) => o.type === 'message')
-      const content = msg?.content?.find((c: any) => c.type === 'output_text')
-      if (content?.text) return content.text
-    }
-    if (r?.content) return typeof r.content === 'string' ? r.content : JSON.stringify(r.content)
-    return JSON.stringify(n8nResult)
-  } catch {
-    return JSON.stringify(n8nResult)
+// Unwrap n8n response: { json }, { body }, { data }, [ { json } ], etc.
+function unwrapN8nResponse(obj: unknown): unknown {
+  if (obj == null) return obj
+  const o = obj as Record<string, unknown>
+  if (typeof o.json === 'object' && o.json !== null) return o.json
+  if (typeof o.body === 'object' && o.body !== null) return o.body
+  if (typeof o.data === 'object' && o.data !== null) return o.data
+  if (Array.isArray(obj) && obj.length > 0) {
+    const first = obj[0] as Record<string, unknown>
+    if (first?.json != null) return first.json
+    if (first?.body != null) return first.body
+    return first
   }
+  return obj
 }
 
-// Merge workflow response into existing content: preserve image, photo_caption, photo_credit
+// Find article-like content (has title or content) in response - walk common shapes
+function findArticleInPayload(obj: unknown, depth = 0): unknown {
+  if (depth > 10 || obj == null) return null
+  const o = obj as Record<string, unknown>
+  if (typeof o !== 'object') return null
+  if (o.article && typeof o.article === 'object') return o.article
+  if ((o.title || o.content) && typeof o === 'object') return o
+  if (Array.isArray(o)) {
+    for (const item of o) {
+      const found = findArticleInPayload(item, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+  for (const key of ['json', 'body', 'data', 'output', 'result']) {
+    const v = o[key]
+    if (v != null) {
+      const found = findArticleInPayload(v, depth + 1)
+      if (found) return found
+    }
+  }
+  if (typeof o.content === 'string' && o.content.trim().startsWith('{')) {
+    try {
+      return JSON.parse(o.content)
+    } catch {
+      /* ignore */
+    }
+  }
+  if (typeof o.output === 'string' && o.output.trim().startsWith('{')) {
+    try {
+      return JSON.parse(o.output)
+    } catch {
+      /* ignore */
+    }
+  }
+  // Direct string content (AI node returns text)
+  if (typeof o === 'object' && o !== null) {
+    const text = (o as any).text ?? (o as any).message
+    if (typeof text === 'string' && text.trim().startsWith('{')) {
+      try {
+        return JSON.parse(text)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return null
+}
+
+// Extract article content as JSON string from n8n response
+function extractWorkflowContent(n8nResult: unknown): string | null {
+  const unwrapped = unwrapN8nResponse(n8nResult)
+  const article = findArticleInPayload(unwrapped)
+  if (article && typeof article === 'object') return JSON.stringify(article)
+  if (unwrapped && typeof unwrapped === 'object') {
+    const u = unwrapped as Record<string, unknown>
+    if (u.article || u.title || u.content) return JSON.stringify(unwrapped)
+  }
+  if (typeof unwrapped === 'string' && unwrapped.trim().startsWith('{')) {
+    return unwrapped.trim()
+  }
+  return null
+}
+
+// Merge: replace everything with workflow content EXCEPT image, photo_caption, photo_credit
 function mergeContent(existingContent: string, workflowContent: string): string {
-  let existing: Record<string, unknown> | Array<unknown> | null = null
-  let workflow: Record<string, unknown> | Array<unknown> | null = null
+  let existing: unknown = null
+  let workflow: unknown = null
 
   try {
     existing = JSON.parse(existingContent)
@@ -54,16 +102,15 @@ function mergeContent(existingContent: string, workflowContent: string): string 
     return existingContent
   }
 
-  const preserveKeys = ['photo_caption', 'photo_credit'] as const
   const getArticle = (obj: unknown): Record<string, unknown> | null => {
     if (!obj || typeof obj !== 'object') return null
     const o = obj as Record<string, unknown>
     if (Array.isArray(o)) {
-      const item = o.find((p: any) => p?.article)
+      const item = o.find((p: any) => p && typeof p === 'object' && p.article)
       return item?.article && typeof item.article === 'object' ? (item.article as Record<string, unknown>) : null
     }
     if (o.article && typeof o.article === 'object') return o.article as Record<string, unknown>
-    if (o.title || o.content) return o
+    if (o.title || o.content) return o as Record<string, unknown>
     return null
   }
 
@@ -71,15 +118,16 @@ function mergeContent(existingContent: string, workflowContent: string): string 
     if (!obj || typeof obj !== 'object') return false
     const o = obj as Record<string, unknown>
     const url = o.url ?? o.generated_image_url ?? o.image_url ?? o.image
-    return typeof url === 'string' && url.trim().length > 0
+    return typeof url === 'string' && String(url).trim().length > 0
   }
 
   const existingArticle = getArticle(existing)
   const workflowArticle = getArticle(workflow)
-  if (!workflowArticle) return existingContent
+  if (!workflowArticle) return workflowContent // No article in workflow? Use workflow as-is
 
-  // Preserve photo_caption and photo_credit from existing (image metadata stays same)
+  // Preserve ONLY photo_caption and photo_credit from existing (image metadata stays same)
   if (existingArticle) {
+    const preserveKeys = ['photo_caption', 'photo_credit'] as const
     for (const key of preserveKeys) {
       const val = existingArticle[key]
       if (val !== undefined && val !== null && String(val).trim()) {
@@ -88,20 +136,35 @@ function mergeContent(existingContent: string, workflowContent: string): string 
     }
   }
 
-  // Build merged result - preserve image element from existing when using array format
+  // Build final output - match existing structure when possible
+  if (Array.isArray(existing) && existing.length >= 2) {
+    // Existing uses array format [ {image}, { article } ] - preserve first element (image), use workflow article
+    const result = [...existing] as Array<Record<string, unknown>>
+    const second = result[1]
+    if (second && typeof second === 'object') {
+      second.article = workflowArticle
+      return JSON.stringify(result)
+    }
+  }
+  if (Array.isArray(existing) && existing.length >= 1 && hasImageUrl(existing[0])) {
+    // Existing has image in first slot
+    const result = [existing[0], { article: workflowArticle }]
+    return JSON.stringify(result)
+  }
+
+  // Flat or unknown structure - output workflow article (nested or flat)
   if (Array.isArray(workflow) && workflow.length >= 2) {
     const second = workflow[1] as Record<string, unknown>
-    if (second?.article && typeof second.article === 'object') {
-      (second as Record<string, unknown>).article = workflowArticle
-      // Preserve first element (image/url) from existing if it has image URL
+    if (second?.article) {
+      second.article = workflowArticle
       if (Array.isArray(existing) && existing.length >= 1 && hasImageUrl(existing[0])) {
-        workflow[0] = existing[0]
+        (workflow as unknown[])[0] = existing[0]
       }
       return JSON.stringify(workflow)
     }
   }
-  if (workflow && typeof workflow === 'object' && !Array.isArray(workflow)) {
-    const w = workflow as Record<string, unknown>
+  const w = workflow as Record<string, unknown>
+  if (w && typeof w === 'object') {
     if (w.article) w.article = workflowArticle
     else Object.assign(w, workflowArticle)
     return JSON.stringify(workflow)
@@ -224,34 +287,63 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const unwrapped = (n8nResult as any)?.json ?? (n8nResult as any)?.body ?? (n8nResult as any)?.data ?? n8nResult
-    const extracted = extractArticleContent(
-      Array.isArray(n8nResult) && n8nResult.length > 0 ? (n8nResult[0] as any)?.json ?? n8nResult[0] ?? unwrapped : unwrapped
-    )
+    // Extract article content from workflow response (handles n8n json/body/data wrappers, arrays, etc.)
+    let workflowContent = extractWorkflowContent(n8nResult)
+    if (!workflowContent) {
+      // Fallback: response might be a raw JSON string or inside output/content
+      const raw = typeof n8nResult === 'string' ? n8nResult : JSON.stringify(n8nResult)
+      const codeBlockMatch = raw.match(/^[\s\n]*```(?:json)?\s*([\s\S]*?)```[\s\n]*$/m)
+      workflowContent = codeBlockMatch ? codeBlockMatch[1].trim() : raw
+      try {
+        JSON.parse(workflowContent)
+      } catch {
+        console.error('[reedit] Could not extract valid JSON from workflow response')
+        return NextResponse.json(
+          { error: 'Workflow response must be valid JSON with article content (title, content, etc.)' },
+          { status: 502 }
+        )
+      }
+    }
+    // Strip markdown code fences if still present
+    const codeBlockMatch = workflowContent.match(/^[\s\n]*```(?:json)?\s*([\s\S]*?)```[\s\n]*$/m)
+    if (codeBlockMatch) workflowContent = codeBlockMatch[1].trim()
 
-    const codeBlockMatch = extracted.match(/^[\s\n]*```(?:json)?\s*([\s\S]*?)```[\s\n]*$/m)
-    const workflowContent = codeBlockMatch ? codeBlockMatch[1].trim() : extracted
     const mergedContent = mergeContent(output.content, workflowContent)
 
-    const { data: updatedOutput, error: updateError } = await supabase
-      .from('diffuse_project_outputs')
-      .update({
-        content: mergedContent,
-        updated_at: new Date().toISOString(),
+    // Save BOTH renditions to revisions so we can compare and diff from DB
+    // 1. Previous: content before re-edit (what was in the output)
+    const { error: revPrevError } = await supabase
+      .from('diffuse_project_output_revisions')
+      .insert({
+        output_id: output_id,
+        content: output.content,
+        revision_type: 'previous',
       })
-      .eq('id', output_id)
-      .select()
-      .single()
 
-    if (updateError) {
-      console.error('[reedit] DB update failed:', updateError)
-      return NextResponse.json({ error: 'Failed to save updated output' }, { status: 500 })
+    if (revPrevError) {
+      console.warn('[reedit] Failed to save previous revision (table may not exist or revision_type column missing):', revPrevError.message)
     }
 
+    // 2. Proposed: workflow result (merged content for user to approve/deny per field)
+    const { error: revProposedError } = await supabase
+      .from('diffuse_project_output_revisions')
+      .insert({
+        output_id: output_id,
+        content: mergedContent,
+        revision_type: 'proposed',
+      })
+
+    if (revProposedError) {
+      console.warn('[reedit] Failed to save proposed revision:', revProposedError.message)
+    }
+
+    // Return proposed content without updating - user approves/denies per field, then applies
     const response = NextResponse.json({
       success: true,
-      output: updatedOutput as DiffuseProjectOutput,
-      message: 'Output re-edited successfully',
+      output: output as DiffuseProjectOutput,
+      proposed_content: mergedContent,
+      previous_content: output.content,
+      message: 'Re-edit complete. Review changes and apply to save.',
     })
     const rateLimitHeaders = getRateLimitHeaders(request, 'expensive')
     Object.entries(rateLimitHeaders).forEach(([k, v]) => response.headers.set(k, v))

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime } from '@/lib/utils/format'
@@ -8,6 +8,7 @@ import type { DiffuseProjectOutput } from '@/types/database'
 import { ModalShell, ModalHeader, ModalMetadataRow, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
 import { MODAL_ICONS } from './modalIcons'
 import ReEditCommentsModal from './ReEditCommentsModal'
+import HighlightedDiff from './HighlightedDiff'
 
 interface OutputDetailModalProps {
   output: DiffuseProjectOutput
@@ -65,6 +66,81 @@ const extractArrayField = (content: string, field: string): string[] => {
   return []
 }
 
+// Parse output content to StructuredArticle (used for display and diff)
+function parseContentToArticle(content: string): StructuredArticle | null {
+  try {
+    let parsed: Record<string, unknown> | null = null
+    let jsonString = (content || '').trim()
+    try {
+      parsed = JSON.parse(jsonString)
+    } catch {
+      if (jsonString.startsWith('"') && jsonString.endsWith('"')) {
+        try {
+          jsonString = JSON.parse(jsonString)
+          parsed = JSON.parse(jsonString)
+        } catch {
+          /* fall through */
+        }
+      }
+    }
+    const str = (v: unknown) => (typeof v === 'string' ? v.replace(/\\n/g, '\n') : '')
+    if (Array.isArray(parsed) && parsed.length >= 2 && parsed[1]?.article && typeof parsed[1].article === 'object') {
+      const a = parsed[1].article as Record<string, unknown>
+      return {
+        title: (a.title as string) || '',
+        author: (a.author as string) || 'Diffuse.AI',
+        subtitle: (a.subtitle as string)?.replace(/\\n/g, '\n') ?? null,
+        excerpt: str(a.excerpt) || '',
+        content: str(a.content) || '',
+        photo_caption: (a.photo_caption as string)?.replace(/\\n/g, '\n') ?? null,
+        photo_credit: (a.photo_credit as string)?.replace(/\\n/g, '\n') ?? null,
+        suggested_sections: a.suggested_sections as string[] | undefined,
+        category: a.category as string | undefined,
+        tags: a.tags as string[] | undefined,
+        meta_title: a.meta_title as string | undefined,
+        meta_description: a.meta_description as string | undefined,
+      }
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed.title || parsed.content)) {
+      return {
+        title: (parsed.title as string) || '',
+        author: (parsed.author as string) || 'Diffuse.AI',
+        subtitle: ((parsed.subtitle as string)?.replace(/\\n/g, '\n')) || null,
+        excerpt: ((parsed.excerpt as string)?.replace(/\\n/g, '\n')) || '',
+        content: ((parsed.content as string)?.replace(/\\n/g, '\n')) || '',
+        photo_caption: ((parsed.photo_caption as string)?.replace(/\\n/g, '\n')) || null,
+        photo_credit: ((parsed.photo_credit as string)?.replace(/\\n/g, '\n')) || null,
+        suggested_sections: parsed.suggested_sections as string[] | undefined,
+        category: parsed.category as string | undefined,
+        tags: parsed.tags as string[] | undefined,
+        meta_title: parsed.meta_title as string | undefined,
+        meta_description: parsed.meta_description as string | undefined,
+      }
+    }
+    const title = extractField(content, 'title')
+    const articleContent = extractField(content, 'content')
+    if (title || articleContent) {
+      return {
+        title: title || '',
+        author: extractField(content, 'author') || 'Diffuse.AI',
+        subtitle: extractField(content, 'subtitle') || null,
+        excerpt: extractField(content, 'excerpt') || '',
+        content: articleContent || '',
+        photo_caption: extractField(content, 'photo_caption') || null,
+        photo_credit: extractField(content, 'photo_credit') || null,
+        suggested_sections: extractArrayField(content, 'suggested_sections'),
+        category: extractField(content, 'category') || undefined,
+        tags: extractArrayField(content, 'tags'),
+        meta_title: extractField(content, 'meta_title') || undefined,
+        meta_description: extractField(content, 'meta_description') || undefined,
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export default function OutputDetailModal({ 
   output, 
   onClose, 
@@ -88,7 +164,48 @@ export default function OutputDetailModal({
   const [uploadingCover, setUploadingCover] = useState(false)
   const [photoLightboxOpen, setPhotoLightboxOpen] = useState(false)
   const [showReEditModal, setShowReEditModal] = useState(false)
+  /** Optimistic reedit count so the label updates immediately after apply */
+  const [optimisticReeditCount, setOptimisticReeditCount] = useState<number | null>(null)
+  const [reeditState, setReeditState] = useState<{
+    proposedArticle: StructuredArticle
+    previousArticle: StructuredArticle
+    previousContent: string
+  } | null>(null)
+  const [fieldApprovals, setFieldApprovals] = useState<Record<string, boolean>>({})
+  const [applying, setApplying] = useState(false)
   const coverPhotoInputRef = useRef<HTMLInputElement>(null)
+
+  // Build merged content JSON from previous structure + merged article
+  const buildMergedContent = (merged: StructuredArticle): string => {
+    try {
+      const prevParsed = JSON.parse(reeditState!.previousContent)
+      if (Array.isArray(prevParsed) && prevParsed.length >= 2) {
+        return JSON.stringify([prevParsed[0], { article: merged }])
+      }
+      return JSON.stringify(merged)
+    } catch {
+      return JSON.stringify(merged)
+    }
+  }
+
+  const DIFF_FIELDS = ['title', 'author', 'subtitle', 'excerpt', 'content', 'category', 'suggested_sections', 'tags', 'meta_title', 'meta_description'] as const
+
+  const getFieldVal = (a: StructuredArticle | null, field: (typeof DIFF_FIELDS)[number]): string => {
+    if (!a) return ''
+    const v = a[field]
+    if (Array.isArray(v)) return v.join(', ')
+    return String(v ?? '')
+  }
+
+  const hasFieldChanged = (prev: StructuredArticle, next: StructuredArticle, field: (typeof DIFF_FIELDS)[number]): boolean => {
+    return getFieldVal(prev, field) !== getFieldVal(next, field)
+  }
+
+  // Display value: when in reedit mode use proposed (synced with previous for resolved fields)
+  const getDisplayVal = (field: (typeof DIFF_FIELDS)[number]) =>
+    reeditState && article ? getFieldVal(reeditState.proposedArticle, field) : getFieldVal(article, field)
+
+  const showDiff = !!reeditState && !!article
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
@@ -194,93 +311,28 @@ export default function OutputDetailModal({
     }
   }
 
-  // Try to parse structured content - with fallback to regex extraction
+  // Clear reedit state and optimistic count when switching to a different output
+  const reeditOutputIdRef = useRef<string | null>(null)
   useEffect(() => {
-    const parseContent = (content: string): StructuredArticle | null => {
-      try {
-        let parsed: Record<string, unknown> | null = null
-        
-        if (typeof content === 'string') {
-          let jsonString = content.trim()
-          
-          try {
-            parsed = JSON.parse(jsonString)
-          } catch {
-            if (jsonString.startsWith('"') && jsonString.endsWith('"')) {
-              try {
-                jsonString = JSON.parse(jsonString)
-                parsed = JSON.parse(jsonString)
-              } catch {
-                // Fall through to regex extraction
-              }
-            }
-          }
-        }
-        
-        // New workflow format: [ { revised_prompt, url }, { article, image_prompt } ]
-        if (Array.isArray(parsed) && parsed.length >= 2 && parsed[1]?.article && typeof parsed[1].article === 'object') {
-          const a = parsed[1].article as Record<string, unknown>
-          const str = (v: unknown) => (typeof v === 'string' ? v.replace(/\\n/g, '\n') : '')
-          return {
-            title: (a.title as string) || '',
-            author: (a.author as string) || 'Diffuse.AI',
-            subtitle: (a.subtitle as string)?.replace(/\\n/g, '\n') ?? null,
-            excerpt: str(a.excerpt) || '',
-            content: str(a.content) || '',
-            photo_caption: (a.photo_caption as string)?.replace(/\\n/g, '\n') ?? null,
-            photo_credit: (a.photo_credit as string)?.replace(/\\n/g, '\n') ?? null,
-            suggested_sections: a.suggested_sections as string[] | undefined,
-            category: a.category as string | undefined,
-            tags: a.tags as string[] | undefined,
-            meta_title: a.meta_title as string | undefined,
-            meta_description: a.meta_description as string | undefined,
-          }
-        }
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed.title || parsed.content)) {
-          return {
-            title: (parsed.title as string) || '',
-            author: (parsed.author as string) || 'Diffuse.AI',
-            subtitle: ((parsed.subtitle as string)?.replace(/\\n/g, '\n')) || null,
-            excerpt: ((parsed.excerpt as string)?.replace(/\\n/g, '\n')) || '',
-            content: ((parsed.content as string)?.replace(/\\n/g, '\n')) || '',
-            photo_caption: ((parsed.photo_caption as string)?.replace(/\\n/g, '\n')) || null,
-            photo_credit: ((parsed.photo_credit as string)?.replace(/\\n/g, '\n')) || null,
-            suggested_sections: parsed.suggested_sections as string[] | undefined,
-            category: parsed.category as string | undefined,
-            tags: parsed.tags as string[] | undefined,
-            meta_title: parsed.meta_title as string | undefined,
-            meta_description: parsed.meta_description as string | undefined,
-          }
-        }
-        
-        // Fallback: Try regex extraction
-        const title = extractField(content, 'title')
-        const articleContent = extractField(content, 'content')
-        
-        if (title || articleContent) {
-          return {
-            title: title || '',
-            author: extractField(content, 'author') || 'Diffuse.AI',
-            subtitle: extractField(content, 'subtitle') || null,
-            excerpt: extractField(content, 'excerpt') || '',
-            content: articleContent || '',
-            photo_caption: extractField(content, 'photo_caption') || null,
-            photo_credit: extractField(content, 'photo_credit') || null,
-            suggested_sections: extractArrayField(content, 'suggested_sections'),
-            category: extractField(content, 'category') || undefined,
-            tags: extractArrayField(content, 'tags'),
-            meta_title: extractField(content, 'meta_title') || undefined,
-            meta_description: extractField(content, 'meta_description') || undefined,
-          }
-        }
-        
-        return null
-      } catch {
-        return null
-      }
+    if (reeditState && reeditOutputIdRef.current && output.id !== reeditOutputIdRef.current) {
+      setReeditState(null)
+      setFieldApprovals({})
+      setOptimisticReeditCount(null)
     }
-    
-    const parsedArticle = parseContent(output.content)
+    if (reeditState) reeditOutputIdRef.current = output.id
+  }, [output.id, reeditState])
+
+  // Use server reedit_count when it catches up (e.g. after fetchProjectData)
+  useEffect(() => {
+    const serverCount = output.reedit_count ?? 0
+    if (optimisticReeditCount != null && serverCount >= optimisticReeditCount) {
+      setOptimisticReeditCount(null)
+    }
+  }, [output.reedit_count, optimisticReeditCount])
+
+  // Parse structured content when output changes
+  useEffect(() => {
+    const parsedArticle = parseContentToArticle(output.content)
     setArticle(parsedArticle)
     setRawContent(output.content)
   }, [output.content])
@@ -289,19 +341,25 @@ export default function OutputDetailModal({
     setSaving(true)
     try {
       const contentToSave = article ? JSON.stringify(article) : rawContent
-      
-      const { error: updateError } = await supabase
+      const newReeditCount = (output.reedit_count ?? 0) + 1
+
+      const { data: updatedOutput, error: updateError } = await supabase
         .from('diffuse_project_outputs')
         .update({
           content: contentToSave,
           updated_at: new Date().toISOString(),
+          reedit_count: newReeditCount,
         })
         .eq('id', output.id)
+        .select()
+        .single()
 
       if (updateError) throw updateError
 
       setIsEditing(false)
+      setOptimisticReeditCount(newReeditCount)
       if (onUpdate) onUpdate()
+      onReeditComplete?.(updatedOutput ? { ...updatedOutput, reedit_count: newReeditCount } : output)
       onClose()
     } catch (error) {
       console.error('Error saving output:', error)
@@ -345,9 +403,76 @@ export default function OutputDetailModal({
       const data = await res.json().catch(() => ({}))
       throw new Error(data?.error || data?.message || 'Re-edit failed')
     }
-    const { output: updatedOutput } = await res.json()
-    onUpdate?.()
-    onReeditComplete?.(updatedOutput)
+    const { proposed_content, previous_content } = await res.json()
+    const proposedArticle = parseContentToArticle(proposed_content)
+    const previousArticle = parseContentToArticle(previous_content)
+    if (!proposedArticle || !previousArticle) {
+      throw new Error('Could not parse workflow response')
+    }
+    setReeditState({ proposedArticle, previousArticle, previousContent: previous_content })
+    setFieldApprovals({})
+  }
+
+  const handleApplyReedit = async () => {
+    if (!reeditState) return
+    setApplying(true)
+    try {
+      // Anything denied stays denied; anything approved or not yet chosen defaults to approved (use proposed)
+      const merged = { ...reeditState.proposedArticle }
+      for (const field of DIFF_FIELDS) {
+        if (fieldApprovals[field] === false) {
+          (merged as Record<string, unknown>)[field] = reeditState.previousArticle[field]
+        }
+        // fieldApprovals[field] === true or undefined → use proposed (already in merged)
+      }
+      let contentToSave: string
+      try {
+        const prevParsed = JSON.parse(reeditState.previousContent)
+        if (Array.isArray(prevParsed) && prevParsed.length >= 2) {
+          const first = prevParsed[0]
+          contentToSave = JSON.stringify([first, { article: merged }])
+        } else {
+          contentToSave = JSON.stringify(merged)
+        }
+      } catch {
+        contentToSave = JSON.stringify(merged)
+      }
+      const res = await fetch('/api/workflow/reedit/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_id: output.id, content: contentToSave }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data?.error || data?.message || 'Failed to apply')
+      }
+      const { output: updatedOutput } = await res.json()
+      const newCount = updatedOutput?.reedit_count ?? (output.reedit_count ?? 0) + 1
+      setOptimisticReeditCount(newCount)
+      setReeditState(null)
+      setFieldApprovals({})
+      onUpdate?.()
+      onReeditComplete?.({ ...updatedOutput, reedit_count: newCount })
+    } catch (err) {
+      console.error('Apply reedit failed:', err)
+      alert(err instanceof Error ? err.message : 'Failed to apply changes')
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  const handleApproveField = (field: (typeof DIFF_FIELDS)[number]) => {
+    if (!reeditState) return
+    setFieldApprovals(prev => ({ ...prev, [field]: true }))
+    // Update display immediately: sync previous to proposed so this field shows the new version
+    setReeditState(prev => prev ? { ...prev, previousArticle: { ...prev.previousArticle, [field]: prev.proposedArticle[field] } } : null)
+  }
+
+  const handleDenyField = (field: (typeof DIFF_FIELDS)[number]) => {
+    if (!reeditState) return
+    setFieldApprovals(prev => ({ ...prev, [field]: false }))
+    // Update display immediately: sync proposed to previous so this field shows the old version
+    setReeditState(prev => prev ? { ...prev, proposedArticle: { ...prev.proposedArticle, [field]: prev.previousArticle[field] } } : null)
   }
 
   const handleCopyAll = async () => {
@@ -385,46 +510,53 @@ export default function OutputDetailModal({
   const statusColors: Record<string, string> = {
     pending: 'text-pale-blue',
     processing: 'text-cosmic-orange',
-    completed: 'text-green-400',
+    completed: outputAccentColor,
     failed: 'text-red-400',
   }
+  const reeditCount = optimisticReeditCount ?? output.reedit_count ?? 0
+  const statusLabel = output.workflow_status === 'completed'
+    ? `COMPLETED (${reeditCount} EDIT${reeditCount !== 1 ? 'S' : ''})`
+    : output.workflow_status.toUpperCase()
 
   const headerActions = (
     <>
       <button
+        type="button"
         onClick={() => setShowReEditModal(true)}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg text-body-sm font-medium text-cosmic-orange hover:bg-cosmic-orange/10 transition-colors"
+        className="inline-flex items-center gap-2 px-2 py-2 rounded-full text-medium-gray hover:text-cosmic-orange transition-colors focus:outline-none focus:ring-0"
         title="Edit with Diffuse"
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        <span className="text-body-sm hidden sm:inline">Edit with Diffuse</span>
+        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
-        Edit with Diffuse
       </button>
       <button
+        type="button"
         onClick={handleCopyAll}
-        className="p-2 rounded-full text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 transition-colors"
+        className="inline-flex items-center justify-center p-2 rounded-full text-medium-gray hover:text-cosmic-orange transition-colors focus:outline-none focus:ring-0"
         title="Copy all fields"
       >
         {copied === 'all' ? (
-          <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 13l4 4L19 7" />
           </svg>
         ) : (
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
           </svg>
         )}
       </button>
       {showDeleteButton && (
         <button
+          type="button"
           onClick={handleDelete}
           disabled={deleting}
-          className="p-2 rounded-full text-medium-gray hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+          className="inline-flex items-center justify-center p-2 rounded-full text-medium-gray hover:text-red-400 transition-colors disabled:opacity-50 focus:outline-none focus:ring-0"
           title="Delete"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
         </button>
       )}
@@ -442,7 +574,7 @@ export default function OutputDetailModal({
       />
       <ModalMetadataRow>
         <span className={`uppercase font-medium tracking-wider ${statusColors[output.workflow_status]}`}>
-          {output.workflow_status.toUpperCase()}
+          {statusLabel}
         </span>
         <span>•</span>
         <span>{formatDateTime(output.created_at)}</span>
@@ -450,6 +582,18 @@ export default function OutputDetailModal({
           <>
             <span>•</span>
             <span className="text-cosmic-orange">Unsaved changes</span>
+          </>
+        )}
+        {showDiff && (
+          <>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => { setReeditState(null); setFieldApprovals({}) }}
+              className="text-medium-gray hover:text-secondary-white underline"
+            >
+              Dismiss change highlights
+            </button>
           </>
         )}
       </ModalMetadataRow>
@@ -469,7 +613,7 @@ export default function OutputDetailModal({
           {!article && coverPhotoUrl ? (
             <div className="mb-5">
               <div className="flex items-center justify-between mb-2">
-                <label className="text-caption text-medium-gray uppercase tracking-wider">Image</label>
+                <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE</label>
                 <div className="flex items-center gap-1">
                   {canEdit && (
                     <button
@@ -559,91 +703,119 @@ export default function OutputDetailModal({
               {/* Title */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Title</label>
-                  <button
-                    onClick={() => handleCopy(article.title || '', 'title')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'title' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">TITLE</label>
+                  <div className="flex items-center gap-1">
+                    {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'title') && (
+                      <>
+                        <button
+                          onClick={() => handleApproveField('title')}
+                          className={`p-1.5 rounded transition-colors ${fieldApprovals['title'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`}
+                          title="Approve changes"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        </button>
+                        <button
+                          onClick={() => handleDenyField('title')}
+                          className={`p-1.5 rounded transition-colors ${fieldApprovals['title'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`}
+                          title="Reject changes"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </>
                     )}
-                  </button>
+                    <button
+                      onClick={() => handleCopy((reeditState?.proposedArticle ?? article).title || '', 'title')}
+                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                    >
+                      {copied === 'title' ? (
+                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={article.title}
-                  onChange={(e) => handleFieldChange('title', e.target.value)}
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'title') ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                    <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'title')} newStr={getFieldVal(reeditState.proposedArticle, 'title')} />
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={getDisplayVal('title')}
+                    onChange={(e) => handleFieldChange('title', e.target.value)}
+                    readOnly={!canEdit || showDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                      canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* Author */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Author</label>
-                  <button
-                    onClick={() => handleCopy(article.author || '', 'author')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'author' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">AUTHOR</label>
+                  <div className="flex items-center gap-1">
+                    {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'author') && (
+                      <>
+                        <button onClick={() => handleApproveField('author')}  className={`p-1.5 rounded transition-colors ${fieldApprovals['author'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                        <button onClick={() => handleDenyField('author')}  className={`p-1.5 rounded transition-colors ${fieldApprovals['author'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                      </>
                     )}
-                  </button>
+                    <button onClick={() => handleCopy((reeditState?.proposedArticle ?? article).author || '', 'author')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors">
+                      {copied === 'author' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={article.author}
-                  onChange={(e) => handleFieldChange('author', e.target.value)}
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'author') ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                    <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'author')} newStr={getFieldVal(reeditState.proposedArticle, 'author')} />
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={getDisplayVal('author')}
+                    onChange={(e) => handleFieldChange('author', e.target.value)}
+                    readOnly={!canEdit || showDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                      canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* Subtitle */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Subtitle</label>
-                  <button
-                    onClick={() => handleCopy(article.subtitle || '', 'subtitle')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'subtitle' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">SUBTITLE</label>
+                  <div className="flex items-center gap-1">
+                    {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'subtitle') && (
+                      <>
+                        <button onClick={() => handleApproveField('subtitle')}  className={`p-1.5 rounded ${fieldApprovals['subtitle'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                        <button onClick={() => handleDenyField('subtitle')}  className={`p-1.5 rounded ${fieldApprovals['subtitle'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                      </>
                     )}
-                  </button>
+                    <button onClick={() => handleCopy((reeditState?.proposedArticle ?? article).subtitle || '', 'subtitle')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded">
+                      {copied === 'subtitle' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={article.subtitle || ''}
-                  onChange={(e) => handleFieldChange('subtitle', e.target.value)}
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'subtitle') ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                    <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'subtitle')} newStr={getFieldVal(reeditState.proposedArticle, 'subtitle')} />
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={getDisplayVal('subtitle')}
+                    onChange={(e) => handleFieldChange('subtitle', e.target.value)}
+                    readOnly={!canEdit || showDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                      canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* Cover image + Image caption + Photo credit: desktop = image left (same-style window), caption/credit right; mobile = image below subtitle, then caption/credit */}
@@ -651,7 +823,7 @@ export default function OutputDetailModal({
                 {/* Photo window: same format as other fields (label + copy + bordered box); box aligns top with caption, bottom with credit */}
                 <div className="flex flex-col mb-4 md:mb-0 md:flex-shrink-0 w-full md:w-52 md:max-w-[220px] min-h-0">
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-caption text-medium-gray uppercase tracking-wider">Image</label>
+                    <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE</label>
                     {coverPhotoUrl ? (
                       <div className="flex items-center gap-1">
                         {canEdit && (
@@ -757,7 +929,7 @@ export default function OutputDetailModal({
                 <div className="flex-1 min-w-0 space-y-5">
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-caption text-medium-gray uppercase tracking-wider">Image caption (optional)</label>
+                      <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE CAPTION (OPTIONAL)</label>
                       <button
                         onClick={() => handleCopy(article.photo_caption || '', 'photo_caption')}
                         className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
@@ -778,15 +950,15 @@ export default function OutputDetailModal({
                       value={article.photo_caption || ''}
                       onChange={(e) => handleFieldChange('photo_caption', e.target.value)}
                       placeholder="Short description of the cover image, tied to the article"
-                      readOnly={!canEdit}
-                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                        canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                      readOnly={!canEdit || showDiff}
+                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                        canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                       }`}
                     />
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-caption text-medium-gray uppercase tracking-wider">Image credit (optional)</label>
+                      <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE CREDIT (OPTIONAL)</label>
                       <button
                         onClick={() => handleCopy(article.photo_credit || '', 'photo_credit')}
                         className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
@@ -807,9 +979,9 @@ export default function OutputDetailModal({
                       value={article.photo_credit || ''}
                       onChange={(e) => handleFieldChange('photo_credit', e.target.value)}
                       placeholder="e.g. Jane Smith / Spring-Ford Press"
-                      readOnly={!canEdit}
-                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                        canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                      readOnly={!canEdit || showDiff}
+                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                        canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                       }`}
                     />
                   </div>
@@ -819,221 +991,242 @@ export default function OutputDetailModal({
               {/* Excerpt */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Excerpt</label>
-                  <button
-                    onClick={() => handleCopy(article.excerpt || '', 'excerpt')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'excerpt' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">EXCERPT</label>
+                  <div className="flex items-center gap-1">
+                    {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'excerpt') && (
+                      <>
+                        <button onClick={() => handleApproveField('excerpt')}  className={`p-1.5 rounded ${fieldApprovals['excerpt'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                        <button onClick={() => handleDenyField('excerpt')}  className={`p-1.5 rounded ${fieldApprovals['excerpt'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                      </>
                     )}
-                  </button>
+                    <button onClick={() => handleCopy((reeditState?.proposedArticle ?? article).excerpt || '', 'excerpt')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded">
+                      {copied === 'excerpt' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  value={article.excerpt}
-                  onChange={(e) => handleFieldChange('excerpt', e.target.value)}
-                  rows={3}
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'excerpt') ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[80px]">
+                    <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'excerpt')} newStr={getFieldVal(reeditState.proposedArticle, 'excerpt')} useWords />
+                  </div>
+                ) : (
+                  <textarea
+                    value={getDisplayVal('excerpt')}
+                    onChange={(e) => handleFieldChange('excerpt', e.target.value)}
+                    rows={3}
+                    readOnly={!canEdit || showDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
+                      canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* Content */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Article Content</label>
-                  <button
-                    onClick={() => handleCopy(article.content || '', 'content')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'content' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">ARTICLE CONTENT</label>
+                  <div className="flex items-center gap-1">
+                    {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'content') && (
+                      <>
+                        <button onClick={() => handleApproveField('content')}  className={`p-1.5 rounded ${fieldApprovals['content'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                        <button onClick={() => handleDenyField('content')}  className={`p-1.5 rounded ${fieldApprovals['content'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                      </>
                     )}
-                  </button>
+                    <button onClick={() => handleCopy((reeditState?.proposedArticle ?? article).content || '', 'content')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded">
+                      {copied === 'content' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  value={article.content}
-                  onChange={(e) => handleFieldChange('content', e.target.value)}
-                  rows={8}
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none max-h-[40vh] overflow-y-auto custom-scrollbar ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'content') ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[200px] max-h-[40vh] overflow-y-auto custom-scrollbar">
+                    <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'content')} newStr={getFieldVal(reeditState.proposedArticle, 'content')} useWords block />
+                  </div>
+                ) : (
+                  <textarea
+                    value={getDisplayVal('content')}
+                    onChange={(e) => handleFieldChange('content', e.target.value)}
+                    rows={8}
+                    readOnly={!canEdit || showDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none max-h-[40vh] overflow-y-auto custom-scrollbar ${
+                      canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* Category */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Category</label>
-                  <button
-                    onClick={() => handleCopy(article.category || '', 'category')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'category' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">CATEGORY</label>
+                  <div className="flex items-center gap-1">
+                    {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'category') && (
+                      <>
+                        <button onClick={() => handleApproveField('category')}  className={`p-1.5 rounded ${fieldApprovals['category'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                        <button onClick={() => handleDenyField('category')}  className={`p-1.5 rounded ${fieldApprovals['category'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                      </>
                     )}
-                  </button>
+                    <button onClick={() => handleCopy(getFieldVal(reeditState?.proposedArticle ?? article, 'category'), 'category')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded">
+                      {copied === 'category' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={article.category || ''}
-                  onChange={(e) => handleFieldChange('category', e.target.value)}
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'category') ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                    <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'category')} newStr={getFieldVal(reeditState.proposedArticle, 'category')} />
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={getDisplayVal('category')}
+                    onChange={(e) => handleFieldChange('category', e.target.value)}
+                    readOnly={!canEdit || showDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                      canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* Suggested Sections */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Suggested Sections</label>
-                  <button
-                    onClick={() => handleCopy(article.suggested_sections?.join(', ') || '', 'sections')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'sections' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">SUGGESTED SECTIONS</label>
+                  <div className="flex items-center gap-1">
+                    {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'suggested_sections') && (
+                      <>
+                        <button onClick={() => handleApproveField('suggested_sections')}  className={`p-1.5 rounded ${fieldApprovals['suggested_sections'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                        <button onClick={() => handleDenyField('suggested_sections')}  className={`p-1.5 rounded ${fieldApprovals['suggested_sections'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                      </>
                     )}
-                  </button>
+                    <button onClick={() => handleCopy(getFieldVal(reeditState?.proposedArticle ?? article, 'suggested_sections'), 'sections')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded">
+                      {copied === 'sections' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={article.suggested_sections?.join(', ') || ''}
-                  onChange={(e) => handleFieldChange('suggested_sections', e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
-                  placeholder="Enter comma-separated sections"
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'suggested_sections') ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                    <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'suggested_sections')} newStr={getFieldVal(reeditState.proposedArticle, 'suggested_sections')} />
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={getDisplayVal('suggested_sections')}
+                    onChange={(e) => handleFieldChange('suggested_sections', e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
+                    placeholder="Enter comma-separated sections"
+                    readOnly={!canEdit || showDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                      canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* Tags */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-caption text-medium-gray uppercase tracking-wider">Tags</label>
-                  <button
-                    onClick={() => handleCopy(article.tags?.join(', ') || '', 'tags')}
-                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                  >
-                    {copied === 'tags' ? (
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">TAGS</label>
+                  <div className="flex items-center gap-1">
+                    {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'tags') && (
+                      <>
+                        <button onClick={() => handleApproveField('tags')}  className={`p-1.5 rounded ${fieldApprovals['tags'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                        <button onClick={() => handleDenyField('tags')}  className={`p-1.5 rounded ${fieldApprovals['tags'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                      </>
                     )}
-                  </button>
+                    <button onClick={() => handleCopy(getFieldVal(reeditState?.proposedArticle ?? article, 'tags'), 'tags')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded">
+                      {copied === 'tags' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={article.tags?.join(', ') || ''}
-                  onChange={(e) => handleFieldChange('tags', e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
-                  placeholder="Enter comma-separated tags"
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'tags') ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                    <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'tags')} newStr={getFieldVal(reeditState.proposedArticle, 'tags')} />
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={getDisplayVal('tags')}
+                    onChange={(e) => handleFieldChange('tags', e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
+                    placeholder="Enter comma-separated tags"
+                    readOnly={!canEdit || showDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                      canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* SEO Section */}
               <div className="pt-4 border-t border-white/10 space-y-5">
-                <h3 className="text-body-md text-secondary-white font-medium">SEO Settings</h3>
+                <h3 className="text-body-sm text-secondary-white font-medium uppercase tracking-wider">SEO Settings</h3>
                 
                 {/* Meta Title */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-caption text-medium-gray uppercase tracking-wider">
-                      Meta Title <span className="text-medium-gray/60">({article.meta_title?.length || 0}/60)</span>
+                      META TITLE <span className="text-medium-gray/60">({getFieldVal(reeditState?.proposedArticle ?? article, 'meta_title').length}/60)</span>
                     </label>
-                    <button
-                      onClick={() => handleCopy(article.meta_title || '', 'meta_title')}
-                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                    >
-                      {copied === 'meta_title' ? (
-                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
+                    <div className="flex items-center gap-1">
+                      {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'meta_title') && (
+                        <>
+                          <button onClick={() => handleApproveField('meta_title')}  className={`p-1.5 rounded ${fieldApprovals['meta_title'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                          <button onClick={() => handleDenyField('meta_title')}  className={`p-1.5 rounded ${fieldApprovals['meta_title'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                        </>
                       )}
-                    </button>
+                      <button onClick={() => handleCopy(getFieldVal(reeditState?.proposedArticle ?? article, 'meta_title'), 'meta_title')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded">
+                        {copied === 'meta_title' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    value={article.meta_title || ''}
-                    onChange={(e) => handleFieldChange('meta_title', e.target.value)}
-                    readOnly={!canEdit}
-                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                      canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                    }`}
-                  />
+                  {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'meta_title') ? (
+                    <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                      <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'meta_title')} newStr={getFieldVal(reeditState.proposedArticle, 'meta_title')} />
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={getDisplayVal('meta_title')}
+                      onChange={(e) => handleFieldChange('meta_title', e.target.value)}
+                      readOnly={!canEdit || showDiff}
+                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                        canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                      }`}
+                    />
+                  )}
                 </div>
                 
                 {/* Meta Description */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-caption text-medium-gray uppercase tracking-wider">
-                      Meta Description <span className="text-medium-gray/60">({article.meta_description?.length || 0}/160)</span>
+                      META DESCRIPTION <span className="text-medium-gray/60">({getDisplayVal('meta_description').length}/160)</span>
                     </label>
-                    <button
-                      onClick={() => handleCopy(article.meta_description || '', 'meta_description')}
-                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                    >
-                      {copied === 'meta_description' ? (
-                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
+                    <div className="flex items-center gap-1">
+                      {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'meta_description') && (
+                        <>
+                          <button onClick={() => handleApproveField('meta_description')}  className={`p-1.5 rounded ${fieldApprovals['meta_description'] === true ? 'text-green-400 bg-green-400/10' : 'text-medium-gray hover:text-green-400 hover:bg-green-400/10'} disabled:opacity-50`} title="Approve"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                          <button onClick={() => handleDenyField('meta_description')}  className={`p-1.5 rounded ${fieldApprovals['meta_description'] === false ? 'text-red-400 bg-red-400/10' : 'text-medium-gray hover:text-red-400 hover:bg-red-400/10'} disabled:opacity-50`} title="Reject"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                        </>
                       )}
-                    </button>
+                      <button onClick={() => handleCopy(getDisplayVal('meta_description'), 'meta_description')} className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded">
+                        {copied === 'meta_description' ? <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+                      </button>
+                    </div>
                   </div>
-                  <textarea
-                    value={article.meta_description || ''}
-                    onChange={(e) => handleFieldChange('meta_description', e.target.value)}
-                    rows={2}
-                    readOnly={!canEdit}
-                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
-                      canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                    }`}
-                  />
+                  {showDiff && reeditState && hasFieldChanged(reeditState.previousArticle, reeditState.proposedArticle, 'meta_description') ? (
+                    <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[60px]">
+                      <HighlightedDiff oldStr={getFieldVal(reeditState.previousArticle, 'meta_description')} newStr={getFieldVal(reeditState.proposedArticle, 'meta_description')} useWords />
+                    </div>
+                  ) : (
+                    <textarea
+                      value={getDisplayVal('meta_description')}
+                      onChange={(e) => handleFieldChange('meta_description', e.target.value)}
+                      rows={2}
+                      readOnly={!canEdit || showDiff}
+                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
+                        canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                      }`}
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -1041,7 +1234,7 @@ export default function OutputDetailModal({
             /* Raw Content View (fallback) */
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-caption text-medium-gray uppercase tracking-wider">Raw Content</label>
+                <label className="text-caption text-medium-gray uppercase tracking-wider">RAW CONTENT</label>
                 <button
                   onClick={() => handleCopy(rawContent, 'raw')}
                   className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
@@ -1064,9 +1257,9 @@ export default function OutputDetailModal({
                   if (!isEditing) setIsEditing(true)
                 }}
                 rows={12}
-                readOnly={!canEdit}
+                readOnly={!canEdit || showDiff}
                 className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none max-h-[50vh] overflow-y-auto custom-scrollbar ${
-                  canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                  canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                 }`}
               />
             </div>

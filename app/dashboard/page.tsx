@@ -375,26 +375,7 @@ export default function DashboardPage() {
                 
                 {/* Access */}
                 <div className="text-caption text-medium-gray uppercase tracking-wider">
-                  {project.orgs && project.orgs.length > 0 ? (
-                    <span className="flex items-center gap-1 flex-wrap">
-                      {project.orgs.map((org, index) => (
-                        <span key={org.id} className="inline-flex items-center">
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              router.push(`/dashboard/organization/${org.id}`)
-                            }}
-                            className="text-medium-gray hover:text-gray-300 cursor-pointer transition-colors"
-                          >
-                            {org.name}
-                          </span>
-                          {index < project.orgs!.length - 1 && <span className="text-medium-gray">,&nbsp;</span>}
-                        </span>
-                      ))}
-                    </span>
-                  ) : (
-                    <span>PRIVATE</span>
-                  )}
+                  {project.orgs && project.orgs.length > 0 ? 'PUBLIC' : 'PRIVATE'}
                 </div>
               </div>
             </div>
