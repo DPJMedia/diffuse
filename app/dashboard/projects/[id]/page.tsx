@@ -1655,7 +1655,7 @@ export default function ProjectDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
               {outputs.map((output) => {
                 const info = getOutputInfo(output)
-                const isAd = project?.project_type === 'advertisement'
+                const isAd = output.output_type === 'ad'
                 const outputLabel = isAd ? 'ADVERTISEMENT' : 'ARTICLE'
                 const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
                 return (
@@ -1908,7 +1908,7 @@ export default function ProjectDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {trashedOutputs.map((output) => {
                   const info = getOutputInfo(output)
-                  const isAd = project?.project_type === 'advertisement'
+                  const isAd = output.output_type === 'ad'
                   const outputLabel = isAd ? 'ADVERTISEMENT' : 'ARTICLE'
                   const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
                   return (
@@ -2026,6 +2026,7 @@ export default function ProjectDetailPage() {
           onClose={() => setShowGenerateOptionsModal(false)}
           onGenerate={(payload) => handleGenerate(payload.outputType, payload, 'refine')}
           initialValues={generateOptionsInitialValues}
+          defaultOutputType={project?.project_type === 'advertisement' ? 'ad' : 'article'}
           onSavePreferences={async (prefs) => {
             await fetch('/api/user/workflow-preferences', {
               method: 'PUT',

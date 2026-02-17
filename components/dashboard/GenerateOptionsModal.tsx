@@ -32,6 +32,8 @@ export interface GenerateOptionsModalProps {
   }) => void
   initialValues?: WorkflowPreferences
   onSavePreferences?: (prefs: WorkflowPreferences) => Promise<void>
+  /** When opening from the ads page (advertisement project), default the final "Choose output type" to ad */
+  defaultOutputType?: 'article' | 'ad'
 }
 
 export default function GenerateOptionsModal({
@@ -39,6 +41,7 @@ export default function GenerateOptionsModal({
   onGenerate,
   initialValues,
   onSavePreferences,
+  defaultOutputType = 'article',
 }: GenerateOptionsModalProps) {
   const [step, setStep] = useState(0)
   const [tonePreset, setTonePreset] = useState<string>(() => {
@@ -66,7 +69,7 @@ export default function GenerateOptionsModal({
     return AUDIENCE_OPTIONS.includes(a as any) ? '' : a
   })
   const [comments, setComments] = useState<string>('')
-  const [outputType, setOutputType] = useState<'article' | 'ad'>('article')
+  const [outputType, setOutputType] = useState<'article' | 'ad'>(defaultOutputType)
   const [saveAsDefault, setSaveAsDefault] = useState(false)
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [toneOtherFocused, setToneOtherFocused] = useState(false)

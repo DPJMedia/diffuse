@@ -21,7 +21,7 @@ interface OutputDetailModalProps {
   canDelete?: boolean
   /** When output has no cover_photo_path, use project cover photo input so it still displays */
   fallbackCoverPhotoPath?: string | null
-  /** Project type for accent color: teal = article, amber = advertisement (matches card previews) */
+  /** Fallback for accent color when output has no output_type (teal = article, amber = advertisement). Prefer output.output_type when present. */
   projectType?: 'article' | 'advertisement'
 }
 
@@ -152,8 +152,9 @@ export default function OutputDetailModal({
   fallbackCoverPhotoPath = null,
   projectType
 }: OutputDetailModalProps) {
-  // Accent color for output type (matches card previews: teal = article, amber = advertisement)
-  const outputAccentColor = projectType === 'advertisement' ? 'text-amber-400' : 'text-teal-400'
+  // Use output's own type (article vs ad) for label/icon; fall back to project type for older data
+  const displayAsAd = output.output_type === 'ad' || projectType === 'advertisement'
+  const outputAccentColor = displayAsAd ? 'text-amber-400' : 'text-teal-400'
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
