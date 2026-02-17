@@ -60,6 +60,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ASSEMBLYAI_API_KEY=your_assemblyai_key
 N8N_WEBHOOK_URL=your_n8n_webhook_url
 
+# Optional: AI-generated recording titles (Open Router, Claude 3.5 Haiku)
+# If omitted, titles are derived from the first sentence of the transcription.
+OPENROUTER=your_openrouter_api_key
+
 # Site Configuration
 NEXT_PUBLIC_SITE_URL=https://your-domain.com
 NODE_ENV=production

@@ -18,27 +18,63 @@ function getAssemblyAIClient(): AssemblyAI {
   return new AssemblyAI({ apiKey })
 }
 
-// Generate a title from chapters or transcription content
-function generateTitle(chapters: any[] | null, transcriptionText: string | null): string {
-  // Try to use the first chapter's headline
-  if (chapters && chapters.length > 0 && chapters[0].headline) {
-    return chapters[0].headline
+const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const OPENROUTER_MODEL = 'anthropic/claude-3.5-haiku'
+
+/** Generate a short title from transcription using Open Router (Claude 3.5 Haiku). Returns null if key missing or request fails. */
+async function generateTitleWithOpenRouter(transcriptionText: string): Promise<string | null> {
+  const apiKey = process.env.OPENROUTER
+  if (!apiKey || !transcriptionText?.trim()) return null
+
+  // Truncate to first ~4k chars to stay within token limits and avoid huge payloads
+  const excerpt = transcriptionText.trim().slice(0, 4000)
+
+  try {
+    const res = await fetch(OPENROUTER_CHAT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [
+          {
+            role: 'user',
+            content: `Based only on this transcription, suggest a short, clear title (no quotes, under 80 characters). Reply with only the title, nothing else.\n\nTranscription:\n${excerpt}`,
+          },
+        ],
+        max_tokens: 80,
+      }),
+    })
+
+    if (!res.ok) {
+      console.warn('Open Router title request failed:', res.status, await res.text().catch(() => ''))
+      return null
+    }
+
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+    const title = data?.choices?.[0]?.message?.content?.trim()
+    if (title && title.length > 0 && title.length <= 500) return title
+    return null
+  } catch (err) {
+    console.warn('Open Router title generation error:', err)
+    return null
   }
-  
-  // Fallback: use first sentence or first 50 chars of transcription
+}
+
+/** Fallback title from transcription when Open Router is unavailable or fails. */
+function generateTitleFallback(transcriptionText: string | null): string {
   if (transcriptionText) {
-    // Try to get first sentence
     const firstSentence = transcriptionText.split(/[.!?]/)[0]?.trim()
     if (firstSentence && firstSentence.length > 10 && firstSentence.length < 100) {
       return firstSentence
     }
-    // Otherwise truncate
     if (transcriptionText.length > 50) {
       return transcriptionText.substring(0, 50).trim() + '...'
     }
     return transcriptionText.trim()
   }
-  
   return 'Untitled Recording'
 }
 
@@ -116,11 +152,10 @@ export async function POST(request: NextRequest) {
     console.log('Audio URL:', audioUrl.substring(0, 100) + '...')
 
     const assemblyai = getAssemblyAIClient()
-    // Transcribe using AssemblyAI with auto_chapters for smart title generation
+    // Transcribe using AssemblyAI (title is generated via Open Router below)
     const transcript = await assemblyai.transcripts.transcribe({
       audio: audioUrl,
       speech_model: 'universal',
-      auto_chapters: true,
     })
 
     if (transcript.status === 'error') {
@@ -138,9 +173,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate a smart title from chapters
-    const suggestedTitle = generateTitle(transcript.chapters || null, transcript.text || null)
-    
+    // Generate title: prefer Open Router (Claude 3.5 Haiku), fallback to excerpt from transcription
+    const transcriptionText = transcript.text ?? null
+    const openRouterTitle = transcriptionText
+      ? await generateTitleWithOpenRouter(transcriptionText)
+      : null
+    const suggestedTitle = openRouterTitle ?? generateTitleFallback(transcriptionText)
+
     // Use user-provided title if they entered one, otherwise use AI-generated
     const shouldAutoGenerateTitle = !currentTitle || currentTitle === 'Processing...' || currentTitle === ''
     const finalTitle = shouldAutoGenerateTitle ? suggestedTitle : currentTitle
@@ -177,7 +216,6 @@ export async function POST(request: NextRequest) {
       transcription: transcript.text,
       suggestedTitle: suggestedTitle,
       finalTitle: finalTitle,
-      chapters: transcript.chapters || [],
     })
 
     // Add rate limit headers
