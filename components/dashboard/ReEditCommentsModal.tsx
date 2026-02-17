@@ -94,7 +94,7 @@ export default function ReEditCommentsModal({ onClose, onSubmit }: ReEditComment
               {EDIT_STATUS_MESSAGES[statusIndex]}
             </>
           ) : (
-            'Edit'
+            'Apply Changes'
           )}
         </button>
       </ModalFooter>

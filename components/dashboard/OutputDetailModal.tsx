@@ -340,8 +340,31 @@ export default function OutputDetailModal({
   const handleSave = async () => {
     setSaving(true)
     try {
-      const contentToSave = article ? JSON.stringify(article) : rawContent
-      const newReeditCount = (output.reedit_count ?? 0) + 1
+      let contentToSave: string
+      if (reeditState) {
+        // Saving after reedit: use proposed content, with any denied fields reverted to previous
+        const merged = { ...reeditState.proposedArticle }
+        for (const field of DIFF_FIELDS) {
+          if (fieldApprovals[field] === false) {
+            (merged as Record<string, unknown>)[field] = reeditState.previousArticle[field]
+          }
+        }
+        try {
+          const prevParsed = JSON.parse(reeditState.previousContent)
+          if (Array.isArray(prevParsed) && prevParsed.length >= 2) {
+            const first = prevParsed[0]
+            contentToSave = JSON.stringify([first, { article: merged }])
+          } else {
+            contentToSave = JSON.stringify(merged)
+          }
+        } catch {
+          contentToSave = JSON.stringify(merged)
+        }
+      } else {
+        contentToSave = article ? JSON.stringify(article) : rawContent
+      }
+
+      const newReeditCount = reeditState ? (output.reedit_count ?? 0) + 1 : (output.reedit_count ?? 0)
 
       const { data: updatedOutput, error: updateError } = await supabase
         .from('diffuse_project_outputs')
@@ -357,7 +380,14 @@ export default function OutputDetailModal({
       if (updateError) throw updateError
 
       setIsEditing(false)
-      setOptimisticReeditCount(newReeditCount)
+      if (reeditState) {
+        setReeditState(null)
+        setFieldApprovals({})
+        const newArticle = parseContentToArticle(contentToSave)
+        if (newArticle) setArticle(newArticle)
+        setRawContent(contentToSave)
+        setOptimisticReeditCount(newReeditCount)
+      }
       if (onUpdate) onUpdate()
       onReeditComplete?.(updatedOutput ? { ...updatedOutput, reedit_count: newReeditCount } : output)
       onClose()
