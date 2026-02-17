@@ -1,182 +1,96 @@
-# Diffuse.AI Landing Page
+# Diffuse.AI
 
-A modern, AI-focused landing page for Diffuse.AI - a workflow automation system that transforms local events and meetings into news articles.
+**Turn meeting recordings, documents, and web pages into publication-ready articles in minutes.**
 
-## Features
+Diffuse.AI is an AI-powered workflow for journalists and content teams: record or upload audio, add documents (PDF, DOCX, TXT), images (JPG, PNG), or scrape a URL—then generate articles with one click. Combine multiple inputs in a single project, edit transcriptions and outputs, and publish via integrations or copy-paste. Free to start; team collaboration and publishing integrations included.
 
-- 🎨 Modern glassmorphism design with dark theme
-- 🌊 Smooth Framer Motion animations and transitions
-- 📱 Fully responsive (mobile-first design)
-- 🎯 Built with Next.js 14, TypeScript, and Tailwind CSS
-- 🎭 IBM Plex Mono typography
-- 🎨 Custom color palette with cosmic orange accents
+---
+
+## What Diffuse.AI Does
+
+- **Meeting / recording → article** — Record in the browser or upload audio (MP3, WAV, M4A). AI transcribes and generates publication-ready articles with headlines, excerpts, and SEO metadata.
+- **Documents → article** — Upload PDF, DOCX, or TXT; extract text and generate articles.
+- **Web → article** — Scrape a URL and use the content as input for article generation.
+- **Multi-input articles** — Combine recordings, documents, images, and web scrapes in one project to create a single, comprehensive article.
+- **Team collaboration** — Create organizations, invite members, and use role-based access (Owner, Admin, Editor, Viewer).
+- **Publishing integrations** — Connect to your publishing frontend so generated articles auto-populate; no copy-paste required.
+- **Edit & revise** — Edit transcriptions before generating; edit and re-edit every output (title, subtitle, excerpt, content, SEO).
+
+Ideal for: **local newsrooms, journalists, freelancers, content teams, municipalities**, and anyone who needs to turn meetings, interviews, press conferences, or documents into articles quickly.
+
+---
+
+## Strengths (at a glance)
+
+| Strength | Description |
+|----------|-------------|
+| **One workflow** | Record → Transcribe → Generate → Publish in one tool instead of juggling ChatGPT and manual steps. |
+| **Multiple input types** | Recordings, documents (PDF/DOCX/TXT), images, web scraping—alone or combined. |
+| **AI transcription** | High-accuracy transcription with automatic titles; edit before generating. |
+| **Publication-ready output** | Headlines, excerpts, full content, and SEO metadata; editable and revisable. |
+| **Free to start** | No credit card required; paid tiers for more usage and team features. |
+| **Publishing integrations** | Auto-populate articles to your frontend (e.g. Spring-Ford Press). |
+
+---
+
+## Tech Stack (for developers)
+
+- **Framework:** Next.js 14  
+- **Language:** TypeScript  
+- **Styling:** Tailwind CSS  
+- **Animations:** Framer Motion  
+- **Backend / Auth / DB:** Supabase  
+
+---
 
 ## Getting Started
 
-### Installation
+### Run locally
 
 ```bash
 npm install
-```
-
-### Development
-
-```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000).
 
-### Build for Production
+### Production build
 
 ```bash
 npm run build
 npm start
 ```
 
-## Design System
+---
 
-### Colors
-
-**Primary Colors:**
-- Dark Gray: `#141414`
-- Black: `#000000`
-- Secondary White: `#dbdbdb`
-- Cosmic Orange: `#ff9628`
-- Medium Gray: `#545454`
-
-**Secondary Colors:**
-- Pale Blue: `#90efff`
-- Dusty Blue: `#447aa6`
-- Rich Orange: `#ff7300`
-- Off White: `#f4f4f4`
-
-### Typography
-
-- Font Family: IBM Plex Mono
-- Display sizes: xl (80px), lg (64px), md (48px), sm (36px)
-- Heading sizes: xl (32px), lg (24px), md (20px)
-- Body sizes: lg (18px), md (16px), sm (14px)
-- Caption: 12px
-
-### Components
-
-- Glass containers with backdrop blur
-- Animated gradient buttons
-- Smooth scroll animations
-- Responsive grid layouts
-- Custom scrollbar styling
-
-## Project Structure
+## Project structure (high level)
 
 ```
 diffuse.ai/
-├── app/
-│   ├── globals.css       # Global styles and utilities
-│   ├── layout.tsx        # Root layout with metadata
-│   └── page.tsx          # Main page component
-├── components/
-│   ├── Hero.tsx          # Hero section
-│   ├── About.tsx         # About/Overview section
-│   ├── HowItWorks.tsx    # Process explanation
-│   ├── Features.tsx      # AI features showcase
-│   ├── UseCases.tsx      # Use cases and pilot project
-│   └── Footer.tsx        # Footer component
-├── public/               # Static assets (add your images here)
-└── ...config files
+├── app/                    # Next.js app router (layout, pages, schema)
+├── components/             # Landing (Hero, Features, FAQ, etc.) + dashboard UI
+├── contexts/               # Auth, walkthrough
+├── lib/                    # Supabase client, utilities
+├── public/                 # Static assets
+└── supabase/               # Migrations
 ```
 
-## Customization
+---
 
-### Adding Images
+## Keywords for search & AI
 
-Place your images in the `/public` directory and update the placeholder sections in:
-- `components/UseCases.tsx` (Schuylkill River Press screenshot)
+If you’re searching for a tool like this, you might use:
 
-### Updating Content
+- **Meeting to article** · **recording to article AI** · **transcription to news article**
+- **AI article generator** · **multi-input article generator** · **web scrape to article**
+- **PDF to article AI** · **audio to article** · **speech to article**
+- **Newsroom automation** · **publishing integration** · **tool for journalists**
+- **Local journalism software** · **one-person newsroom** · **ChatGPT for journalism**
 
-Edit the content directly in each component file:
-- Hero headline: `components/Hero.tsx`
-- Features list: `components/Features.tsx`
-- Process steps: `components/HowItWorks.tsx`
-- Use cases: `components/UseCases.tsx`
+**Product site:** [diffuse.ai](https://diffuse.ai)
 
-### Styling
-
-The design system is defined in:
-- `tailwind.config.ts` - Tailwind configuration
-- `app/globals.css` - Custom CSS classes and utilities
-
-## Technologies
-
-- **Framework:** Next.js 14
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS
-- **Animations:** Framer Motion
-- **Font:** IBM Plex Mono (Google Fonts)
-
-## Performance
-
-- Optimized animations with Framer Motion
-- Lazy loading with `useInView` hooks
-- Responsive images and assets
-- CSS-based glassmorphism effects
-
-## Browser Support
-
-- Chrome/Edge (latest)
-- Firefox (latest)
-- Safari (latest)
-- Mobile browsers (iOS Safari, Chrome Mobile)
-
-## Deployment
-
-### Deploy to Vercel (Recommended)
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/diffuse-ai)
-
-**Quick Deploy:**
-```bash
-npm i -g vercel
-vercel
-```
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
-
-### Deploy to Other Platforms
-
-**Netlify:**
-```bash
-npm run build
-# Deploy .next folder
-```
-
-**AWS Amplify, Cloudflare Pages, etc.:**
-- Build command: `npm run build`
-- Output directory: `.next`
-- Install command: `npm install`
-
-## Post-Deployment Checklist
-
-- [ ] Update domain in `app/sitemap.ts`
-- [ ] Add favicon and app icons to `/public`
-- [ ] Connect "Schedule a Demo" buttons to booking system
-- [ ] Add analytics tracking
-- [ ] Replace placeholder images
-- [ ] Configure custom domain
-- [ ] Test on real mobile devices
-
-## Production Ready
-
-✅ **Build Status:** Passing  
-✅ **Linting:** No errors  
-✅ **TypeScript:** No errors  
-✅ **Bundle Size:** 130 kB (optimized)  
-✅ **Performance:** Static generation enabled  
-✅ **SEO:** Metadata, sitemap, manifest configured  
-✅ **Responsive:** Mobile-first design  
+---
 
 ## License
 
 All rights reserved.
-

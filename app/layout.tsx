@@ -4,46 +4,52 @@ import { faqSchema, productSchema, serviceSchema, howToSchema } from './schema'
 
 const siteUrl = 'https://diffuse.ai'
 const siteName = 'diffuse.ai'
-const siteDescription = 'Meeting recordings → published articles. In minutes, not hours. Integrations with publishing frontends. AI-powered journalism automation. Free to start, scales to enterprise.'
+const siteDescription = 'Turn meeting recordings, documents, and web pages into publication-ready articles in minutes. AI transcription, multi-input articles, team collaboration, and publishing integrations. Free to start—built for local news, journalists, and content teams.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'Diffuse.AI',
+    default: 'Diffuse.AI — Meeting to Article in Minutes',
     template: '%s | Diffuse.AI',
   },
   description: siteDescription,
   keywords: [
-    // Primary keywords
-    'AI journalism',
+    // Primary — what we do
+    'meeting to article',
+    'recording to article AI',
+    'AI journalism tool',
     'automated article writing',
-    'meeting to article AI',
-    'transcription to news',
+    'transcription to news article',
     'local news automation',
-    // Problem-focused
-    'save time writing articles',
-    'reduce content costs',
-    'automate newsroom',
-    'one-person newsroom',
-    // Use case keywords
+    // Strengths & tools
+    'AI article generator',
     'meeting transcription to article',
+    'multi-input article generator',
+    'combine recording and document into article',
+    'web scrape to article',
+    'PDF to article AI',
+    'audio to article',
+    'speech to article',
+    // Use cases
     'government meeting coverage',
     'school board meeting news',
-    'township meeting coverage',
+    'town hall coverage',
     'municipal meeting automation',
-    // Technology keywords
-    'AI content generation',
-    'GPT journalism',
-    'LLM news writing',
-    'automated transcription',
-    'speech to article',
-    // Industry keywords
-    'local journalism software',
+    'interview to article',
+    'press conference to article',
+    // Workflow
+    'record transcribe generate publish',
     'newsroom automation platform',
-    'community journalism AI',
+    'publishing integration',
+    'auto-publish articles',
+    'team journalism tool',
+    // Audience
+    'tool for journalists',
+    'local journalism software',
     'freelance journalist tools',
-    'independent reporter software',
-    // Competitor alternatives
+    'one-person newsroom',
+    'content team automation',
+    // Alternatives
     'ChatGPT for journalism',
     'AI writing for news',
     'automated reporting tool',
@@ -63,14 +69,14 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: siteUrl,
     siteName: siteName,
-    title: 'diffuse.ai — Turn Meetings Into Articles in Minutes',
+    title: 'Diffuse.AI — Recordings, Documents & Web → Articles in Minutes',
     description: siteDescription,
     images: [
       {
         url: '/socialcover.png',
         width: 1200,
         height: 630,
-        alt: 'diffuse.ai - AI-Powered Journalism Automation',
+        alt: 'Diffuse.AI - Turn meetings, documents, and web pages into publication-ready articles with AI',
         type: 'image/png',
       },
     ],
@@ -79,7 +85,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@DiffuseAI',
     creator: '@DiffuseAI',
-    title: 'diffuse.ai — Turn Meetings Into Articles in Minutes',
+    title: 'Diffuse.AI — Recordings, Documents & Web → Articles in Minutes',
     description: siteDescription,
     images: ['/socialcover.png'],
   },
@@ -163,9 +169,20 @@ export default function RootLayout({
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
-              name: 'diffuse.ai',
+              name: 'Diffuse.AI',
               applicationCategory: 'BusinessApplication',
               operatingSystem: 'Web',
+              description: siteDescription,
+              featureList: [
+                'Turn meeting recordings into publication-ready articles',
+                'AI transcription with automatic titles',
+                'Multiple input types: recordings, documents (PDF, DOCX, TXT), images, web scraping',
+                'Combine multiple sources into one article',
+                'Built-in recording and file upload',
+                'Team collaboration with organizations and role-based access',
+                'Publishing integrations—auto-populate articles to your frontend',
+                'Edit transcriptions and generated articles; re-edit and revise outputs',
+              ],
               offers: {
                 '@type': 'Offer',
                 price: '0',
@@ -176,7 +193,6 @@ export default function RootLayout({
                 ratingValue: '5',
                 ratingCount: '1',
               },
-              description: siteDescription,
             }),
           }}
         />

@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { ModalShell, ModalHeader, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
-import { MODAL_ICONS } from './modalIcons'
 
 const TONE_OPTIONS = ['Professional', 'Conversational', 'Urgent', 'Neutral', 'Friendly'] as const
 const LENGTH_OPTIONS = ['Short', 'Medium', 'Long'] as const
@@ -212,7 +211,6 @@ export default function GenerateOptionsModal({
   return (
     <ModalShell onClose={onClose} maxWidth="max-w-md" maxHeight="max-h-[90vh]">
       <ModalHeader
-        icon={<span className={MODAL_ICONS.generate.color}>{MODAL_ICONS.generate.icon}</span>}
         title={stepTitles[step]}
         onClose={onClose}
       />

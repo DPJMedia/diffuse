@@ -47,8 +47,8 @@ export function ModalShell({
 }
 
 export interface ModalHeaderProps {
-  /** Icon element (e.g. from MODAL_ICONS), already w-6 h-6 and colored */
-  icon: ReactNode
+  /** Icon element (e.g. from MODAL_ICONS), already w-6 h-6 and colored. Optional. */
+  icon?: ReactNode
   title: string
   /** Optional badge next to title, e.g. "Editable" */
   badge?: ReactNode
