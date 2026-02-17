@@ -301,7 +301,9 @@ export async function POST(request: NextRequest) {
     if (responseContentType.includes('multipart/form-data')) {
       const formData = await n8nResponse.formData()
       const jsonPart = formData.get('json') ?? formData.get('payload') ?? formData.get('data')
-      let imagePart: Blob | File | null = formData.get('image') ?? formData.get('file') ?? formData.get('cover') ?? formData.get('cover_image') ?? formData.get('binary') ?? formData.get('attachment')
+      const rawImage =
+        formData.get('image') ?? formData.get('file') ?? formData.get('cover') ?? formData.get('cover_image') ?? formData.get('binary') ?? formData.get('attachment')
+      let imagePart: Blob | File | null = rawImage instanceof Blob ? rawImage : null
       if (!(imagePart instanceof Blob) || imagePart.size === 0) {
         for (const [name, value] of formData.entries()) {
           if (value instanceof Blob && value.size > 0 && (value.type.startsWith('image/') || name.toLowerCase().includes('image') || name.toLowerCase().includes('file') || name.toLowerCase().includes('cover'))) {
