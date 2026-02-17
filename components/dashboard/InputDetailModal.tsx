@@ -74,6 +74,12 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         )}
+      case 'web_scrape':
+        return { label: 'WEB SCRAPE', color: 'text-sky-400', icon: (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+          </svg>
+        )}
       default:
         return { label: 'TEXT', color: 'text-indigo-400', icon: (
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -306,7 +312,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 type="text"
                 value={title}
                 onChange={(e) => canEdit && setTitle(e.target.value)}
-                placeholder={isFromRecording ? 'Recording' : isCoverPhoto ? 'Cover Photo' : isDocument ? 'Document' : isAudio ? 'Audio' : 'Text Input'}
+                placeholder={isFromRecording ? 'Recording' : isCoverPhoto ? 'Cover Photo' : isDocument ? 'Document' : isAudio ? 'Audio' : input.type === 'web_scrape' ? 'Web Page' : 'Text Input'}
                 readOnly={!canEdit || (isImage && !isCoverPhoto)}
                 className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
                   canEdit && !isImage
@@ -522,11 +528,26 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             </div>
           )}
 
+          {/* Web scrape: show source URL as link */}
+          {input.type === 'web_scrape' && input.metadata?.url && (
+            <div className="shrink-0">
+              <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">SOURCE</label>
+              <a
+                href={input.metadata.url as string}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-body-sm text-sky-400 hover:text-sky-300 hover:underline break-all"
+              >
+                {input.metadata.url as string}
+              </a>
+            </div>
+          )}
+
           {/* Content Field (not shown for images or cover photo) — transcription for recording, etc. */}
           {!isImage && !isCoverPhoto && (
             <div>
               <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
-                {isFromRecording ? 'TRANSCRIPTION' : isAudio ? 'TRANSCRIPTION' : isDocument ? 'EXTRACTED TEXT' : 'CONTENT'}
+                {isFromRecording ? 'TRANSCRIPTION' : isAudio ? 'TRANSCRIPTION' : isDocument ? 'EXTRACTED TEXT' : input.type === 'web_scrape' ? 'SCRAPED CONTENT' : 'CONTENT'}
               </label>
               <textarea
                 value={content}

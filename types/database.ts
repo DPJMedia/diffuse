@@ -6,7 +6,7 @@ export type ProjectVisibility = 'private' | 'public'
 
 export type ProjectType = 'project' | 'advertisement'
 
-export type InputType = 'text' | 'audio' | 'image' | 'document' | 'cover_photo'
+export type InputType = 'text' | 'audio' | 'image' | 'document' | 'cover_photo' | 'web_scrape'
 
 export type OutputType = 'article' | 'ad'
 

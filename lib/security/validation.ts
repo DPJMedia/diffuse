@@ -21,6 +21,7 @@ const MAX_LENGTHS = {
   content: 5000000, // 5MB of text
   filePath: 1000,
   recordingTitle: 500,
+  scrapeUrl: 2048,
   uuid: 36, // UUID format
 } as const
 
@@ -209,6 +210,37 @@ export function validateAudioUrl(input: unknown): string {
   } catch (error: any) {
     if (error.message.includes('Invalid URL')) {
       throw new Error('Invalid audioUrl format')
+    }
+    throw error
+  }
+}
+
+/**
+ * Validate URL for web scraping (http or https, optional localhost block in production)
+ */
+export function validateScrapeUrl(input: unknown): string {
+  const raw = typeof input === 'string' ? input.trim() : ''
+  if (!raw) {
+    throw new Error('URL is required')
+  }
+  const url = sanitizeString(raw, MAX_LENGTHS.scrapeUrl)
+  if (url.length === 0) {
+    throw new Error('URL is required')
+  }
+  try {
+    const parsed = new URL(url)
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('URL must use http or https')
+    }
+    if (parsed.hostname.includes('localhost') || parsed.hostname.includes('127.0.0.1')) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('Localhost URLs not allowed in production')
+      }
+    }
+    return url
+  } catch (error: any) {
+    if (error.message?.includes('Invalid URL')) {
+      throw new Error('Invalid URL format')
     }
     throw error
   }

@@ -10,6 +10,7 @@ import EmptyState from '@/components/dashboard/EmptyState'
 import InputDetailModal from '@/components/dashboard/InputDetailModal'
 import OutputDetailModal from '@/components/dashboard/OutputDetailModal'
 import SelectRecordingModal from '@/components/dashboard/SelectRecordingModal'
+import WebScrapingModal from '@/components/dashboard/WebScrapingModal'
 import GenerateOptionsModal, { WORKFLOW_PREFERENCES_KEY, type WorkflowPreferences } from '@/components/dashboard/GenerateOptionsModal'
 import QuickGenerateModal from '@/components/dashboard/QuickGenerateModal'
 import { addRecentProject } from '@/components/dashboard/DashboardNav'
@@ -47,6 +48,7 @@ export default function ProjectDetailPage() {
   const [selectedInput, setSelectedInput] = useState<DiffuseProjectInput | null>(null)
   const [selectedOutput, setSelectedOutput] = useState<DiffuseProjectOutput | null>(null)
   const [showRecordingModal, setShowRecordingModal] = useState(false)
+  const [showWebScrapingModal, setShowWebScrapingModal] = useState(false)
   const [showTextInputModal, setShowTextInputModal] = useState(false)
   const [textInputContent, setTextInputContent] = useState('')
   const [textInputTitle, setTextInputTitle] = useState('')
@@ -213,6 +215,12 @@ export default function ProjectDetailPage() {
         return { label: 'COVER PHOTO', color: 'text-lime-400', icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        )}
+      case 'web_scrape':
+        return { label: 'WEB SCRAPE', color: 'text-sky-400', icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
           </svg>
         )}
       default:
@@ -477,6 +485,41 @@ export default function ProjectDetailPage() {
     } finally {
       setSavingTextInput(false)
     }
+  }
+
+  const handleScrapedContent = async (data: {
+    title: string
+    content: string
+    url: string
+    description?: string
+    scrapedAt?: string
+  }) => {
+    setShowWebScrapingModal(false)
+    const { data: { user: currentUser } } = await supabase.auth.getUser()
+    if (!currentUser) {
+      alert('Not authenticated')
+      return
+    }
+    const { error } = await supabase
+      .from('diffuse_project_inputs')
+      .insert({
+        project_id: projectId,
+        type: 'web_scrape' as InputType,
+        content: data.content,
+        file_name: data.title || 'Web Page',
+        metadata: {
+          url: data.url,
+          description: data.description ?? undefined,
+          scraped_at: data.scrapedAt ?? new Date().toISOString(),
+        },
+        created_by: currentUser.id,
+      })
+    if (error) {
+      console.error('Error saving scraped content:', error)
+      alert('Failed to save scraped content')
+      return
+    }
+    await fetchProjectData()
   }
 
   const handleDeleteInput = async (inputId: string, e: React.MouseEvent) => {
@@ -1312,6 +1355,23 @@ export default function ProjectDetailPage() {
                     </div>
                   </button>
 
+                  {/* Web Scraping */}
+                  <button
+                    onClick={() => {
+                      setShowAddInputDropdown(false)
+                      setShowWebScrapingModal(true)
+                    }}
+                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    </svg>
+                    <div>
+                      <p className="text-body-sm text-secondary-white">Web Scraping</p>
+                      <p className="text-caption text-medium-gray uppercase tracking-wider">INSERT URL</p>
+                    </div>
+                  </button>
+
                   {/* Audio File */}
                   <button
                     onClick={() => {
@@ -1422,7 +1482,7 @@ export default function ProjectDetailPage() {
                 const isFromRecording = input.metadata?.source === 'recording'
                 const isFromUpload = input.metadata?.source === 'upload'
                 const typeInfo = getInputTypeInfo(input)
-                const defaultTitle = isFromRecording ? 'Recording' : input.type === 'cover_photo' ? 'Cover Photo' : input.type === 'image' ? 'Image' : input.type === 'document' ? 'Document' : input.type === 'audio' ? 'Audio' : 'Text Input'
+                const defaultTitle = isFromRecording ? 'Recording' : input.type === 'cover_photo' ? 'Cover Photo' : input.type === 'image' ? 'Image' : input.type === 'document' ? 'Document' : input.type === 'audio' ? 'Audio' : input.type === 'web_scrape' ? 'Web Page' : 'Text Input'
                 
                 return (
                   <div
@@ -1456,9 +1516,13 @@ export default function ProjectDetailPage() {
                     </h3>
                     
                     {/* Subtitle — transcription, caption, or placeholder (match outputs: caption, uppercase, tracking-wider) */}
-                    {input.content ? (
+                    {input.type === 'web_scrape' && input.metadata?.url ? (
+                      <p className="text-caption text-medium-gray mb-2 line-clamp-1 truncate" title={input.metadata.url as string}>
+                        {(input.metadata.url as string).length > 50 ? `${(input.metadata.url as string).slice(0, 50)}…` : (input.metadata.url as string)}
+                      </p>
+                    ) : input.content ? (
                       <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
-                        {input.content.toUpperCase()}
+                        {(input.type === 'web_scrape' && input.content.length > 80 ? input.content.slice(0, 80) + '…' : input.content).toUpperCase()}
                       </p>
                     ) : input.type === 'image' && input.metadata?.photo_caption ? (
                       <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
@@ -1952,6 +2016,11 @@ export default function ProjectDetailPage() {
           onSuccess={fetchProjectData}
         />
       )}
+      <WebScrapingModal
+        isOpen={showWebScrapingModal}
+        onClose={() => setShowWebScrapingModal(false)}
+        onSuccess={handleScrapedContent}
+      />
       {showGenerateOptionsModal && (
         <GenerateOptionsModal
           onClose={() => setShowGenerateOptionsModal(false)}
