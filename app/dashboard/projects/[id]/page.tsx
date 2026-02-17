@@ -1942,7 +1942,7 @@ export default function ProjectDetailPage() {
           canEdit={canEdit}
           canDelete={canDelete}
           fallbackCoverPhotoPath={inputs.find(i => i.type === 'cover_photo')?.file_path ?? null}
-          projectType={project?.project_type === 'advertisement' ? 'advertisement' : project?.project_type === 'article' ? 'article' : undefined}
+          projectType={project?.project_type === 'advertisement' ? 'advertisement' : project?.project_type === 'project' ? 'article' : undefined}
         />
       )}
       {showRecordingModal && (
