@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime, formatDuration, sanitizeStorageFilename } from '@/lib/utils/format'
 import type { DiffuseProjectInput } from '@/types/database'
+import { ModalShell, ModalHeader, ModalMetadataRow, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
 
 interface InputDetailModalProps {
   input: DiffuseProjectInput
@@ -39,10 +40,10 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   const showSaveButton = canEdit && (onSave || isImage)
   const showDeleteButton = canDelete && onDelete
   
-  // Get type info for display
+  // Get type info for display (accent colors match project page cards: no orange/purple)
   const getTypeInfo = () => {
     if (isFromRecording) {
-      return { label: 'RECORDING', color: 'text-cosmic-orange', icon: (
+      return { label: 'RECORDING', color: 'text-rose-400', icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
         </svg>
@@ -50,13 +51,13 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
     }
     switch (input.type) {
       case 'audio':
-        return { label: 'AUDIO', color: 'text-accent-purple', icon: (
+        return { label: 'AUDIO', color: 'text-fuchsia-400', icon: (
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
         )}
       case 'document':
-        return { label: 'DOCUMENT', color: 'text-green-400', icon: (
+        return { label: 'DOCUMENT', color: 'text-emerald-400', icon: (
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
           </svg>
@@ -68,13 +69,13 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
           </svg>
         )}
       case 'cover_photo':
-        return { label: 'COVER PHOTO', color: 'text-sky-400', icon: (
+        return { label: 'COVER PHOTO', color: 'text-lime-400', icon: (
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         )}
       default:
-        return { label: 'TEXT', color: 'text-pale-blue', icon: (
+        return { label: 'TEXT', color: 'text-indigo-400', icon: (
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
@@ -238,78 +239,65 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
     return saving ? 'Saving...' : 'Save Changes'
   }
 
+  const headerActions = (
+    <>
+      {isCoverPhoto && canEdit && (
+        <button
+          onClick={() => coverReplaceInputRef.current?.click()}
+          disabled={replacingCover}
+          className="p-2 rounded-full text-medium-gray hover:text-lime-400 hover:bg-lime-400/10 transition-colors disabled:opacity-50"
+          title="Replace image"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+      )}
+      {showDeleteButton && (
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="p-2 rounded-full text-medium-gray hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+          title="Delete"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      )}
+    </>
+  )
+
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="glass-container p-6 max-w-4xl w-full max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-start justify-between mb-6 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className={typeInfo.color}>
-              {typeInfo.icon}
-            </div>
-          <h2 className="text-heading-lg text-secondary-white">Input Details</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Replace (cover photo only) */}
-            {isCoverPhoto && canEdit && (
-              <button
-                onClick={() => coverReplaceInputRef.current?.click()}
-                disabled={replacingCover}
-                className="p-2 rounded-full text-medium-gray hover:text-sky-400 hover:bg-sky-400/10 transition-colors disabled:opacity-50"
-                title="Replace image"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-            )}
-            {/* Delete Button */}
-            {showDeleteButton && (
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="p-2 rounded-full text-medium-gray hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                title="Delete"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            )}
-            {/* Close Button */}
-          <button
-            onClick={onClose}
-              className="p-2 rounded-full text-medium-gray hover:text-secondary-white hover:bg-white/10 transition-colors"
-          >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden gap-6">
-          {/* Metadata Row */}
-          <div className="flex items-center gap-2 text-body-sm text-medium-gray shrink-0">
-            <span className={`uppercase font-medium tracking-wider ${typeInfo.color}`}>
-              {typeInfo.label}
-            </span>
-            {isFromRecording && input.metadata?.recording_duration && (
-              <>
-                <span>•</span>
-                <span>{formatDuration(input.metadata.recording_duration)}</span>
-              </>
-            )}
-            {isFromUpload && input.file_size && (
-              <>
-                <span>•</span>
-                <span>{(input.file_size / 1024).toFixed(0)} KB</span>
-              </>
-            )}
+    <ModalShell onClose={onClose} maxWidth="max-w-4xl" maxHeight="max-h-[90vh]">
+      <ModalHeader
+        icon={<span className={typeInfo.color}>{typeInfo.icon}</span>}
+        title="Input Details"
+        actions={headerActions}
+        onClose={onClose}
+      />
+      <ModalMetadataRow>
+        <span className={`uppercase font-medium tracking-wider ${typeInfo.color}`}>
+          {typeInfo.label}
+        </span>
+        {isFromRecording && input.metadata?.recording_duration && (
+          <>
             <span>•</span>
-            <span>{formatDateTime(input.created_at)}</span>
-          </div>
-
+            <span>{formatDuration(input.metadata.recording_duration)}</span>
+          </>
+        )}
+        {isFromUpload && input.file_size && (
+          <>
+            <span>•</span>
+            <span>{(input.file_size / 1024).toFixed(0)} KB</span>
+          </>
+        )}
+        <span>•</span>
+        <span>{formatDateTime(input.created_at)}</span>
+      </ModalMetadataRow>
+      <ModalBody>
+        <ModalScrollRegion>
+          <div className="flex flex-col gap-6">
           {/* Title Field (not for image inputs — they use the layout below) */}
           {!isImage && (
             <div className="shrink-0">
@@ -536,48 +524,35 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
 
           {/* Content Field (not shown for images or cover photo) — transcription for recording, etc. */}
           {!isImage && !isCoverPhoto && (
-          <div className="flex flex-col flex-1 min-h-[200px] overflow-hidden">
-            <label className="block text-caption text-medium-gray mb-2 shrink-0 uppercase tracking-wider">
-              {isFromRecording ? 'Transcription' : isAudio ? 'Transcription' : isDocument ? 'Extracted Text' : 'Content'}
-            </label>
-            <div className="flex-1 min-h-[180px] overflow-hidden flex flex-col">
+            <div>
+              <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
+                {isFromRecording ? 'TRANSCRIPTION' : isAudio ? 'TRANSCRIPTION' : isDocument ? 'EXTRACTED TEXT' : 'CONTENT'}
+              </label>
               <textarea
                 value={content}
                 onChange={(e) => canEdit && setContent(e.target.value)}
                 placeholder="Enter content..."
                 readOnly={!canEdit}
                 rows={10}
-                className={`w-full min-h-[180px] flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors resize-y overflow-y-auto custom-scrollbar ${
-                  canEdit 
-                    ? 'focus:outline-none focus:border-cosmic-orange' 
-                    : 'cursor-default opacity-75'
+                className={`w-full min-h-[180px] max-h-[40vh] px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors resize-none overflow-y-auto custom-scrollbar ${
+                  canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                 }`}
               />
             </div>
-            </div>
           )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="mt-8 flex gap-3 shrink-0">
-          <button 
-            onClick={onClose} 
-            className={`btn-secondary py-3 ${showSaveButton ? 'flex-1' : 'w-full'}`}
-            disabled={saving}
-          >
-            Close
+          </div>
+        </ModalScrollRegion>
+      </ModalBody>
+      <ModalFooter>
+        <button onClick={onClose} className={`btn-secondary py-3 ${showSaveButton ? 'flex-1' : 'w-full'}`} disabled={saving}>
+          Close
+        </button>
+        {showSaveButton && (
+          <button onClick={handleSave} className="btn-primary flex-1 py-3 disabled:opacity-50" disabled={saving}>
+            {getSaveButtonText()}
           </button>
-          {showSaveButton && (
-            <button 
-              onClick={handleSave} 
-              className="btn-primary flex-1 py-3 disabled:opacity-50"
-              disabled={saving}
-            >
-              {getSaveButtonText()}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+        )}
+      </ModalFooter>
+    </ModalShell>
   )
 }

@@ -5,16 +5,23 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime } from '@/lib/utils/format'
 import type { DiffuseProjectOutput } from '@/types/database'
+import { ModalShell, ModalHeader, ModalMetadataRow, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
+import { MODAL_ICONS } from './modalIcons'
+import ReEditCommentsModal from './ReEditCommentsModal'
 
 interface OutputDetailModalProps {
   output: DiffuseProjectOutput
   onClose: () => void
   onUpdate?: () => void
   onDelete?: (id: string) => Promise<void>
+  /** Called when re-edit completes with the updated output; use to refresh the modal's output. */
+  onReeditComplete?: (updatedOutput: DiffuseProjectOutput) => void
   canEdit?: boolean
   canDelete?: boolean
   /** When output has no cover_photo_path, use project cover photo input so it still displays */
   fallbackCoverPhotoPath?: string | null
+  /** Project type for accent color: teal = article, amber = advertisement (matches card previews) */
+  projectType?: 'article' | 'advertisement'
 }
 
 interface StructuredArticle {
@@ -58,23 +65,19 @@ const extractArrayField = (content: string, field: string): string[] => {
   return []
 }
 
-// Calculate dynamic rows based on content for auto-expand
-const calculateRows = (text: string, baseRows: number) => {
-  if (!text) return baseRows
-  const lineBreaks = (text.match(/\n/g) || []).length + 1
-  const estimatedWrappedLines = Math.ceil(text.length / 80)
-  return Math.max(baseRows, lineBreaks, estimatedWrappedLines)
-}
-
 export default function OutputDetailModal({ 
   output, 
   onClose, 
   onUpdate,
   onDelete,
+  onReeditComplete,
   canEdit = true,
   canDelete = true,
-  fallbackCoverPhotoPath = null
+  fallbackCoverPhotoPath = null,
+  projectType
 }: OutputDetailModalProps) {
+  // Accent color for output type (matches card previews: teal = article, amber = advertisement)
+  const outputAccentColor = projectType === 'advertisement' ? 'text-amber-400' : 'text-teal-400'
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
@@ -84,6 +87,7 @@ export default function OutputDetailModal({
   const [uploadedCoverPath, setUploadedCoverPath] = useState<string | null>(null)
   const [uploadingCover, setUploadingCover] = useState(false)
   const [photoLightboxOpen, setPhotoLightboxOpen] = useState(false)
+  const [showReEditModal, setShowReEditModal] = useState(false)
   const coverPhotoInputRef = useRef<HTMLInputElement>(null)
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
@@ -331,6 +335,21 @@ export default function OutputDetailModal({
     }
   }
 
+  const handleReeditSubmit = async (comments: string) => {
+    const res = await fetch('/api/workflow/reedit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ output_id: output.id, comments }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data?.error || data?.message || 'Re-edit failed')
+    }
+    const { output: updatedOutput } = await res.json()
+    onUpdate?.()
+    onReeditComplete?.(updatedOutput)
+  }
+
   const handleCopyAll = async () => {
     if (article) {
       const sections = [
@@ -370,97 +389,72 @@ export default function OutputDetailModal({
     failed: 'text-red-400',
   }
 
+  const headerActions = (
+    <>
+      <button
+        onClick={() => setShowReEditModal(true)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg text-body-sm font-medium text-cosmic-orange hover:bg-cosmic-orange/10 transition-colors"
+        title="Edit with Diffuse"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        Edit with Diffuse
+      </button>
+      <button
+        onClick={handleCopyAll}
+        className="p-2 rounded-full text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 transition-colors"
+        title="Copy all fields"
+      >
+        {copied === 'all' ? (
+          <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        )}
+      </button>
+      {showDeleteButton && (
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="p-2 rounded-full text-medium-gray hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+          title="Delete"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      )}
+    </>
+  )
+
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="glass-container p-8 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-start justify-between mb-6 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <svg className="w-6 h-6 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <h2 className="text-heading-lg text-secondary-white">Output Details</h2>
-            {canEdit && (
-              <span className="text-caption text-cosmic-orange bg-cosmic-orange/10 px-2 py-1 rounded">
-                Editable
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Copy All Button */}
-            <button
-              onClick={handleCopyAll}
-              className="flex items-center gap-1.5 px-3 py-2 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded-glass transition-colors"
-              title="Copy all fields"
-            >
-              {copied === 'all' ? (
-                <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              )}
-              <span className="text-caption font-medium tracking-wider">
-                {copied === 'all' ? 'COPIED' : 'COPY ALL'}
-              </span>
-            </button>
-            {/* Replace cover photo (when cover present and editable) */}
-            {coverPhotoUrl && canEdit && (
-              <button
-                onClick={() => coverPhotoInputRef.current?.click()}
-                disabled={uploadingCover}
-                className="p-2 rounded-full text-medium-gray hover:text-sky-400 hover:bg-sky-400/10 transition-colors disabled:opacity-50"
-                title="Replace cover image"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-            )}
-            {/* Delete Button */}
-            {showDeleteButton && (
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="p-2 rounded-full text-medium-gray hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                title="Delete"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            )}
-            {/* Close Button */}
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full text-medium-gray hover:text-secondary-white hover:bg-white/10 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Metadata Row */}
-        <div className="flex items-center gap-2 text-body-sm text-medium-gray mb-6 flex-shrink-0">
-          <span className={`uppercase font-medium tracking-wider ${statusColors[output.workflow_status]}`}>
-            {output.workflow_status.toUpperCase()}
-          </span>
-          <span>•</span>
-          <span>{formatDateTime(output.created_at)}</span>
-          {isEditing && (
-            <>
-              <span>•</span>
-              <span className="text-cosmic-orange">Unsaved changes</span>
-            </>
-          )}
-        </div>
-
-        {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 -mr-2">
+    <>
+    <ModalShell onClose={onClose} maxWidth="max-w-4xl" maxHeight="max-h-[90vh]">
+      <ModalHeader
+        icon={<span className={outputAccentColor}>{MODAL_ICONS.output.icon}</span>}
+        title="Output Details"
+        actions={headerActions}
+        onClose={onClose}
+      />
+      <ModalMetadataRow>
+        <span className={`uppercase font-medium tracking-wider ${statusColors[output.workflow_status]}`}>
+          {output.workflow_status.toUpperCase()}
+        </span>
+        <span>•</span>
+        <span>{formatDateTime(output.created_at)}</span>
+        {isEditing && (
+          <>
+            <span>•</span>
+            <span className="text-cosmic-orange">Unsaved changes</span>
+          </>
+        )}
+      </ModalMetadataRow>
+      <ModalBody>
+        <ModalScrollRegion>
           {/* Hidden file input for Replace (header) and Upload (below) - always in DOM when canEdit */}
           {canEdit && (
             <input
@@ -473,7 +467,52 @@ export default function OutputDetailModal({
           )}
           {/* Cover Photo - at top only when raw view (no article). In article view, cover moves next to caption/credit (desktop) or below subtitle (mobile). */}
           {!article && coverPhotoUrl ? (
-            <div className="w-full rounded-glass overflow-hidden bg-white/5 mb-5 relative h-[40vh] min-h-[200px]">
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-caption text-medium-gray uppercase tracking-wider">Image</label>
+                <div className="flex items-center gap-1">
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => coverPhotoInputRef.current?.click()}
+                      disabled={uploadingCover}
+                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors disabled:opacity-50"
+                      title="Replace cover image"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(coverPhotoUrl!, { credentials: 'include' })
+                        if (!res.ok) throw new Error('Download failed')
+                        const blob = await res.blob()
+                        const ext = (res.headers.get('content-type') || '').includes('webp') ? 'webp' : (res.headers.get('content-type') || '').includes('jpeg') || (res.headers.get('content-type') || '').includes('jpg') ? 'jpg' : 'png'
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `cover-${output.id}.${ext}`
+                        a.click()
+                        URL.revokeObjectURL(url)
+                      } catch (e) {
+                        console.error('Cover download failed:', e)
+                        alert('Failed to download image')
+                      }
+                    }}
+                    className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                    title="Download image"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="w-full rounded-glass overflow-hidden bg-white/5 relative h-[40vh] min-h-[200px]">
               <Image
                 key={coverPhotoUrl}
                 src={coverPhotoUrl}
@@ -484,32 +523,7 @@ export default function OutputDetailModal({
                 referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
                 unoptimized={coverPhotoUrl.startsWith('/api/')}
               />
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const res = await fetch(coverPhotoUrl!, { credentials: 'include' })
-                    if (!res.ok) throw new Error('Download failed')
-                    const blob = await res.blob()
-                    const ext = (res.headers.get('content-type') || '').includes('webp') ? 'webp' : (res.headers.get('content-type') || '').includes('jpeg') || (res.headers.get('content-type') || '').includes('jpg') ? 'jpg' : 'png'
-                    const url = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = `cover-${output.id}.${ext}`
-                    a.click()
-                    URL.revokeObjectURL(url)
-                  } catch (e) {
-                    console.error('Cover download failed:', e)
-                    alert('Failed to download image')
-                  }
-                }}
-                className="absolute bottom-3 right-3 p-2 rounded-lg bg-black/60 hover:bg-black/80 text-white transition-colors"
-                title="Download image"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              </button>
+              </div>
             </div>
           ) : !article && canEdit ? (
             <div className="w-full rounded-glass border border-dashed border-white/20 bg-white/5 p-6 mb-5">
@@ -640,6 +654,19 @@ export default function OutputDetailModal({
                     <label className="text-caption text-medium-gray uppercase tracking-wider">Image</label>
                     {coverPhotoUrl ? (
                       <div className="flex items-center gap-1">
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => coverPhotoInputRef.current?.click()}
+                            disabled={uploadingCover}
+                            className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors disabled:opacity-50"
+                            title="Replace cover image"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={async () => {
@@ -841,9 +868,9 @@ export default function OutputDetailModal({
                 <textarea
                   value={article.content}
                   onChange={(e) => handleFieldChange('content', e.target.value)}
-                  rows={calculateRows(article.content, 8)}
+                  rows={8}
                   readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
+                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none max-h-[40vh] overflow-y-auto custom-scrollbar ${
                     canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                   }`}
                 />
@@ -1036,39 +1063,37 @@ export default function OutputDetailModal({
                   setRawContent(e.target.value)
                   if (!isEditing) setIsEditing(true)
                 }}
-                rows={20}
+                rows={12}
                 readOnly={!canEdit}
-                className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none ${
+                className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none max-h-[50vh] overflow-y-auto custom-scrollbar ${
                   canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
                 }`}
               />
             </div>
           )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="mt-6 flex gap-3 flex-shrink-0">
-          <button 
-            onClick={onClose} 
-            className="btn-secondary flex-1 py-3"
-            disabled={saving}
-          >
-            {isEditing ? 'Discard Changes' : 'Close'}
+        </ModalScrollRegion>
+      </ModalBody>
+      <ModalFooter>
+        <button onClick={onClose} className="btn-secondary flex-1 py-3" disabled={saving}>
+          {isEditing ? 'Discard Changes' : 'Close'}
+        </button>
+        {canEdit && (
+          <button onClick={handleSave} className="btn-primary flex-1 py-3 disabled:opacity-50" disabled={saving}>
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
-          {canEdit && (
-            <button 
-              onClick={handleSave} 
-              className="btn-primary flex-1 py-3 disabled:opacity-50"
-              disabled={saving}
-            >
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          )}
-        </div>
-      </div>
+        )}
+      </ModalFooter>
+    </ModalShell>
 
-      {/* Full-size photo lightbox */}
-      {photoLightboxOpen && coverPhotoUrl && (
+    {showReEditModal && (
+      <ReEditCommentsModal
+        onClose={() => setShowReEditModal(false)}
+        onSubmit={handleReeditSubmit}
+      />
+    )}
+
+    {/* Full-size photo lightbox */}
+    {photoLightboxOpen && coverPhotoUrl && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
           onClick={() => setPhotoLightboxOpen(false)}
@@ -1097,7 +1122,7 @@ export default function OutputDetailModal({
             />
           </div>
         </div>
-      )}
-    </div>
+    )}
+    </>
   )
 }

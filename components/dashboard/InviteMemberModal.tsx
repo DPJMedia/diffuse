@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/types/database'
+import { ModalShell, ModalHeader, ModalBody, ModalFooter } from './ModalShell'
+import { MODAL_ICONS } from './modalIcons'
 
 interface InviteMemberModalProps {
   workspaceId: string
@@ -51,34 +53,37 @@ export default function InviteMemberModal({ workspaceId, onClose, onSuccess }: I
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-6">
-      <div className="glass-container p-8 max-w-md w-full">
-        <h2 className="text-heading-lg text-secondary-white mb-6">Invite Member</h2>
+    <ModalShell onClose={onClose} maxWidth="max-w-md" maxHeight="max-h-[90vh]">
+      <ModalHeader
+        icon={<span className={MODAL_ICONS.invite.color}>{MODAL_ICONS.invite.icon}</span>}
+        title="Invite Member"
+        onClose={onClose}
+      />
+      <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+        <ModalBody>
+          {error && (
+            <div className="mb-6 p-4 rounded-glass border border-red-500/30 bg-red-500/10 text-red-400 text-body-sm flex-shrink-0">
+              {error}
+            </div>
+          )}
+          <div className="space-y-6">
+            <div>
+              <label htmlFor="email" className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
+                Email Address *
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md focus:outline-none focus:border-cosmic-orange transition-colors"
+                placeholder="user@example.com"
+              />
+            </div>
 
-        {error && (
-          <div className="mb-6 p-4 rounded-glass border border-red-500/30 bg-red-500/10 text-red-400 text-body-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="email" className="block text-body-sm text-secondary-white mb-2">
-              Email Address *
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md focus:outline-none focus:border-cosmic-orange transition-colors"
-              placeholder="user@example.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-body-sm text-secondary-white mb-3">Role</label>
+            <div>
+              <label className="block text-caption text-medium-gray mb-3 uppercase tracking-wider">Role</label>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -114,28 +119,19 @@ export default function InviteMemberModal({ workspaceId, onClose, onSuccess }: I
             <p className="mt-2 text-caption text-medium-gray">
               Viewers can only view. Editors can add/edit content. Admins can manage members.
             </p>
+            </div>
           </div>
-
-          <div className="flex gap-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn-secondary flex-1 py-3"
-              disabled={loading}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn-primary flex-1 py-3"
-              disabled={loading}
-            >
-              {loading ? 'Inviting...' : 'Send Invite'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </ModalBody>
+        <ModalFooter>
+          <button type="button" onClick={onClose} className="btn-secondary flex-1 py-3" disabled={loading}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary flex-1 py-3" disabled={loading}>
+            {loading ? 'Inviting...' : 'Send Invite'}
+          </button>
+        </ModalFooter>
+      </form>
+    </ModalShell>
   )
 }
 

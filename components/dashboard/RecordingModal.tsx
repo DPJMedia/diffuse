@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { ModalShell, ModalHeader, ModalBody } from './ModalShell'
+import { MODAL_ICONS } from './modalIcons'
 
 type RecordingPhase = 'ready' | 'recording' | 'stopped'
 
@@ -276,28 +278,18 @@ export default function RecordingModal({
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
+  const phaseTitle =
+    phase === 'ready' ? 'New Recording' : phase === 'recording' ? 'Recording...' : 'Save Recording'
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      {/* Fixed size container */}
-      <div className="glass-container w-full max-w-lg h-[420px] overflow-hidden relative flex flex-col">
-        {/* Main Content */}
-        <div className="p-8 pb-24 relative z-10 flex flex-col flex-1">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-6">
-            <h2 className="text-heading-lg text-secondary-white">
-              {phase === 'ready' && 'New Recording'}
-              {phase === 'recording' && 'Recording...'}
-              {phase === 'stopped' && 'Save Recording'}
-            </h2>
-            <button
-              onClick={handleClose}
-              className="text-medium-gray hover:text-secondary-white transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+    <ModalShell onClose={handleClose} maxWidth="max-w-lg" maxHeight="max-h-[90vh]">
+      <div className="w-full max-w-lg h-[420px] overflow-hidden relative flex flex-col flex-1 min-h-0">
+        <ModalHeader
+          icon={<span className={MODAL_ICONS.recording.color}>{MODAL_ICONS.recording.icon}</span>}
+          title={phaseTitle}
+          onClose={handleClose}
+        />
+        <ModalBody className="pb-24 relative z-10 flex-1 min-h-0">
 
           {/* Error Message */}
           {error && (
@@ -395,8 +387,8 @@ export default function RecordingModal({
               }`}
             >
               <div>
-                <label className="block text-body-sm text-secondary-white mb-2">
-                  Title <span className="text-medium-gray">(optional - auto-generated from content)</span>
+                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
+                  Title <span className="text-medium-gray font-normal normal-case">(optional - auto-generated from content)</span>
                 </label>
                 <input
                   type="text"
@@ -425,10 +417,10 @@ export default function RecordingModal({
               </div>
             </div>
           </div>
-        </div>
+        </ModalBody>
 
         {/* Audio Visualization - Background at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 h-20 flex items-end overflow-hidden">
+        <div className="absolute bottom-0 left-0 right-0 h-20 flex items-end overflow-hidden flex-shrink-0">
           <div className="flex items-end w-full h-full">
             {audioLevels.map((level, index) => (
               <div
@@ -436,8 +428,8 @@ export default function RecordingModal({
                 className="flex-1 rounded-t-sm transition-all duration-75"
                 style={{
                   height: `${Math.max(4, level * 72)}px`,
-                  backgroundColor: phase === 'stopped' 
-                    ? 'rgba(107, 114, 128, 0.2)' 
+                  backgroundColor: phase === 'stopped'
+                    ? 'rgba(107, 114, 128, 0.2)'
                     : `rgba(107, 114, 128, ${0.3 + level * 0.4})`,
                 }}
               />
@@ -445,6 +437,6 @@ export default function RecordingModal({
           </div>
         </div>
       </div>
-    </div>
+    </ModalShell>
   )
 }

@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { ModalShell, ModalHeader, ModalBody, ModalFooter } from './ModalShell'
+import { MODAL_ICONS } from './modalIcons'
 
 export interface QuickGenerateModalProps {
   onClose: () => void
@@ -25,18 +27,13 @@ export default function QuickGenerateModal({ onClose, onGenerate }: QuickGenerat
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-6"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="glass-container p-8 max-w-md w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-heading-lg text-secondary-white mb-6">Choose output type</h2>
-
+    <ModalShell onClose={onClose} maxWidth="max-w-md" maxHeight="max-h-[90vh]">
+      <ModalHeader
+        icon={<span className={MODAL_ICONS.generate.color}>{MODAL_ICONS.generate.icon}</span>}
+        title="Choose output type"
+        onClose={onClose}
+      />
+      <ModalBody>
         <div className="space-y-2">
           <button
             type="button"
@@ -75,16 +72,15 @@ export default function QuickGenerateModal({ onClose, onGenerate }: QuickGenerat
             <span>Advertisement</span>
           </button>
         </div>
-
-        <div className="flex gap-4 mt-8">
-          <button type="button" onClick={onClose} className="btn-secondary flex-1 py-3">
-            Cancel
-          </button>
-          <button type="button" onClick={handleGenerate} className="btn-primary flex-1 py-3">
-            Generate
-          </button>
-        </div>
-      </div>
-    </div>
+      </ModalBody>
+      <ModalFooter>
+        <button type="button" onClick={onClose} className="btn-secondary flex-1 py-3">
+          Cancel
+        </button>
+        <button type="button" onClick={handleGenerate} className="btn-primary flex-1 py-3">
+          Generate
+        </button>
+      </ModalFooter>
+    </ModalShell>
   )
 }

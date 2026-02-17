@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { ModalShell, ModalHeader, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
+import { MODAL_ICONS } from './modalIcons'
 
 const TONE_OPTIONS = ['Professional', 'Conversational', 'Urgent', 'Neutral', 'Friendly'] as const
 const LENGTH_OPTIONS = ['Short', 'Medium', 'Long'] as const
@@ -208,21 +210,14 @@ export default function GenerateOptionsModal({
   )
 
   return (
-    <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-6"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="glass-container p-8 max-w-md w-full h-[600px] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-heading-lg text-secondary-white mb-6 flex-shrink-0">
-          {stepTitles[step]}
-        </h2>
-
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+    <ModalShell onClose={onClose} maxWidth="max-w-md" maxHeight="max-h-[90vh]">
+      <ModalHeader
+        icon={<span className={MODAL_ICONS.generate.color}>{MODAL_ICONS.generate.icon}</span>}
+        title={stepTitles[step]}
+        onClose={onClose}
+      />
+      <ModalBody>
+        <ModalScrollRegion>
           {step === 0 && (
           <div key={0} className="modal-step-enter space-y-2">
             {TONE_OPTIONS.map((opt) => (
@@ -532,50 +527,45 @@ export default function GenerateOptionsModal({
             </button>
           </div>
         )}
-        </div>
-
-        <div className="flex gap-4 mt-8 flex-shrink-0 pt-4 border-t border-white/10">
-          {step < 4 ? (
-            <>
-              {step > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setStep((s) => s - 1)}
-                  className="btn-secondary flex-1 py-3"
-                >
-                  Back
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setStep((s) => s + 1)}
-                disabled={
-                  (step === 1 && !finalLength) ||
-                  (step === 2 && finalNumberOfOutputs < 1) ||
-                  (step === 3 && !finalAudience)
-                }
-                className="btn-primary flex-1 py-3 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={() => setStep(3)} className="btn-secondary flex-1 py-3">
+        </ModalScrollRegion>
+      </ModalBody>
+      <ModalFooter>
+        {step < 4 ? (
+          <>
+            {step > 0 && (
+              <button type="button" onClick={() => setStep((s) => s - 1)} className="btn-secondary flex-1 py-3">
                 Back
               </button>
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={savingPrefs}
-                className="btn-primary flex-1 py-3 disabled:opacity-50"
-              >
-                {savingPrefs ? 'Saving...' : 'Generate'}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setStep((s) => s + 1)}
+              disabled={
+                (step === 1 && !finalLength) ||
+                (step === 2 && finalNumberOfOutputs < 1) ||
+                (step === 3 && !finalAudience)
+              }
+              className="btn-primary flex-1 py-3 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={() => setStep(3)} className="btn-secondary flex-1 py-3">
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={savingPrefs}
+              className="btn-primary flex-1 py-3 disabled:opacity-50"
+            >
+              {savingPrefs ? 'Saving...' : 'Generate'}
+            </button>
+          </>
+        )}
+      </ModalFooter>
+    </ModalShell>
   )
 }

@@ -76,7 +76,20 @@ export default function ProjectDetailPage() {
   const documentInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const coverPhotoInputRef = useRef<HTMLInputElement>(null)
+  const addInputDropdownRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
+
+  // Close Add Input dropdown when clicking outside (same behavior as modals)
+  useEffect(() => {
+    if (!showAddInputDropdown) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (addInputDropdownRef.current && !addInputDropdownRef.current.contains(e.target as Node)) {
+        setShowAddInputDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showAddInputDropdown])
 
   // Permission helpers
   const isProjectOwner = project?.created_by === user?.id
@@ -165,6 +178,50 @@ export default function ProjectDetailPage() {
     if (!text) return ''
     if (text.length <= maxLength) return text
     return text.substring(0, maxLength) + '...'
+  }
+
+  // Input type label, color, and icon for cards (shared by main and trashed inputs). Accent colors only (no orange/purple).
+  const getInputTypeInfo = (input: DiffuseProjectInput) => {
+    const isFromRecording = input.metadata?.source === 'recording'
+    if (isFromRecording) {
+      return { label: 'RECORDING', color: 'text-rose-400', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        </svg>
+      )}
+    }
+    switch (input.type) {
+      case 'audio':
+        return { label: 'AUDIO', color: 'text-fuchsia-400', icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
+        )}
+      case 'document':
+        return { label: 'DOCUMENT', color: 'text-emerald-400', icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+        )}
+      case 'image':
+        return { label: 'IMAGE', color: 'text-yellow-400', icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        )}
+      case 'cover_photo':
+        return { label: 'COVER PHOTO', color: 'text-lime-400', icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        )}
+      default:
+        return { label: 'TEXT', color: 'text-indigo-400', icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        )}
+    }
   }
 
   const fetchProjectData = useCallback(async () => {
@@ -1191,7 +1248,7 @@ export default function ProjectDetailPage() {
             </button>
 
             {/* Add Input Dropdown */}
-            <div className="relative">
+            <div ref={addInputDropdownRef} className="relative">
               <button
                 onClick={() => setShowAddInputDropdown(!showAddInputDropdown)}
                 disabled={uploadingFile}
@@ -1221,23 +1278,6 @@ export default function ProjectDetailPage() {
               {/* Dropdown Menu */}
               {showAddInputDropdown && (
                 <div className="absolute right-0 mt-2 w-56 glass-container py-2 z-50">
-                  {/* Text Input */}
-                  <button
-                    onClick={() => {
-                      setShowAddInputDropdown(false)
-                      setShowTextInputModal(true)
-                    }}
-                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-pale-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <div>
-                      <p className="text-body-sm text-secondary-white">Text</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">TYPE OR PASTE TEXT</p>
-                    </div>
-                  </button>
-
                   {/* Recording */}
                   <button
                     onClick={() => {
@@ -1246,7 +1286,7 @@ export default function ProjectDetailPage() {
                     }}
                     className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
                   >
-                    <svg className="w-5 h-5 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
                     <div>
@@ -1255,24 +1295,22 @@ export default function ProjectDetailPage() {
                     </div>
                   </button>
 
-                  {/* Cover Photo */}
+                  {/* Text Input */}
                   <button
                     onClick={() => {
                       setShowAddInputDropdown(false)
-                      coverPhotoInputRef.current?.click()
+                      setShowTextInputModal(true)
                     }}
                     className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
                   >
-                    <svg className="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <div>
-                      <p className="text-body-sm text-secondary-white">Cover Photo</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">MAIN ARTICLE PHOTO</p>
+                      <p className="text-body-sm text-secondary-white">Text</p>
+                      <p className="text-caption text-medium-gray uppercase tracking-wider">TYPE OR PASTE TEXT</p>
                     </div>
                   </button>
-
-                  <div className="border-t border-white/10 my-2" />
 
                   {/* Audio File */}
                   <button
@@ -1282,7 +1320,7 @@ export default function ProjectDetailPage() {
                     }}
                     className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
                   >
-                    <svg className="w-5 h-5 text-accent-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                     </svg>
                     <div>
@@ -1299,7 +1337,7 @@ export default function ProjectDetailPage() {
                     }}
                     className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
                   >
-                    <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
                     <div>
@@ -1308,20 +1346,20 @@ export default function ProjectDetailPage() {
                     </div>
                   </button>
 
-                  {/* Image */}
+                  {/* Cover Photo */}
                   <button
                     onClick={() => {
                       setShowAddInputDropdown(false)
-                      imageInputRef.current?.click()
+                      coverPhotoInputRef.current?.click()
                     }}
                     className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
                   >
-                    <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-lime-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     <div>
-                      <p className="text-body-sm text-secondary-white">Image</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">JPG, PNG</p>
+                      <p className="text-body-sm text-secondary-white">Cover Photo</p>
+                      <p className="text-caption text-medium-gray uppercase tracking-wider">MAIN ARTICLE PHOTO</p>
                     </div>
                   </button>
                 </div>
@@ -1383,51 +1421,7 @@ export default function ProjectDetailPage() {
               {inputs.map((input) => {
                 const isFromRecording = input.metadata?.source === 'recording'
                 const isFromUpload = input.metadata?.source === 'upload'
-                
-                // Determine input type label and color
-                const getTypeInfo = () => {
-                  if (isFromRecording) {
-                    return { label: 'RECORDING', color: 'text-cosmic-orange', icon: (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                      </svg>
-                    )}
-                  }
-                  switch (input.type) {
-                    case 'audio':
-                      return { label: 'AUDIO', color: 'text-accent-purple', icon: (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                        </svg>
-                      )}
-                    case 'document':
-                      return { label: 'DOCUMENT', color: 'text-green-400', icon: (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    case 'image':
-                      return { label: 'IMAGE', color: 'text-yellow-400', icon: (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    case 'cover_photo':
-                      return { label: 'COVER PHOTO', color: 'text-sky-400', icon: (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    default:
-                      return { label: 'TEXT', color: 'text-pale-blue', icon: (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      )}
-                  }
-                }
-                
-                const typeInfo = getTypeInfo()
+                const typeInfo = getInputTypeInfo(input)
                 const defaultTitle = isFromRecording ? 'Recording' : input.type === 'cover_photo' ? 'Cover Photo' : input.type === 'image' ? 'Image' : input.type === 'document' ? 'Document' : input.type === 'audio' ? 'Audio' : 'Text Input'
                 
                 return (
@@ -1436,59 +1430,54 @@ export default function ProjectDetailPage() {
                     onClick={() => setSelectedInput(input)}
                     className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
                   >
-                    {/* Header with Icon */}
-                    <div className="flex items-start gap-3">
-                      <div className={`p-2 rounded-lg bg-white/5 ${typeInfo.color}`}>
-                        {typeInfo.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        {/* Title */}
-                        <h3 className="text-heading-md text-secondary-white font-medium mb-1 break-words">
-                          {input.file_name || defaultTitle}
-                        </h3>
-                        
-                        {/* Type Badge */}
-                        <div className={`text-caption uppercase tracking-wider ${typeInfo.color}`}>
-                          {typeInfo.label}
-                          {isFromRecording && input.metadata?.recording_duration && (
-                            <>
-                              <span className="text-medium-gray"> • </span>
-                              <span>{formatDuration(input.metadata.recording_duration)}</span>
-                            </>
-                          )}
-                          {isFromUpload && input.file_size && (
-                            <>
-                              <span className="text-medium-gray"> • </span>
-                              <span className="text-medium-gray">{(input.file_size / 1024).toFixed(0)} KB</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                    {/* Top left: icon + type label (no box) */}
+                    <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${typeInfo.color}`}>
+                      <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">{typeInfo.icon}</span>
+                      <span>
+                        {typeInfo.label}
+                        {isFromRecording && input.metadata?.recording_duration && (
+                          <>
+                            <span className="text-medium-gray"> • </span>
+                            <span>{formatDuration(input.metadata.recording_duration)}</span>
+                          </>
+                        )}
+                        {isFromUpload && input.file_size && (
+                          <>
+                            <span className="text-medium-gray"> • </span>
+                            <span className="text-medium-gray">{(input.file_size / 1024).toFixed(0)} KB</span>
+                          </>
+                        )}
+                      </span>
                     </div>
                     
-                    {/* Content Preview — transcription for recording, caption for image, etc. */}
+                    {/* Title */}
+                    <h3 className="text-heading-md text-secondary-white font-medium mt-2 mb-1 line-clamp-2">
+                      {input.file_name || defaultTitle}
+                    </h3>
+                    
+                    {/* Subtitle — transcription, caption, or placeholder (match outputs: caption, uppercase, tracking-wider) */}
                     {input.content ? (
-                      <p className="text-body-sm text-secondary-white/70 mt-3 line-clamp-2">
-                        {input.content}
+                      <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
+                        {input.content.toUpperCase()}
                       </p>
                     ) : input.type === 'image' && input.metadata?.photo_caption ? (
-                      <p className="text-body-sm text-secondary-white/70 mt-3 line-clamp-2">
-                        {input.metadata.photo_caption as string}
+                      <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
+                        {(input.metadata.photo_caption as string).toUpperCase()}
                       </p>
                     ) : input.type === 'image' ? (
-                      <p className="text-body-sm text-medium-gray mt-3 italic">
-                        Image will be processed by the workflow
+                      <p className="text-caption text-medium-gray uppercase tracking-wider mb-2 italic">
+                        IMAGE WILL BE PROCESSED BY THE WORKFLOW
                       </p>
                     ) : input.type === 'cover_photo' ? (
-                      <p className="text-body-sm text-medium-gray mt-3 italic">
+                      <p className="text-caption text-medium-gray uppercase tracking-wider mb-2 italic">
                         {project?.project_type === 'advertisement'
-                          ? 'Cover photo will appear at the top of your published advertisement.'
-                          : 'Cover photo will appear as the main photo in your published article.'}
+                          ? 'COVER PHOTO WILL APPEAR AT THE TOP OF YOUR PUBLISHED ADVERTISEMENT.'
+                          : 'COVER PHOTO WILL APPEAR AS THE MAIN PHOTO IN YOUR PUBLISHED ARTICLE.'}
                       </p>
                     ) : null}
                     
                     {/* Date */}
-                    <div className="text-caption text-medium-gray uppercase tracking-wider mt-3">
+                    <div className="text-caption text-medium-gray uppercase tracking-wider">
                       {new Date(input.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
                     </div>
                   </div>
@@ -1602,39 +1591,45 @@ export default function ProjectDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
               {outputs.map((output) => {
                 const info = getOutputInfo(output)
+                const isAd = project?.project_type === 'advertisement'
+                const outputLabel = isAd ? 'ADVERTISEMENT' : 'ARTICLE'
+                const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
                 return (
                   <div
                     key={output.id}
                     onClick={() => setSelectedOutput(output)}
                     className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
                   >
-                    {/* 1. Title */}
-                    <h3 className="text-heading-md text-secondary-white font-medium mb-2 break-words">
+                    {/* Top left: icon + type label (teal = article, amber = advertisement) */}
+                    <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${outputColor}`}>
+                      <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </span>
+                      <span>{outputLabel}</span>
+                    </div>
+                    
+                    {/* Title */}
+                    <h3 className="text-heading-md text-secondary-white font-medium mt-2 mb-1 line-clamp-2">
                       {info.title}
                     </h3>
                     
-                    {/* 2. Subtitle - all caps */}
+                    {/* Subtitle */}
                     {info.subtitle && (
-                      <p className="text-caption text-accent-purple uppercase tracking-wider mb-2">
+                      <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${outputColor}`}>
                         {info.subtitle.toUpperCase()}
                       </p>
                     )}
                     
-                    {/* 3. Author & Date - all caps */}
-                    <div className="text-caption uppercase tracking-wider mb-3">
-                      <span className="text-cosmic-orange">{info.author.toUpperCase()}</span>
+                    {/* Date */}
+                    <div className="text-caption uppercase tracking-wider">
+                      <span className={outputColor}>{info.author.toUpperCase()}</span>
                       <span className="text-medium-gray"> • </span>
                       <span className="text-medium-gray">
                         {new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
                       </span>
                     </div>
-                    
-                    {/* 4. Excerpt/Text - Two lines, all caps */}
-                    {info.excerpt && (
-                      <p className="text-caption text-medium-gray uppercase tracking-wider leading-relaxed line-clamp-2">
-                        {info.excerpt.toUpperCase()}
-                      </p>
-                    )}
                   </div>
                 )
               })}
@@ -1774,45 +1769,46 @@ export default function ProjectDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {trashedInputs.map((input) => {
                   const isFromRecording = input.metadata?.source === 'recording'
+                  const typeInfo = getInputTypeInfo(input)
                   
                   return (
                     <div
                       key={input.id}
                       className="glass-container p-6 opacity-60"
                     >
+                      {/* Top left: icon + type label */}
+                      <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${typeInfo.color}`}>
+                        <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">{typeInfo.icon}</span>
+                        <span>
+                          {typeInfo.label}
+                          {isFromRecording && input.metadata?.recording_duration && (
+                            <>
+                              <span className="text-medium-gray"> • </span>
+                              <span>{formatDuration(input.metadata.recording_duration)}</span>
+                            </>
+                          )}
+                        </span>
+                      </div>
+                      
                       {/* Title */}
-                      <h3 className="text-heading-md text-secondary-white font-medium mb-2 break-words">
+                      <h3 className="text-heading-md text-secondary-white font-medium mt-2 mb-1 line-clamp-2">
                         {input.file_name || (isFromRecording ? 'Recording' : input.type === 'cover_photo' ? 'Cover Photo' : 'Text Input')}
                       </h3>
                       
-                      {/* Content Preview */}
+                      {/* Subtitle / content preview (match outputs styling) */}
                       {input.content && (
-                        <p className="text-body-sm text-secondary-white/70 mb-3 line-clamp-2">
-                          {input.content}
+                        <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
+                          {input.content.toUpperCase()}
                         </p>
                       )}
                       
-                      {/* Details */}
-                      <div className="space-y-2">
-                        {/* Type */}
-                        <div className="text-caption text-accent-purple uppercase tracking-wider">
-                          {isFromRecording ? (
-                            <>
-                              RECORDING
-                              {input.metadata?.recording_duration && (
-                                <>
-                                  <span className="text-medium-gray"> • </span>
-                                  <span className="text-cosmic-orange">{formatDuration(input.metadata.recording_duration)}</span>
-                                </>
-                              )}
-                            </>
-                          ) : input.type === 'cover_photo' ? 'COVER PHOTO' : 'TEXT'}
-                        </div>
-                        
-                        {/* Deleted Date */}
-                        <div className="text-caption text-medium-gray uppercase tracking-wider">
-                          DELETED {new Date(input.deleted_at || input.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
-                        </div>
+                      {/* Date (match outputs: label in type color, date in gray) */}
+                      <div className="text-caption uppercase tracking-wider">
+                        <span className={typeInfo.color}>DELETED</span>
+                        <span className="text-medium-gray"> • </span>
+                        <span className="text-medium-gray">
+                          {new Date(input.deleted_at || input.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
+                        </span>
                       </div>
                       
                       {/* Action Buttons - Only for editors and above */}
@@ -1848,38 +1844,44 @@ export default function ProjectDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {trashedOutputs.map((output) => {
                   const info = getOutputInfo(output)
+                  const isAd = project?.project_type === 'advertisement'
+                  const outputLabel = isAd ? 'ADVERTISEMENT' : 'ARTICLE'
+                  const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
                   return (
                     <div
                       key={output.id}
                       className="glass-container p-6 opacity-60"
                     >
-                      {/* 1. Title */}
-                      <h3 className="text-heading-md text-secondary-white font-medium mb-2 break-words">
+                      {/* Top left: icon + type label (teal = article, amber = advertisement) */}
+                      <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${outputColor}`}>
+                        <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">
+                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </span>
+                        <span>{outputLabel}</span>
+                      </div>
+                      
+                      {/* Title */}
+                      <h3 className="text-heading-md text-secondary-white font-medium mt-2 mb-1 line-clamp-2">
                         {info.title}
                       </h3>
                       
-                      {/* 2. Subtitle - all caps */}
+                      {/* Subtitle */}
                       {info.subtitle && (
-                        <p className="text-caption text-accent-purple uppercase tracking-wider mb-2">
+                        <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${outputColor}`}>
                           {info.subtitle.toUpperCase()}
                         </p>
                       )}
                       
-                      {/* 3. Author & Deleted Date - all caps */}
-                      <div className="text-caption uppercase tracking-wider mb-3">
-                        <span className="text-cosmic-orange">{info.author.toUpperCase()}</span>
+                      {/* Date */}
+                      <div className="text-caption uppercase tracking-wider">
+                        <span className={outputColor}>{info.author.toUpperCase()}</span>
                         <span className="text-medium-gray"> • </span>
                         <span className="text-medium-gray">
                           DELETED {new Date(output.deleted_at || output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
                         </span>
                       </div>
-                      
-                      {/* 4. Excerpt/Text - Two lines, all caps */}
-                      {info.excerpt && (
-                        <p className="text-caption text-medium-gray uppercase tracking-wider leading-relaxed line-clamp-2">
-                          {info.excerpt.toUpperCase()}
-                        </p>
-                      )}
                       
                       {/* Action Buttons - Only for editors and above */}
                       {canEdit && (
@@ -1932,10 +1934,15 @@ export default function ProjectDetailPage() {
           output={selectedOutput}
           onClose={() => setSelectedOutput(null)}
           onUpdate={fetchProjectData}
+          onReeditComplete={(updated) => {
+            setSelectedOutput(updated)
+            fetchProjectData()
+          }}
           onDelete={handleDeleteOutput}
           canEdit={canEdit}
           canDelete={canDelete}
           fallbackCoverPhotoPath={inputs.find(i => i.type === 'cover_photo')?.file_path ?? null}
+          projectType={project?.project_type === 'advertisement' ? 'advertisement' : project?.project_type === 'article' ? 'article' : undefined}
         />
       )}
       {showRecordingModal && (

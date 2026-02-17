@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import type { ProjectType } from '@/types/database'
+import { ModalShell, ModalHeader, ModalBody, ModalFooter } from './ModalShell'
+import { MODAL_ICONS } from './modalIcons'
 
 interface CreateProjectModalProps {
   workspaceId?: string | null
@@ -131,21 +133,24 @@ export default function CreateProjectModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-6">
-      <div className="glass-container p-8 max-w-md w-full">
-        <h2 className="text-heading-lg text-secondary-white mb-6">Create New {typeLabel}</h2>
-
-        {error && (
-          <div className="mb-6 p-4 rounded-glass border border-red-500/30 bg-red-500/10 text-red-400 text-body-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="name" className="block text-body-sm text-secondary-white mb-2">
-              {typeLabel} Name *
-            </label>
+    <ModalShell onClose={onClose} maxWidth="max-w-md" maxHeight="max-h-[90vh]">
+      <ModalHeader
+        icon={<span className={MODAL_ICONS.createProject.color}>{MODAL_ICONS.createProject.icon}</span>}
+        title={`Create New ${typeLabel}`}
+        onClose={onClose}
+      />
+      <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+        <ModalBody>
+          {error && (
+            <div className="mb-6 p-4 rounded-glass border border-red-500/30 bg-red-500/10 text-red-400 text-body-sm flex-shrink-0">
+              {error}
+            </div>
+          )}
+          <div className="space-y-6">
+            <div>
+              <label htmlFor="name" className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
+                {typeLabel} Name *
+              </label>
             <input
               id="name"
               type="text"
@@ -157,10 +162,10 @@ export default function CreateProjectModal({
             />
           </div>
 
-          <div>
-            <label htmlFor="description" className="block text-body-sm text-secondary-white mb-2">
-              Description
-            </label>
+            <div>
+              <label htmlFor="description" className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
+                Description
+              </label>
             <textarea
               id="description"
               value={description}
@@ -171,10 +176,9 @@ export default function CreateProjectModal({
             />
           </div>
 
-          {isOrgContext ? (
-            /* Organization context - show org selection dropdown */
+            {isOrgContext ? (
             <div>
-              <label className="block text-body-sm text-secondary-white mb-2">Share with Organizations</label>
+              <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">Share with Organizations</label>
               <div className="relative" ref={dropdownRef}>
                 <button
                   type="button"
@@ -247,10 +251,9 @@ export default function CreateProjectModal({
                 Select which organizations can see this project
               </p>
             </div>
-          ) : (
-            /* Normal context - show public/private options */
+            ) : (
             <div>
-              <label className="block text-body-sm text-secondary-white mb-2">Visibility</label>
+              <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">Visibility</label>
               <p className="text-caption text-medium-gray mb-3">
                 Public projects are shared with all your organizations. Private projects are only visible to you.
               </p>
@@ -287,27 +290,18 @@ export default function CreateProjectModal({
                 </label>
               </div>
             </div>
-          )}
-
-          <div className="flex gap-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn-secondary flex-1 py-3"
-              disabled={loading}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn-primary flex-1 py-3"
-              disabled={loading}
-            >
-              {loading ? 'Creating...' : `Create ${typeLabel}`}
-            </button>
+            )}
           </div>
-        </form>
-      </div>
-    </div>
+        </ModalBody>
+        <ModalFooter>
+          <button type="button" onClick={onClose} className="btn-secondary flex-1 py-3" disabled={loading}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary flex-1 py-3" disabled={loading}>
+            {loading ? 'Creating...' : `Create ${typeLabel}`}
+          </button>
+        </ModalFooter>
+      </form>
+    </ModalShell>
   )
 }

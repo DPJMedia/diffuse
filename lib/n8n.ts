@@ -26,6 +26,13 @@ export function getN8nWebhookUrl(): string | null {
   return N8N_WEBHOOK_URL || null
 }
 
+/** Re-edit workflow webhook URL - set N8N_REEDIT_WEBHOOK_URL for re-editing existing outputs. */
+const N8N_REEDIT_WEBHOOK_URL = process.env.N8N_REEDIT_WEBHOOK_URL
+
+export function getReeditWebhookUrl(): string | null {
+  return N8N_REEDIT_WEBHOOK_URL?.trim() || null
+}
+
 export function requireN8nWebhookUrl(): string {
   const url = getN8nWebhookUrl()
   if (!url) {

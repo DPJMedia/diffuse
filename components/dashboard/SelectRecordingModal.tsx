@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRelativeTime, formatDuration } from '@/lib/utils/format'
 import LoadingSpinner from './LoadingSpinner'
+import { ModalShell, ModalHeader, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
+import { MODAL_ICONS } from './modalIcons'
 
 // Inline SVG icons
 const MicrophoneIcon = ({ className }: { className?: string }) => (
@@ -148,23 +150,14 @@ export default function SelectRecordingModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="glass-container p-8 max-w-2xl w-full h-[500px] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-shrink-0">
-          <h2 className="text-heading-lg text-secondary-white">Add from Recordings</h2>
-          <button
-            onClick={onClose}
-            className="text-medium-gray hover:text-secondary-white transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto mt-6 min-h-0">
+    <ModalShell onClose={onClose} maxWidth="max-w-2xl" maxHeight="max-h-[90vh]">
+      <ModalHeader
+        icon={<span className={MODAL_ICONS.selectRecording.color}>{MODAL_ICONS.selectRecording.icon}</span>}
+        title="Add from Recordings"
+        onClose={onClose}
+      />
+      <ModalBody>
+        <ModalScrollRegion>
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <LoadingSpinner size="lg" />
@@ -243,26 +236,20 @@ export default function SelectRecordingModal({
               })}
             </div>
           )}
-        </div>
-
-        {/* Buttons */}
-        <div className="flex gap-3 pt-6 flex-shrink-0">
-          <button 
-            onClick={onClose} 
-            className="btn-secondary flex-1 py-3"
-            disabled={adding}
-          >
-            Cancel
-          </button>
-          <button 
-            onClick={handleAddSelected}
-            disabled={adding || selectedIds.size === 0}
-            className="btn-primary flex-1 py-3 disabled:opacity-50"
-          >
-            {adding ? 'Adding...' : `Add ${selectedIds.size > 0 ? `(${selectedIds.size})` : 'Selected'}`}
-          </button>
-        </div>
-      </div>
-    </div>
+        </ModalScrollRegion>
+      </ModalBody>
+      <ModalFooter>
+        <button onClick={onClose} className="btn-secondary flex-1 py-3" disabled={adding}>
+          Cancel
+        </button>
+        <button
+          onClick={handleAddSelected}
+          disabled={adding || selectedIds.size === 0}
+          className="btn-primary flex-1 py-3 disabled:opacity-50"
+        >
+          {adding ? 'Adding...' : `Add ${selectedIds.size > 0 ? `(${selectedIds.size})` : 'Selected'}`}
+        </button>
+      </ModalFooter>
+    </ModalShell>
   )
 }
