@@ -6,12 +6,14 @@ import { validateSchema, validateRecordingId, validateTranscription, validateRec
 import { getN8nWebhookUrl } from '@/lib/n8n'
 
 interface QuickWorkflowResponse {
-  project_title: string
-  project_description: string
-  // Article fields (flat structure matching existing prompt format)
-  title: string
+  project_title?: string
+  project_description?: string
+  // Nested format: workflow may put title/description inside article
+  article?: Record<string, unknown> & { project_title?: string; project_description?: string }
+  // Article fields (flat structure)
+  title?: string
   subtitle?: string
-  content: string
+  content?: string
   excerpt?: string
   suggested_sections?: string[]
   category?: string
@@ -237,13 +239,14 @@ function extractQuickWorkflowContent(n8nResult: any): {
       'suggested_sections', 'category', 'tags', 'meta_title', 'meta_description',
       'image_prompt', 'suggested_image_prompt', 'photo_caption',
     ]
+    const parsedRecord = parsed as Record<string, unknown>
     for (const key of topLevelArticleFields) {
-      if (parsed[key] !== undefined && article[key] === undefined) {
-        article[key] = parsed[key]
+      if (parsedRecord[key] !== undefined && article[key] === undefined) {
+        article[key] = parsedRecord[key]
       }
     }
   } else {
-    const { project_title: _pt, project_description: _pd, ...articleFields } = parsed
+    const { project_title: _pt, project_description: _pd, ...articleFields } = parsed as Record<string, unknown>
     article = articleFields
   }
   

@@ -1100,7 +1100,7 @@ export default function ProjectDetailPage() {
           <div className="flex-1">
             <h1 className="text-display-sm text-secondary-white">{project.name}</h1>
             {project.description && (
-              <p className="text-body-lg text-medium-gray mt-1">{project.description}</p>
+              <p className="text-body-lg text-medium-gray mt-1 line-clamp-2">{project.description}</p>
             )}
           </div>
         </div>

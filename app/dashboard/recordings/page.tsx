@@ -160,7 +160,7 @@ export default function RecordingsPage() {
       setGeneratingStatusIndex((i) => (i + 1) % CREATE_PROJECT_STATUS_MESSAGES.length)
     }, CREATE_PROJECT_STATUS_INTERVAL_MS)
     return () => clearInterval(id)
-  }, [generatingProject])
+  }, [generatingProject, CREATE_PROJECT_STATUS_MESSAGES.length])
 
   const subscriptionLimits: Record<SubscriptionTier, number> = {
     free: 3,
