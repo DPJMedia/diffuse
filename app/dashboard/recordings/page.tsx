@@ -100,9 +100,11 @@ function TranscriptionDiffView({ original, current }: { original: string; curren
   )
 }
 
+type SubscriptionTier = 'free' | 'pro' | 'pro_max'
+
 export default function RecordingsPage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, currentWorkspace } = useAuth()
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [loading, setLoading] = useState(true)
   const [showRecordingModal, setShowRecordingModal] = useState(false)
@@ -116,6 +118,9 @@ export default function RecordingsPage() {
   const [editedTranscription, setEditedTranscription] = useState<string | null>(null)
   const [savingTranscription, setSavingTranscription] = useState(false)
   const [generatingProject, setGeneratingProject] = useState(false)
+  const [generatingStatusIndex, setGeneratingStatusIndex] = useState(0)
+  const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free')
+  const [projectCount, setProjectCount] = useState(0)
   
   // Persistent recording state (survives modal close)
   const [isRecording, setIsRecording] = useState(false)
@@ -134,6 +139,58 @@ export default function RecordingsPage() {
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
   
   const supabase = createClient()
+
+  // Rotating status for "Create Project & Article" (every 15s, 8 messages = 2 min)
+  const CREATE_PROJECT_STATUS_MESSAGES = [
+    'Creating Project',
+    'Writing Article',
+    'Generating Image',
+    'Adding Finishing Touches',
+    'Polishing content',
+    'Preparing your project',
+    'Finalizing article',
+    'Almost there…',
+  ]
+  const CREATE_PROJECT_STATUS_INTERVAL_MS = 15_000
+
+  useEffect(() => {
+    if (!generatingProject) return
+    setGeneratingStatusIndex(0)
+    const id = setInterval(() => {
+      setGeneratingStatusIndex((i) => (i + 1) % CREATE_PROJECT_STATUS_MESSAGES.length)
+    }, CREATE_PROJECT_STATUS_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [generatingProject])
+
+  const subscriptionLimits: Record<SubscriptionTier, number> = {
+    free: 3,
+    pro: 15,
+    pro_max: 40,
+  }
+
+  const fetchLimitData = useCallback(async () => {
+    if (!user) return
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('subscription_tier')
+        .eq('id', user.id)
+        .single()
+      if (profile?.subscription_tier) setSubscriptionTier(profile.subscription_tier as SubscriptionTier)
+
+      const orFilter = currentWorkspace
+        ? `created_by.eq.${user.id},workspace_id.eq.${currentWorkspace.id}`
+        : `created_by.eq.${user.id}`
+      const { data: projectsData } = await supabase
+        .from('diffuse_projects')
+        .select('id, project_type')
+        .or(orFilter)
+      // Projects + advertisements count toward the same limit
+      setProjectCount(new Set((projectsData || []).map(p => p.id)).size)
+    } catch (e) {
+      console.warn('Limit data fetch failed', e)
+    }
+  }, [user, currentWorkspace, supabase])
 
   const fetchRecordings = useCallback(async () => {
     if (!user) return
@@ -164,6 +221,10 @@ export default function RecordingsPage() {
   useEffect(() => {
     fetchRecordings()
   }, [fetchRecordings])
+
+  useEffect(() => {
+    if (user) fetchLimitData()
+  }, [user, fetchLimitData])
 
   // Format time display
   const formatTime = (seconds: number) => {
@@ -790,8 +851,15 @@ export default function RecordingsPage() {
     }
   }
 
+  const projectLimit = subscriptionLimits[subscriptionTier]
+  const hasReachedProjectLimit = projectCount >= projectLimit
+
   const handleCreateProjectAndArticle = async () => {
     if (!selectedRecording || !selectedRecording.transcription) return
+    if (hasReachedProjectLimit) {
+      router.push('/dashboard/subscription')
+      return
+    }
 
     setGeneratingProject(true)
     try {
@@ -811,9 +879,15 @@ export default function RecordingsPage() {
         throw new Error(result.error || 'Failed to create project')
       }
 
-      // Close modal and navigate to the new project
+      const projectId = result.project_id
+      if (!projectId) {
+        throw new Error('No project ID returned from workflow')
+      }
+
+      // Close modal so UI updates immediately, then refresh and open the new project on Outputs tab
       setSelectedRecording(null)
-      router.push(`/dashboard/projects/${result.project_id}`)
+      router.refresh()
+      router.push(`/dashboard/projects/${projectId}?tab=outputs`)
     } catch (error) {
       console.error('Error creating project:', error)
       alert(error instanceof Error ? error.message : 'Failed to create project and article')
@@ -1157,8 +1231,18 @@ export default function RecordingsPage() {
 
       {/* Recording Detail Modal */}
       {selectedRecording && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="glass-container p-8 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setSelectedRecording(null)
+            setEditingTitle(false)
+            setEditedTitle('')
+          }}
+        >
+          <div
+            className="glass-container p-8 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header with close and delete buttons */}
             <div className="flex items-start justify-between mb-6 flex-shrink-0">
               <div className="flex-1 mr-4">
@@ -1375,11 +1459,18 @@ export default function RecordingsPage() {
                         >
                           {generatingProject ? (
                             <>
-                              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <svg className="w-5 h-5 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                               </svg>
-                              Creating Project...
+                              {CREATE_PROJECT_STATUS_MESSAGES[generatingStatusIndex]}…
+                            </>
+                          ) : hasReachedProjectLimit ? (
+                            <>
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                              </svg>
+                              Upgrade to Increase Project Limit
                             </>
                           ) : (
                             <>

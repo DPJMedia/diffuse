@@ -27,6 +27,7 @@ export default function AdvertisementsPage() {
   const router = useRouter()
   const { user, currentWorkspace, loading: authLoading } = useAuth()
   const [advertisements, setAdvertisements] = useState<ProjectWithCounts[]>([])
+  const [totalCountForLimit, setTotalCountForLimit] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free')
@@ -58,6 +59,9 @@ export default function AdvertisementsPage() {
         return isCreator || isInWorkspace
       })
       
+      // Projects + advertisements count toward the same limit
+      setTotalCountForLimit(filteredProjects.length)
+
       // Filter for advertisements only
       const adsData = filteredProjects.filter(
         p => p.project_type === 'advertisement'
@@ -255,25 +259,34 @@ export default function AdvertisementsPage() {
   }
 
   const projectLimit = subscriptionLimits[subscriptionTier]
-  // Note: This would ideally count all projects + ads, but for simplicity we just check ads here
-  const hasReachedLimit = advertisements.length >= projectLimit
+  const hasReachedLimit = totalCountForLimit >= projectLimit
 
   const CreateAdButton = ({ className = '' }: { className?: string }) => (
     <button
       onClick={() => {
         if (hasReachedLimit) {
-          alert(`You've reached your project limit. Please upgrade your plan to create more.`)
+          router.push('/dashboard/subscription')
           return
         }
         setShowCreateModal(true)
       }}
-      className={`btn-primary px-4 py-2 flex items-center justify-center gap-2 text-body-sm ${hasReachedLimit ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
-      disabled={hasReachedLimit}
+      className={`btn-primary px-4 py-2 flex items-center justify-center gap-2 text-body-sm ${className}`}
     >
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-      </svg>
-      Create Advertisement
+      {hasReachedLimit ? (
+        <>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+          Upgrade to Increase Project Limit
+        </>
+      ) : (
+        <>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Create Advertisement
+        </>
+      )}
     </button>
   )
 

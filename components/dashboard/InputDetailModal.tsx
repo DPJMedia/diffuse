@@ -19,9 +19,11 @@ interface InputDetailModalProps {
 export default function InputDetailModal({ input, onClose, onSave, onDelete, onUpdate, canEdit = true, canDelete = true }: InputDetailModalProps) {
   const [title, setTitle] = useState(input.file_name || '')
   const [content, setContent] = useState(input.content || '')
+  const [photoCaption, setPhotoCaption] = useState((input.metadata?.photo_caption as string) ?? '')
   const [photoCredit, setPhotoCredit] = useState((input.metadata?.photo_credit as string) ?? '')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null)
   const [replacingCover, setReplacingCover] = useState(false)
   const coverReplaceInputRef = useRef<HTMLInputElement>(null)
@@ -34,7 +36,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   const isCoverPhoto = input.type === 'cover_photo'
   const isDocument = input.type === 'document'
   const isAudio = input.type === 'audio'
-  const showSaveButton = canEdit && onSave && (!isImage || isCoverPhoto)
+  const showSaveButton = canEdit && (onSave || isImage)
   const showDeleteButton = canDelete && onDelete
   
   // Get type info for display
@@ -82,11 +84,12 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   
   const typeInfo = getTypeInfo()
 
-  // Sync title and photo credit when input is updated from parent (e.g. after replace)
+  // Sync title, photo caption, and photo credit when input is updated from parent (e.g. after replace)
   useEffect(() => {
     setTitle(input.file_name || '')
+    setPhotoCaption((input.metadata?.photo_caption as string) ?? '')
     setPhotoCredit((input.metadata?.photo_credit as string) ?? '')
-  }, [input.file_name, input.metadata?.photo_credit])
+  }, [input.file_name, input.metadata?.photo_caption, input.metadata?.photo_credit])
 
   // Cover photo: use API so anyone with project access can load it (no signed-URL encoding issues)
   const coverPhotoApiUrl = isCoverPhoto && input.file_path
@@ -94,9 +97,24 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
     : null
   const coverDisplayUrl = coverImageUrl ?? coverPhotoApiUrl
 
+  // Image inputs (e.g. workflow-generated): same retrieval as output section — use project-file API when we have file_path
+  const imageInputDisplayUrl = isImage && input.file_path
+    ? `/api/project-file?path=${encodeURIComponent(input.file_path)}`
+    : (isImage && input.metadata?.storage_url ? input.metadata.storage_url as string : null)
+
   useEffect(() => {
     setCoverImageUrl(null)
   }, [input.id, input.file_path])
+
+  const handleCopy = async (text: string, field: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(field)
+      setTimeout(() => setCopied(null), 2000)
+    } catch (error) {
+      console.error('Failed to copy:', error)
+    }
+  }
 
   const handleReplaceCoverPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -161,9 +179,26 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   }
 
   const handleSave = async () => {
-    if (!onSave) return
     setSaving(true)
     try {
+      if (isImage) {
+        // Image inputs: persist title, photo_caption, photo_credit (no content)
+        const { error } = await supabase
+          .from('diffuse_project_inputs')
+          .update({
+            file_name: title?.trim() || null,
+            metadata: {
+              ...input.metadata,
+              photo_caption: photoCaption?.trim() || undefined,
+              photo_credit: photoCredit?.trim() || undefined,
+            },
+          })
+          .eq('id', input.id)
+        if (error) throw error
+        onUpdate?.()
+        onClose()
+        return
+      }
       if (isCoverPhoto && (photoCredit !== ((input.metadata?.photo_credit as string) ?? ''))) {
         const { error: metaError } = await supabase
           .from('diffuse_project_inputs')
@@ -173,9 +208,11 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
           .eq('id', input.id)
         if (metaError) throw metaError
       }
-      await onSave(input.id, title, content)
-      onUpdate?.()
-      onClose()
+      if (onSave) {
+        await onSave(input.id, title, content)
+        onUpdate?.()
+        onClose()
+      }
     } catch (error) {
       console.error('Error saving input:', error)
       setSaving(false)
@@ -201,10 +238,10 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-      <div className="glass-container p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="glass-container p-6 max-w-4xl w-full max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex items-start justify-between mb-6 shrink-0">
           <div className="flex items-center gap-3">
             <div className={typeInfo.color}>
               {typeInfo.icon}
@@ -250,9 +287,9 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
           </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden gap-6">
           {/* Metadata Row */}
-          <div className="flex items-center gap-2 text-body-sm text-medium-gray">
+          <div className="flex items-center gap-2 text-body-sm text-medium-gray shrink-0">
             <span className={`uppercase font-medium tracking-wider ${typeInfo.color}`}>
               {typeInfo.label}
             </span>
@@ -272,45 +309,190 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             <span>{formatDateTime(input.created_at)}</span>
           </div>
 
-          {/* Title Field */}
-            <div>
-            <label className="block text-caption text-medium-gray mb-2">Title</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => canEdit && setTitle(e.target.value)}
-              placeholder={isFromRecording ? 'Recording' : isCoverPhoto ? 'Cover Photo' : isImage ? 'Image' : isDocument ? 'Document' : isAudio ? 'Audio' : 'Text Input'}
-              readOnly={!canEdit || (isImage && !isCoverPhoto)}
-              className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
-                canEdit && !isImage
-                  ? 'focus:outline-none focus:border-cosmic-orange' 
-                  : 'cursor-default opacity-75'
-              }`}
-            />
-              </div>
+          {/* Title Field (not for image inputs — they use the layout below) */}
+          {!isImage && (
+            <div className="shrink-0">
+              <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => canEdit && setTitle(e.target.value)}
+                placeholder={isFromRecording ? 'Recording' : isCoverPhoto ? 'Cover Photo' : isDocument ? 'Document' : isAudio ? 'Audio' : 'Text Input'}
+                readOnly={!canEdit || (isImage && !isCoverPhoto)}
+                className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                  canEdit && !isImage
+                    ? 'focus:outline-none focus:border-cosmic-orange'
+                    : 'cursor-default opacity-75'
+                }`}
+              />
+            </div>
+          )}
 
-          {/* Image Preview (for image inputs) */}
-          {isImage && input.metadata?.storage_url && (
-            <div>
-              <label className="block text-caption text-medium-gray mb-2">Preview</label>
-              <div className="bg-white/5 border border-white/10 rounded-glass p-4 relative w-full h-[300px]">
-                <Image
-                  src={input.metadata.storage_url}
-                  alt={input.file_name || 'Image'}
-                  fill
-                  sizes="(max-width: 768px) 100vw, 600px"
-                  className="rounded-lg object-contain"
-                />
+          {/* Image input: image left (title + download + copy), title/caption/credit right — same style as output popup */}
+          {isImage && imageInputDisplayUrl && (
+            <div className="flex flex-col md:flex-row md:gap-5 md:items-stretch shrink-0">
+              {/* Image window: label row + image (zoom to fill); larger to match taller right column */}
+              <div className="flex flex-col flex-shrink-0 w-full md:w-80 md:max-w-[340px] mb-4 md:mb-0 min-h-0">
+                <div className="flex items-center justify-between mb-2 shrink-0">
+                  <label className="text-caption text-medium-gray uppercase tracking-wider">Image</label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(imageInputDisplayUrl, { credentials: 'include' })
+                          if (!res.ok) throw new Error('Download failed')
+                          const blob = await res.blob()
+                          const ext = (res.headers.get('content-type') || '').includes('webp') ? 'webp' : (res.headers.get('content-type') || '').includes('jpeg') || (res.headers.get('content-type') || '').includes('jpg') ? 'jpg' : 'png'
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = `${(input.file_name || 'image').replace(/\s+/g, '-')}.${ext}`
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        } catch (e) {
+                          console.error('Image download failed:', e)
+                          alert('Failed to download image')
+                        }
+                      }}
+                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                      title="Download image"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(imageInputDisplayUrl, 'photo')}
+                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                      title="Copy image URL"
+                    >
+                      {copied === 'photo' ? (
+                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 min-h-[140px] md:min-h-0 border border-white/10 rounded-glass overflow-hidden bg-white/5 relative">
+                  <Image
+                    src={imageInputDisplayUrl}
+                    alt={input.file_name || 'Image'}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 220px"
+                    className="object-cover"
+                    unoptimized={imageInputDisplayUrl.startsWith('/api/')}
+                  />
+                </div>
               </div>
-              <p className="text-body-sm text-medium-gray mt-3 italic text-center">
-                This image will be processed by the AI workflow when generating output.
-              </p>
+              {/* Title, Photo caption, Photo credit — label + copy above each field */}
+              <div className="flex-1 min-w-0 flex flex-col justify-center gap-5">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-caption text-medium-gray uppercase tracking-wider">Title</label>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(title, 'title')}
+                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                      title="Copy title"
+                    >
+                      {copied === 'title' ? (
+                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => canEdit && setTitle(e.target.value)}
+                    placeholder="Image"
+                    readOnly={!canEdit}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                      canEdit ? 'focus:outline-none focus:border-cosmic-orange' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-caption text-medium-gray uppercase tracking-wider">Photo caption</label>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(photoCaption, 'photo_caption')}
+                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                      title="Copy caption"
+                    >
+                      {copied === 'photo_caption' ? (
+                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={photoCaption}
+                    onChange={(e) => canEdit && setPhotoCaption(e.target.value)}
+                    placeholder="Optional caption"
+                    readOnly={!canEdit}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                      canEdit ? 'focus:outline-none focus:border-cosmic-orange' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-caption text-medium-gray uppercase tracking-wider">Photo credit</label>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(photoCredit, 'photo_credit')}
+                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                      title="Copy credit"
+                    >
+                      {copied === 'photo_credit' ? (
+                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={photoCredit}
+                    onChange={(e) => canEdit && setPhotoCredit(e.target.value)}
+                    placeholder="e.g. Jane Smith"
+                    readOnly={!canEdit}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors ${
+                      canEdit ? 'focus:outline-none focus:border-cosmic-orange' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
           {/* Cover Photo: preview, Replace in header, Photo credit (optional) */}
           {isCoverPhoto && (
-            <div className="space-y-4">
+            <div className="space-y-4 shrink-0">
               <input
                 ref={coverReplaceInputRef}
                 type="file"
@@ -319,7 +501,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 onChange={handleReplaceCoverPhoto}
               />
               <div>
-                <label className="block text-caption text-medium-gray mb-2">Cover photo</label>
+                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">Cover photo</label>
                 {(coverDisplayUrl ?? input.metadata?.storage_url) ? (
                   <div className="bg-white/5 border border-white/10 rounded-glass p-4 relative w-full h-[300px]">
                     <Image
@@ -335,7 +517,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 )}
               </div>
               <div>
-                <label className="block text-caption text-medium-gray mb-2">Photo credit (optional)</label>
+                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">Photo credit (optional)</label>
                 <input
                   type="text"
                   value={photoCredit}
@@ -353,28 +535,29 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
 
           {/* Content Field (not shown for images or cover photo) */}
           {!isImage && !isCoverPhoto && (
-          <div>
-            <label className="block text-caption text-medium-gray mb-2">
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden basis-0">
+            <label className="block text-caption text-medium-gray mb-2 shrink-0 uppercase tracking-wider">
               {isFromRecording ? 'Transcription' : isAudio ? 'Transcription' : isDocument ? 'Extracted Text' : 'Content'}
             </label>
-            <textarea
-              value={content}
-              onChange={(e) => canEdit && setContent(e.target.value)}
-              placeholder="Enter content..."
-              rows={12}
-              readOnly={!canEdit}
-              className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none overflow-y-auto custom-scrollbar max-h-[50vh] ${
-                canEdit 
-                  ? 'focus:outline-none focus:border-cosmic-orange' 
-                  : 'cursor-default opacity-75'
-              }`}
-            />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <textarea
+                value={content}
+                onChange={(e) => canEdit && setContent(e.target.value)}
+                placeholder="Enter content..."
+                readOnly={!canEdit}
+                className={`w-full h-full min-h-0 px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors resize-none overflow-y-auto custom-scrollbar ${
+                  canEdit 
+                    ? 'focus:outline-none focus:border-cosmic-orange' 
+                    : 'cursor-default opacity-75'
+                }`}
+              />
+            </div>
             </div>
           )}
         </div>
 
         {/* Action Buttons */}
-        <div className="mt-8 flex gap-3">
+        <div className="mt-8 flex gap-3 shrink-0">
           <button 
             onClick={onClose} 
             className={`btn-secondary py-3 ${showSaveButton ? 'flex-1' : 'w-full'}`}

@@ -371,8 +371,8 @@ export default function OutputDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-      <div className="glass-container p-8 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="glass-container p-8 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between mb-6 flex-shrink-0">
           <div className="flex items-center gap-3">

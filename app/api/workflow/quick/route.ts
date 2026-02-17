@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, requireRecordingOwnership, unauthorizedResponse, forbiddenResponse } from '@/lib/security/authorization'
@@ -172,9 +172,11 @@ function extractJsonFromResponse(n8nResult: any): QuickWorkflowResponse {
       }
     }
     
-    // Check if n8nResult itself is already the parsed object
-    if (typeof n8nResult === 'object' && !Array.isArray(n8nResult) && n8nResult.title) {
-      return n8nResult as QuickWorkflowResponse
+    // Check if n8nResult itself is already the parsed object (flat: title at top level, or nested: article + project_title)
+    if (typeof n8nResult === 'object' && !Array.isArray(n8nResult)) {
+      if (n8nResult.title || n8nResult.project_title || n8nResult.article) {
+        return n8nResult as QuickWorkflowResponse
+      }
     }
     
     // Check for direct content property
@@ -200,7 +202,8 @@ function extractJsonFromResponse(n8nResult: any): QuickWorkflowResponse {
   }
 }
 
-// Transform the flat response into project and article data
+// Transform the response into project and article data.
+// Supports: top-level or article.project_title/description, nested article, flat format, array-wrapped response.
 function extractQuickWorkflowContent(n8nResult: any): {
   project_title: string
   project_description: string
@@ -210,17 +213,44 @@ function extractQuickWorkflowContent(n8nResult: any): {
   
   console.log('Parsed response:', JSON.stringify(parsed).substring(0, 500))
   
-  // Extract project fields
-  const project_title = parsed.project_title || parsed.title || 'Untitled Project'
-  const project_description = parsed.project_description || parsed.excerpt || ''
+  // Project fields: top level first, then inside article (Merge/agent often put them in article)
+  const project_title =
+    parsed.project_title ??
+    parsed.article?.project_title ??
+    parsed.title ??
+    'Untitled Project'
+  const project_description =
+    parsed.project_description ??
+    parsed.article?.project_description ??
+    parsed.excerpt ??
+    ''
   
-  // Build article object from remaining fields (excluding project fields)
-  const { project_title: _pt, project_description: _pd, ...articleFields } = parsed
+  // Article: use nested object when present, otherwise flatten from top-level fields
+  let article: Record<string, any>
+  if (parsed.article && typeof parsed.article === 'object') {
+    article = { ...parsed.article }
+    // Don't store project-level fields inside the article output
+    delete article.project_title
+    delete article.project_description
+    // Merge in top-level article-like fields (workflow may put them at root)
+    const topLevelArticleFields = [
+      'suggested_sections', 'category', 'tags', 'meta_title', 'meta_description',
+      'image_prompt', 'suggested_image_prompt', 'photo_caption',
+    ]
+    for (const key of topLevelArticleFields) {
+      if (parsed[key] !== undefined && article[key] === undefined) {
+        article[key] = parsed[key]
+      }
+    }
+  } else {
+    const { project_title: _pt, project_description: _pd, ...articleFields } = parsed
+    article = articleFields
+  }
   
   return {
     project_title,
     project_description,
-    article: articleFields
+    article,
   }
 }
 
@@ -288,11 +318,25 @@ export async function POST(request: NextRequest) {
       return forbiddenResponse(error.message)
     }
 
-    // Call n8n webhook with quick mode
+    // Call n8n webhook with quick mode. Pass the recording as the explicit single source so the
+    // workflow knows exactly what to use for the project and article (same shape as main workflow inputs).
     const n8nPayload = {
       mode: 'quick',
+      recording_id,
       recording_title: recording_title || 'Recording',
-      transcription: transcription,
+      transcription,
+      // Single source input: the recording the user clicked "Create Project and Article" on.
+      // Use same shape as main workflow (inputs array) so the workflow can use inputs[0].content etc.
+      inputs: [
+        {
+          id: recording_id,
+          type: 'recording',
+          content: transcription,
+          file_name: recording_title || 'Recording',
+          file_path: null,
+          image_url: null,
+        },
+      ],
     }
 
     const webhookUrl = getN8nWebhookUrl()
@@ -327,16 +371,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Workflow returned empty response' }, { status: 500 })
     }
 
-    let n8nResult
+    let n8nResult: any
     try {
       n8nResult = JSON.parse(responseText)
     } catch (parseError) {
       console.error('Failed to parse n8n response as JSON:', parseError)
       return NextResponse.json({ error: 'Invalid workflow response format' }, { status: 500 })
     }
-    
+
+    // Unwrap common n8n response shapes
+    // - Respond to Webhook "First Incoming Item": payload in .json
+    // - Or body is array from Merge: [{ json: response }] -> use first item's .json or the item itself
+    let unwrapped = n8nResult?.json ?? n8nResult?.body ?? n8nResult?.data
+    if (Array.isArray(n8nResult) && n8nResult.length > 0) {
+      const first = n8nResult[0]
+      unwrapped = first?.json ?? first
+    }
+    if (unwrapped && typeof unwrapped === 'object' && (unwrapped.project_title ?? unwrapped.article ?? unwrapped.title)) {
+      n8nResult = unwrapped
+    }
+
     // Extract the AI-generated content
-    const content = extractQuickWorkflowContent(n8nResult)
+    let content
+    try {
+      content = extractQuickWorkflowContent(n8nResult)
+    } catch (parseError: any) {
+      console.error('Quick workflow: could not extract content from n8n response.', parseError?.message)
+      console.error('n8n response top-level keys:', n8nResult && typeof n8nResult === 'object' ? Object.keys(n8nResult) : typeof n8nResult)
+      return NextResponse.json(
+        {
+          error:
+            'Could not read workflow response. The workflow must return JSON with project_title, project_description, and article (with title and content). See server logs for details.',
+        },
+        { status: 502 }
+      )
+    }
     
     console.log('Extracted content:', { 
       project_title: content.project_title, 
@@ -397,7 +466,22 @@ export async function POST(request: NextRequest) {
       author: 'Diffuse.AI',
     }
 
-    // Create the output
+    // Extract image from workflow response (same shape as main workflow: image_base64 + content_type)
+    const imageBase64 =
+      typeof n8nResult?.image_base64 === 'string' && n8nResult.image_base64.length > 100
+        ? {
+            data: n8nResult.image_base64.replace(/\s/g, ''),
+            contentType: typeof n8nResult?.content_type === 'string' ? n8nResult.content_type : undefined,
+          }
+        : typeof n8nResult?.imageBase64 === 'string' && n8nResult.imageBase64.length > 100
+          ? {
+              data: n8nResult.imageBase64.replace(/\s/g, ''),
+              contentType: typeof n8nResult?.content_type === 'string' ? n8nResult.content_type : undefined,
+            }
+          : null
+    const hasWorkflowImage = !!imageBase64
+
+    // Create the output (cover_photo_path set after we upload the workflow image, if any)
     const { data: output, error: outputError } = await supabase
       .from('diffuse_project_outputs')
       .insert({
@@ -405,6 +489,7 @@ export async function POST(request: NextRequest) {
         input_id: input.id,
         content: JSON.stringify(articleContent),
         workflow_status: 'completed',
+        cover_photo_path: hasWorkflowImage ? null : undefined,
       })
       .select()
       .single()
@@ -416,8 +501,69 @@ export async function POST(request: NextRequest) {
       await supabase.from('diffuse_projects').delete().eq('id', project.id)
       return NextResponse.json({ error: 'Failed to create output' }, { status: 500 })
     }
-    
+
     console.log('Created output:', output.id)
+
+    // Persist workflow image and set cover + add as input (same as main workflow)
+    let generatedImagePathForInput: string | null = null
+    if (output?.id && imageBase64) {
+      const storageClient = createAdminClient() ?? supabase
+      if (!createAdminClient()) {
+        console.warn('[workflow/quick] SUPABASE_SERVICE_ROLE_KEY not set; using user client for storage upload.')
+      }
+      try {
+        const buf = Buffer.from(imageBase64.data, 'base64')
+        const contentType = imageBase64.contentType || 'image/png'
+        const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+        const storagePath = `${user.id}/${project.id}/cover-${output.id}-generated.${ext}`
+        const { error: uploadError } = await storageClient.storage
+          .from('project-files')
+          .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
+        if (!uploadError) {
+          generatedImagePathForInput = storagePath
+          await supabase
+            .from('diffuse_project_outputs')
+            .update({ cover_photo_path: storagePath, updated_at: new Date().toISOString() })
+            .eq('id', output.id)
+          console.log('[workflow/quick] Generated image uploaded at', storagePath)
+        } else {
+          console.error('[workflow/quick] Image upload failed:', uploadError.message)
+        }
+      } catch (e) {
+        console.error('[workflow/quick] Image decode/upload failed:', e instanceof Error ? e.message : e)
+      }
+    }
+
+    if (output?.id && generatedImagePathForInput) {
+      const article = content.article
+      const imageTitle = (typeof article?.title === 'string' && article.title.trim()) ? article.title.trim() : 'Diffuse Generated Image'
+      const photoCaption = (typeof article?.photo_caption === 'string' && article.photo_caption.trim()) ? article.photo_caption.trim() : undefined
+      const photoCredit = (typeof article?.photo_credit === 'string' && article.photo_credit.trim()) ? article.photo_credit.trim() : undefined
+      const ext = generatedImagePathForInput.includes('.') ? generatedImagePathForInput.split('.').pop()?.toLowerCase() || 'png' : 'png'
+      const safeExt = /^(png|jpg|jpeg|webp|gif)$/i.test(ext || '') ? ext : 'png'
+      const { error: inputErr } = await supabase
+        .from('diffuse_project_inputs')
+        .insert({
+          project_id: project.id,
+          type: 'image',
+          content: null,
+          file_path: generatedImagePathForInput,
+          file_name: imageTitle,
+          metadata: {
+            source: 'workflow_generated',
+            output_id: output.id,
+            ...(photoCaption && { photo_caption: photoCaption }),
+            ...(photoCredit && { photo_credit: photoCredit }),
+          },
+          created_by: user.id,
+        })
+      if (inputErr) {
+        console.error('[workflow/quick] Failed to add generated image as input:', inputErr.message)
+      } else {
+        console.log('[workflow/quick] Generated image added as input for output', output.id)
+      }
+    }
+
     console.log('Quick workflow completed successfully for project:', project.id)
 
     const response = NextResponse.json({ 

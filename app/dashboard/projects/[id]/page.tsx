@@ -1466,10 +1466,14 @@ export default function ProjectDetailPage() {
                       </div>
                     </div>
                     
-                    {/* Content Preview */}
+                    {/* Content Preview — transcription for recording, caption for image, etc. */}
                     {input.content ? (
                       <p className="text-body-sm text-secondary-white/70 mt-3 line-clamp-2">
                         {input.content}
+                      </p>
+                    ) : input.type === 'image' && input.metadata?.photo_caption ? (
+                      <p className="text-body-sm text-secondary-white/70 mt-3 line-clamp-2">
+                        {input.metadata.photo_caption as string}
                       </p>
                     ) : input.type === 'image' ? (
                       <p className="text-body-sm text-medium-gray mt-3 italic">

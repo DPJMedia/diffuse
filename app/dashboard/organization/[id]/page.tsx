@@ -10,6 +10,8 @@ import EmptyState from '@/components/dashboard/EmptyState'
 import CreateProjectModal from '@/components/dashboard/CreateProjectModal'
 import type { DiffuseWorkspace, DiffuseProject, OrganizationPlan } from '@/types/database'
 
+type SubscriptionTier = 'free' | 'pro' | 'pro_max'
+
 const planDetails = {
   enterprise_pro: { name: 'Enterprise Pro', projects: 50, price: '$100/mo' },
   enterprise_pro_max: { name: 'Enterprise Pro Max', projects: 'Unlimited', price: '$500/mo' },
@@ -48,7 +50,7 @@ export default function OrganizationDetailPage() {
   const params = useParams()
   const router = useRouter()
   const orgId = params.id as string
-  const { user } = useAuth()
+  const { user, currentWorkspace } = useAuth()
   const [workspace, setWorkspace] = useState<DiffuseWorkspace | null>(null)
   const [projects, setProjects] = useState<ProjectWithCounts[]>([])
   const [members, setMembers] = useState<MemberWithDetails[]>([])
@@ -63,7 +65,15 @@ export default function OrganizationDetailPage() {
   const [savingRole, setSavingRole] = useState(false)
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false)
   const [deletingOrg, setDeletingOrg] = useState(false)
+  const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free')
+  const [projectCount, setProjectCount] = useState(0)
   const supabase = createClient()
+
+  const subscriptionLimits: Record<SubscriptionTier, number> = {
+    free: 3,
+    pro: 15,
+    pro_max: 40,
+  }
 
   const fetchOrganizationData = useCallback(async () => {
     if (!user || !orgId) return
@@ -177,9 +187,37 @@ export default function OrganizationDetailPage() {
     }
   }, [user, orgId, supabase])
 
+  const fetchLimitData = useCallback(async () => {
+    if (!user) return
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('subscription_tier')
+        .eq('id', user.id)
+        .single()
+      if (profile?.subscription_tier) setSubscriptionTier(profile.subscription_tier as SubscriptionTier)
+
+      const orFilter = currentWorkspace
+        ? `created_by.eq.${user.id},workspace_id.eq.${currentWorkspace.id}`
+        : `created_by.eq.${user.id}`
+      const { data: projectsData } = await supabase
+        .from('diffuse_projects')
+        .select('id, project_type')
+        .or(orFilter)
+      // Projects + advertisements count toward the same limit
+      setProjectCount(new Set((projectsData || []).map(p => p.id)).size)
+    } catch (e) {
+      console.warn('Limit data fetch failed', e)
+    }
+  }, [user, currentWorkspace, supabase])
+
   useEffect(() => {
     fetchOrganizationData()
   }, [fetchOrganizationData])
+
+  useEffect(() => {
+    if (user) fetchLimitData()
+  }, [user, fetchLimitData])
 
   const handleChangePlan = async (newPlan: OrganizationPlan) => {
     if (!workspace || userRole !== 'owner') return
@@ -526,13 +564,31 @@ export default function OrganizationDetailPage() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-heading-lg text-secondary-white">Projects</h2>
         <button
-          onClick={() => setShowCreateProjectModal(true)}
+          onClick={() => {
+            const limit = subscriptionLimits[subscriptionTier]
+            if (projectCount >= limit) {
+              router.push('/dashboard/subscription')
+              return
+            }
+            setShowCreateProjectModal(true)
+          }}
           className="btn-primary px-4 py-2 flex items-center gap-2 text-body-sm"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Create Project
+          {projectCount >= subscriptionLimits[subscriptionTier] ? (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+              </svg>
+              Upgrade to Increase Project Limit
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Project
+            </>
+          )}
         </button>
       </div>
       

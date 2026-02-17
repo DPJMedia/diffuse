@@ -22,6 +22,14 @@ const individualPlans = {
   pro_max: { name: 'Pro Max', projects: 40, price: '$60/mo', isEnterprise: false },
 }
 
+// Usage-based is contact-only (no tier in DB)
+const usageBasedPlan = {
+  name: 'Usage-Based',
+  description: 'Pay only for what you use',
+  features: 'No fixed project limit · Pay per project or output · Scale anytime',
+  price: 'Pay as you go',
+}
+
 // Enterprise plans (for organizations) - based on projects
 const enterprisePlans = {
   enterprise_pro: { name: 'Enterprise Pro', projects: 50, price: '$100/mo' },
@@ -273,40 +281,60 @@ export default function SubscriptionPage() {
       {/* Individual Plans */}
       <div className="mb-12">
         <h2 className="text-heading-lg text-secondary-white mb-6">Individual Plans</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 flex-wrap">
           {(Object.keys(subscriptionDetails) as SubscriptionTier[]).map((tier) => {
             const sub = subscriptionDetails[tier]
             const isCurrentPlan = tier === currentTier
-            
+            const subtitle1 = sub.name === 'Free' ? 'Get started with Diffuse' : 'More projects and features'
+            const subtitle2 = `${sub.projects} projects included`
+
             return (
               <div
                 key={tier}
-                className={`glass-container p-6 border ${isCurrentPlan ? 'border-cosmic-orange/50' : 'border-white/10'}`}
+                className={`glass-container p-6 border flex flex-col min-h-[200px] ${isCurrentPlan ? 'border-cosmic-orange/50' : 'border-white/10'}`}
               >
                 <h3 className="text-heading-md text-secondary-white mb-2">{sub.name}</h3>
-                <p className="text-body-sm text-medium-gray mb-6">
-                  {sub.name === 'Free' ? 'Get started with project capacity' : 'Includes project capacity'}
-                </p>
-
-                {isCurrentPlan ? (
-                  <button
-                    onClick={() => window.location.href = '/dashboard/projects'}
-                    className="w-full py-3 text-body-md font-medium rounded-glass bg-cosmic-orange text-black hover:bg-rich-orange transition-colors cursor-pointer"
-                  >
-                    Active
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleUpgradeClick(tier)}
-                    disabled={saving}
-                    className="btn-secondary w-full py-3 text-body-md disabled:opacity-50"
-                  >
-                    {getTierValue(tier) < getTierValue(currentTier) ? 'Downgrade' : 'Upgrade'}
-                  </button>
-                )}
+                <div className="min-h-[4.5rem] text-body-sm text-medium-gray space-y-1 mb-6">
+                  <p className="leading-tight">{subtitle1}</p>
+                  <p className="leading-tight">{subtitle2}</p>
+                </div>
+                <div className="mt-auto">
+                  {isCurrentPlan ? (
+                    <button
+                      onClick={() => window.location.href = '/dashboard/projects'}
+                      className="w-full py-3 text-body-md font-medium rounded-glass bg-cosmic-orange text-black hover:bg-rich-orange transition-colors cursor-pointer"
+                    >
+                      Active
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleUpgradeClick(tier)}
+                      disabled={saving}
+                      className="btn-secondary w-full py-3 text-body-md disabled:opacity-50"
+                    >
+                      {getTierValue(tier) < getTierValue(currentTier) ? 'Downgrade' : 'Upgrade'}
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}
+          {/* Usage-based: contact-only, no tier in DB */}
+          <div className="glass-container p-6 border border-white/10 flex flex-col min-h-[200px]">
+            <h3 className="text-heading-md text-secondary-white mb-2">{usageBasedPlan.name}</h3>
+            <div className="min-h-[4.5rem] text-body-sm text-medium-gray space-y-1 mb-6">
+              <p className="leading-tight">{usageBasedPlan.description}</p>
+              <p className="leading-tight">{usageBasedPlan.price}</p>
+            </div>
+            <div className="mt-auto">
+              <a
+                href="mailto:support@diffuse.ai?subject=Usage-based%20plan%20inquiry"
+                className="btn-secondary w-full py-3 text-body-md text-center block hover:bg-white/10 transition-colors"
+              >
+                Contact for pricing
+              </a>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -324,40 +352,42 @@ export default function SubscriptionPage() {
             </p>
           </div>
         ) : null}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 flex-wrap">
           {Object.entries(enterprisePlans).map(([key, plan]) => {
             const isCurrentPlan = currentWorkspace?.plan === key
-            
             const currentEnterpriseTier = currentWorkspace?.plan ? getEnterpriseTierValue(currentWorkspace.plan) : -1
             const targetEnterpriseTier = getEnterpriseTierValue(key)
             const isDowngrade = currentEnterpriseTier > targetEnterpriseTier
-            
+            const subtitle2 = typeof plan.projects === 'number' ? `${plan.projects} projects included` : `${plan.projects} projects`
+
             return (
               <div
                 key={key}
-                className={`glass-container p-6 border ${isCurrentPlan ? 'border-cosmic-orange/50' : 'border-white/10'}`}
+                className={`glass-container p-6 border flex flex-col min-h-[200px] ${isCurrentPlan ? 'border-cosmic-orange/50' : 'border-white/10'}`}
               >
                 <h3 className="text-heading-md text-secondary-white mb-2">{plan.name}</h3>
-                <p className="text-body-sm text-medium-gray mb-6">
-                  Includes project capacity for your organization
-                </p>
-
-                {isCurrentPlan ? (
-                  <button
-                    onClick={() => window.location.href = '/dashboard/organization'}
-                    className="w-full py-3 text-body-md font-medium rounded-glass bg-cosmic-orange text-black hover:bg-rich-orange transition-colors cursor-pointer"
-                  >
-                    Active
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleEnterpriseUpgradeClick(key as EnterprisePlan)}
-                    disabled={saving || !currentWorkspace}
-                    className="btn-secondary w-full py-3 text-body-md disabled:opacity-50"
-                  >
-                    {isDowngrade ? 'Downgrade' : 'Upgrade'}
-                  </button>
-                )}
+                <div className="min-h-[4.5rem] text-body-sm text-medium-gray space-y-1 mb-6">
+                  <p className="leading-tight">For your organization</p>
+                  <p className="leading-tight">{subtitle2}</p>
+                </div>
+                <div className="mt-auto">
+                  {isCurrentPlan ? (
+                    <button
+                      onClick={() => window.location.href = '/dashboard/organization'}
+                      className="w-full py-3 text-body-md font-medium rounded-glass bg-cosmic-orange text-black hover:bg-rich-orange transition-colors cursor-pointer"
+                    >
+                      Active
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleEnterpriseUpgradeClick(key as EnterprisePlan)}
+                      disabled={saving || !currentWorkspace}
+                      className="btn-secondary w-full py-3 text-body-md disabled:opacity-50"
+                    >
+                      {isDowngrade ? 'Downgrade' : 'Upgrade'}
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}

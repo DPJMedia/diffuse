@@ -679,8 +679,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Save the workflow-generated image as an image input so it appears in the Inputs section and with the output.
+    // Save the workflow-generated image as an image input; populate title, caption, credit from the same output article.
     if (output?.id && generatedImagePathForInput) {
+      let imageTitle = 'Diffuse Generated Image'
+      let photoCaption: string | undefined
+      let photoCredit: string | undefined
+      try {
+        const parsed = JSON.parse(finalContent)
+        const article = (Array.isArray(parsed) && parsed[0]?.article) ? parsed[0].article : (parsed?.article ?? parsed)
+        if (article && typeof article === 'object') {
+          const a = article as Record<string, unknown>
+          if (typeof a.title === 'string' && a.title.trim()) imageTitle = a.title.trim()
+          if (typeof a.photo_caption === 'string' && a.photo_caption.trim()) photoCaption = a.photo_caption.trim()
+          if (typeof a.photo_credit === 'string' && a.photo_credit.trim()) photoCredit = a.photo_credit.trim()
+        }
+      } catch {
+        /* ignore */
+      }
       const ext = generatedImagePathForInput.includes('.') ? generatedImagePathForInput.split('.').pop()?.toLowerCase() || 'png' : 'png'
       const safeExt = /^(png|jpg|jpeg|webp|gif)$/i.test(ext || '') ? ext : 'png'
       const { error: inputErr } = await supabase
@@ -690,10 +705,12 @@ export async function POST(request: NextRequest) {
           type: 'image',
           content: null,
           file_path: generatedImagePathForInput,
-          file_name: `Generated cover.${safeExt}`,
+          file_name: imageTitle,
           metadata: {
             source: 'workflow_generated',
             output_id: output.id,
+            ...(photoCaption && { photo_caption: photoCaption }),
+            ...(photoCredit && { photo_credit: photoCredit }),
           },
           created_by: user.id,
         })

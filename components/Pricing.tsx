@@ -6,36 +6,31 @@ import { useRef, useState } from 'react'
 const individualPlans = [
   {
     name: 'Free',
-    description: 'Perfect for trying out Diffuse',
-    features: [
-      'Project capacity',
-      'AI article generation',
-      'In-app recording',
-    ],
+    subtitle1: 'Perfect for trying out Diffuse',
+    subtitle2: '3 projects included',
     cta: 'Start Free',
     highlight: false,
   },
   {
     name: 'Pro',
-    description: 'For independent journalists',
-    features: [
-      'More project capacity',
-      'Everything in Free',
-      'File uploads',
-    ],
+    subtitle1: 'For independent journalists',
+    subtitle2: '15 projects included',
     cta: 'Get Pro',
     highlight: true,
     badge: 'Most Popular',
   },
   {
     name: 'Pro Max',
-    description: 'For power users',
-    features: [
-      'Extended capacity',
-      'Everything in Pro',
-      'Additional features',
-    ],
+    subtitle1: 'For power users',
+    subtitle2: '40 projects included',
     cta: 'Get Pro Max',
+    highlight: false,
+  },
+  {
+    name: 'Usage-Based',
+    subtitle1: 'Pay only for what you use',
+    subtitle2: 'No fixed limit · Pay as you go',
+    cta: 'Contact Sales',
     highlight: false,
   },
 ]
@@ -43,22 +38,14 @@ const individualPlans = [
 const enterprisePlans = [
   {
     name: 'Team',
-    description: 'For small newsrooms',
-    features: [
-      'Organization project capacity',
-      'Create an organization',
-      'Invite team members',
-    ],
+    subtitle1: 'For small newsrooms',
+    subtitle2: 'Create an organization · Invite team members',
     cta: 'Get Started',
   },
   {
     name: 'Team Max',
-    description: 'For large teams',
-    features: [
-      'Extended organization capacity',
-      'Everything in Team',
-      'Unlimited team members',
-    ],
+    subtitle1: 'For large teams',
+    subtitle2: 'Everything in Team · Unlimited members',
     cta: 'Contact Sales',
   },
 ]
@@ -138,12 +125,12 @@ export default function Pricing() {
           {!showEnterprise && (
             <motion.div
               variants={itemVariants}
-              className="grid md:grid-cols-3 gap-6"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 flex-wrap"
             >
               {individualPlans.map((plan) => (
                 <div
                   key={plan.name}
-                  className={`glass-container p-6 md:p-8 relative ${
+                  className={`glass-container p-6 md:p-8 relative flex flex-col min-h-[200px] ${
                     plan.highlight
                       ? 'border-cosmic-orange/50 bg-cosmic-orange/5'
                       : ''
@@ -158,29 +145,23 @@ export default function Pricing() {
                   <h3 className="text-xl md:text-2xl font-bold text-secondary-white mb-2">
                     {plan.name}
                   </h3>
-                  <p className="text-sm text-medium-gray mb-6">{plan.description}</p>
+                  <div className="min-h-[4.5rem] text-sm text-medium-gray space-y-1 mb-6">
+                    <p className="leading-tight">{plan.subtitle1}</p>
+                    <p className="leading-tight">{plan.subtitle2}</p>
+                  </div>
 
-                  <ul className="space-y-3 mb-8">
-                    {plan.features.map((feature, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-medium-gray">
-                        <svg className="w-5 h-5 text-cosmic-orange flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-
-                  <a
-                    href="/login"
-                    className={`block w-full py-3 text-center font-medium rounded-glass transition-all ${
-                      plan.highlight
-                        ? 'bg-cosmic-orange hover:bg-rich-orange text-black'
-                        : 'bg-white/10 hover:bg-white/20 text-secondary-white'
-                    }`}
-                  >
-                    {plan.cta}
-                  </a>
+                  <div className="mt-auto">
+                    <a
+                      href={plan.name === 'Usage-Based' ? 'mailto:support@diffuse.ai?subject=Usage-based%20plan%20inquiry' : '/login'}
+                      className={`block w-full py-3 text-center font-medium rounded-glass transition-all ${
+                        plan.highlight
+                          ? 'bg-cosmic-orange hover:bg-rich-orange text-black'
+                          : 'bg-white/10 hover:bg-white/20 text-secondary-white'
+                      }`}
+                    >
+                      {plan.cta}
+                    </a>
+                  </div>
                 </div>
               ))}
             </motion.div>
@@ -190,39 +171,33 @@ export default function Pricing() {
           {showEnterprise && (
             <motion.div
               variants={itemVariants}
-              className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto"
+              className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-4xl mx-auto flex-wrap"
             >
               {enterprisePlans.map((plan, index) => (
                 <div
                   key={plan.name}
-                  className={`glass-container p-6 md:p-8 ${index === 1 ? 'border-accent-purple/50 bg-accent-purple/5' : ''}`}
+                  className={`glass-container p-6 md:p-8 flex flex-col min-h-[200px] ${index === 1 ? 'border-accent-purple/50 bg-accent-purple/5' : ''}`}
                 >
                   <h3 className="text-xl md:text-2xl font-bold text-secondary-white mb-2">
                     {plan.name}
                   </h3>
-                  <p className="text-sm text-medium-gray mb-6">{plan.description}</p>
+                  <div className="min-h-[4.5rem] text-sm text-medium-gray space-y-1 mb-6">
+                    <p className="leading-tight">{plan.subtitle1}</p>
+                    <p className="leading-tight">{plan.subtitle2}</p>
+                  </div>
 
-                  <ul className="space-y-3 mb-8">
-                    {plan.features.map((feature, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-medium-gray">
-                        <svg className="w-5 h-5 text-accent-purple flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-
-                  <a
-                    href={plan.name === 'Team Max' ? 'mailto:support@diffuse.ai' : '/login'}
-                    className={`block w-full py-3 text-center font-medium rounded-glass transition-all ${
-                      index === 1
-                        ? 'bg-accent-purple hover:bg-accent-purple/80 text-black'
-                        : 'bg-white/10 hover:bg-white/20 text-secondary-white'
-                    }`}
-                  >
-                    {plan.cta}
-                  </a>
+                  <div className="mt-auto">
+                    <a
+                      href={plan.name === 'Team Max' ? 'mailto:support@diffuse.ai' : '/login'}
+                      className={`block w-full py-3 text-center font-medium rounded-glass transition-all ${
+                        index === 1
+                          ? 'bg-accent-purple hover:bg-accent-purple/80 text-black'
+                          : 'bg-white/10 hover:bg-white/20 text-secondary-white'
+                      }`}
+                    >
+                      {plan.cta}
+                    </a>
+                  </div>
                 </div>
               ))}
             </motion.div>
