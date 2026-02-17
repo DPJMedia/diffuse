@@ -84,12 +84,13 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   
   const typeInfo = getTypeInfo()
 
-  // Sync title, photo caption, and photo credit when input is updated from parent (e.g. after replace)
+  // Sync title, content, photo caption, and photo credit when input is updated from parent or when opening a different input
   useEffect(() => {
     setTitle(input.file_name || '')
+    setContent(input.content || '')
     setPhotoCaption((input.metadata?.photo_caption as string) ?? '')
     setPhotoCredit((input.metadata?.photo_credit as string) ?? '')
-  }, [input.file_name, input.metadata?.photo_caption, input.metadata?.photo_credit])
+  }, [input.id, input.file_name, input.content, input.metadata?.photo_caption, input.metadata?.photo_credit])
 
   // Cover photo: use API so anyone with project access can load it (no signed-URL encoding issues)
   const coverPhotoApiUrl = isCoverPhoto && input.file_path
@@ -533,19 +534,20 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             </div>
           )}
 
-          {/* Content Field (not shown for images or cover photo) */}
+          {/* Content Field (not shown for images or cover photo) — transcription for recording, etc. */}
           {!isImage && !isCoverPhoto && (
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden basis-0">
+          <div className="flex flex-col flex-1 min-h-[200px] overflow-hidden">
             <label className="block text-caption text-medium-gray mb-2 shrink-0 uppercase tracking-wider">
               {isFromRecording ? 'Transcription' : isAudio ? 'Transcription' : isDocument ? 'Extracted Text' : 'Content'}
             </label>
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex-1 min-h-[180px] overflow-hidden flex flex-col">
               <textarea
                 value={content}
                 onChange={(e) => canEdit && setContent(e.target.value)}
                 placeholder="Enter content..."
                 readOnly={!canEdit}
-                className={`w-full h-full min-h-0 px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors resize-none overflow-y-auto custom-scrollbar ${
+                rows={10}
+                className={`w-full min-h-[180px] flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md transition-colors resize-y overflow-y-auto custom-scrollbar ${
                   canEdit 
                     ? 'focus:outline-none focus:border-cosmic-orange' 
                     : 'cursor-default opacity-75'
