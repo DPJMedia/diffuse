@@ -71,6 +71,51 @@ function findArticleInPayload(obj: unknown, depth = 0): unknown {
   return null
 }
 
+// Keys that may hold image/binary data - strip those values when sending to reedit workflow to stay under token limits
+const BINARY_KEYS = new Set([
+  'url', 'generated_image_url', 'image_url', 'image', 'data', 'image_base64', 'imageBase64', 'image_data', 'image_data_url',
+])
+const DATA_URL_PREFIX = 'data:'
+const BASE64_PLACEHOLDER = '[image omitted]'
+const MAX_BINARY_STRING_LENGTH = 500
+
+function looksLikeBase64(str: string): boolean {
+  if (str.length < 100) return false
+  const cleaned = str.replace(/\s/g, '')
+  return /^[A-Za-z0-9+/]+=*$/.test(cleaned) && cleaned.length > 200
+}
+
+/** Recursively strip data URLs and base64 image data from output content so only text is sent to the reedit workflow. */
+function stripBinaryFromOutputContent(content: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return content
+  }
+
+  function walk(obj: unknown, keyHint?: string): unknown {
+    if (obj == null) return obj
+    if (typeof obj === 'string') {
+      if (obj.startsWith(DATA_URL_PREFIX)) return BASE64_PLACEHOLDER
+      if (keyHint && BINARY_KEYS.has(keyHint) && looksLikeBase64(obj)) return BASE64_PLACEHOLDER
+      return obj
+    }
+    if (Array.isArray(obj)) return obj.map((item, i) => walk(item, undefined))
+    if (typeof obj === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(obj)) {
+        out[k] = walk(v, k)
+      }
+      return out
+    }
+    return obj
+  }
+
+  const cleaned = walk(parsed)
+  return JSON.stringify(cleaned)
+}
+
 // Extract article content as JSON string from n8n response
 function extractWorkflowContent(n8nResult: unknown): string | null {
   const unwrapped = unwrapN8nResponse(n8nResult)
@@ -251,7 +296,7 @@ export async function POST(request: NextRequest) {
       output_id,
       project_id: output.project_id,
       user_id: user.id,
-      existing_content: output.content,
+      existing_content: stripBinaryFromOutputContent(output.content),
       comments: comments.trim(),
       workflow_metadata: output.workflow_metadata ?? {},
     }
