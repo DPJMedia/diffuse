@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime } from '@/lib/utils/format'
 import type { DiffuseProjectOutput } from '@/types/database'
@@ -473,13 +474,15 @@ export default function OutputDetailModal({
           {/* Cover Photo - at top only when raw view (no article). In article view, cover moves next to caption/credit (desktop) or below subtitle (mobile). */}
           {!article && coverPhotoUrl ? (
             <div className="w-full rounded-glass overflow-hidden bg-white/5 mb-5 relative h-[40vh] min-h-[200px]">
-              <img
+              <Image
                 key={coverPhotoUrl}
                 src={coverPhotoUrl}
                 alt="Cover"
-                className="absolute inset-0 w-full h-full object-contain"
+                fill
+                sizes="(max-width: 768px) 100vw, 800px"
+                className="object-contain"
                 referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
-                loading="eager"
+                unoptimized={coverPhotoUrl.startsWith('/api/')}
               />
               <button
                 type="button"
@@ -688,13 +691,15 @@ export default function OutputDetailModal({
                         onClick={() => setPhotoLightboxOpen(true)}
                         className="flex-1 min-h-0 w-full h-full relative flex items-center justify-center focus:outline-none focus:ring-0 overflow-hidden"
                       >
-                        <img
+                        <Image
                           key={coverPhotoUrl}
                           src={coverPhotoUrl}
                           alt="Cover"
-                          className="absolute inset-0 w-full h-full object-cover"
+                          fill
+                          sizes="(max-width: 768px) 100vw, 400px"
+                          className="object-cover"
                           referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
-                          loading="eager"
+                          unoptimized={coverPhotoUrl.startsWith('/api/')}
                         />
                       </button>
                     ) : canEdit ? (
@@ -1080,13 +1085,17 @@ export default function OutputDetailModal({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          <img
-            src={coverPhotoUrl}
-            alt="Cover full size"
-            className="max-w-full max-h-full w-auto h-auto object-contain"
-            referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="relative w-full max-w-6xl max-h-[90vh] h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <Image
+              src={coverPhotoUrl}
+              alt="Cover full size"
+              fill
+              sizes="100vw"
+              className="object-contain"
+              referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
+              unoptimized={coverPhotoUrl.startsWith('/api/')}
+            />
+          </div>
         </div>
       )}
     </div>

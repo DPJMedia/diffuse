@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateTime, formatDuration, sanitizeStorageFilename } from '@/lib/utils/format'
 import type { DiffuseProjectInput } from '@/types/database'
@@ -293,10 +294,12 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             <div>
               <label className="block text-caption text-medium-gray mb-2">Preview</label>
               <div className="bg-white/5 border border-white/10 rounded-glass p-4 relative w-full h-[300px]">
-                <img
+                <Image
                   src={input.metadata.storage_url}
                   alt={input.file_name || 'Image'}
-                  className="absolute inset-0 w-full h-full rounded-lg object-contain"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 600px"
+                  className="rounded-lg object-contain"
                 />
               </div>
               <p className="text-body-sm text-medium-gray mt-3 italic text-center">
@@ -319,11 +322,12 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 <label className="block text-caption text-medium-gray mb-2">Cover photo</label>
                 {(coverDisplayUrl ?? input.metadata?.storage_url) ? (
                   <div className="bg-white/5 border border-white/10 rounded-glass p-4 relative w-full h-[300px]">
-                    {/* Plain img so project-file and external URLs work everywhere (no Next.js Image 400 on api routes) */}
-                    <img
+                    <Image
                       src={coverDisplayUrl ?? input.metadata?.storage_url ?? ''}
                       alt={input.file_name || 'Cover photo'}
-                      className="absolute inset-0 w-full h-full rounded-lg object-contain"
+                      fill
+                      sizes="(max-width: 768px) 100vw, 600px"
+                      className="rounded-lg object-contain"
                     />
                   </div>
                 ) : (
