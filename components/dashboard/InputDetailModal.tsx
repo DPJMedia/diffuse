@@ -10,7 +10,7 @@ import { ModalShell, ModalHeader, ModalMetadataRow, ModalBody, ModalScrollRegion
 interface InputDetailModalProps {
   input: DiffuseProjectInput
   onClose: () => void
-  onSave?: (id: string, title: string, content: string) => Promise<void>
+  onSave?: (id: string, title: string, content: string, metadata?: Record<string, unknown>) => Promise<void>
   onDelete?: (id: string) => Promise<void>
   onUpdate?: () => void
   canEdit?: boolean
@@ -27,11 +27,17 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   const [copied, setCopied] = useState<string | null>(null)
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null)
   const [replacingCover, setReplacingCover] = useState(false)
+  const [organizing, setOrganizing] = useState(false)
+  const [organizedContent, setOrganizedContent] = useState<string | null>(null)
+  const [hasApprovedOrganizedPendingSave, setHasApprovedOrganizedPendingSave] = useState(false)
   const coverReplaceInputRef = useRef<HTMLInputElement>(null)
+  const scrapedContentRef = useRef<HTMLDivElement>(null)
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
   const isFromRecording = input.metadata?.source === 'recording'
+  const isWebScrape = input.type === 'web_scrape'
+  const hasBeenOrganized = input.metadata?.organized_with_ai === true
   const isFromUpload = input.metadata?.source === 'upload'
   const isImage = input.type === 'image'
   const isCoverPhoto = input.type === 'cover_photo'
@@ -97,7 +103,48 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
     setContent(input.content || '')
     setPhotoCaption((input.metadata?.photo_caption as string) ?? '')
     setPhotoCredit((input.metadata?.photo_credit as string) ?? '')
+    setOrganizedContent(null)
+    setHasApprovedOrganizedPendingSave(false)
   }, [input.id, input.file_name, input.content, input.metadata?.photo_caption, input.metadata?.photo_credit])
+
+  const handleOrganize = async () => {
+    if (!content?.trim() || organizing) return
+    setOrganizing(true)
+    setOrganizedContent(null)
+    try {
+      const res = await fetch('/api/organize-input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: content.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data?.error || `Failed to organize (${res.status})`)
+      }
+      const next = data?.organizedContent
+      if (typeof next !== 'string' || !next.trim()) {
+        throw new Error(data?.error || 'No organized content returned. Try again.')
+      }
+      setOrganizedContent(next.trim())
+      setTimeout(() => scrapedContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
+    } catch (err) {
+      console.error(err)
+      alert(err instanceof Error ? err.message : 'Failed to organize content')
+    } finally {
+      setOrganizing(false)
+    }
+  }
+
+  const handleAcceptOrganized = () => {
+    if (!organizedContent) return
+    setContent(organizedContent)
+    setOrganizedContent(null)
+    setHasApprovedOrganizedPendingSave(true)
+  }
+
+  const handleDeclineOrganized = () => {
+    setOrganizedContent(null)
+  }
 
   // Cover photo: use API so anyone with project access can load it (no signed-URL encoding issues)
   const coverPhotoApiUrl = isCoverPhoto && input.file_path
@@ -217,7 +264,11 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
         if (metaError) throw metaError
       }
       if (onSave) {
-        await onSave(input.id, title, content)
+        const metadata = hasApprovedOrganizedPendingSave
+          ? { ...(input.metadata && typeof input.metadata === 'object' ? input.metadata : {}), organized_with_ai: true }
+          : undefined
+        await onSave(input.id, title, content, metadata)
+        setHasApprovedOrganizedPendingSave(false)
         onUpdate?.()
         onClose()
       }
@@ -259,11 +310,41 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
           </svg>
         </button>
       )}
+      {isWebScrape && canEdit && (
+        hasBeenOrganized || organizedContent != null || hasApprovedOrganizedPendingSave ? (
+          <span className="inline-flex items-center gap-2 text-body-sm text-medium-gray cursor-default" title="Organized">
+            <span>Organized</span>
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={handleOrganize}
+            disabled={organizing || !content?.trim()}
+            className="inline-flex items-center gap-2 px-2 py-2 text-body-sm text-medium-gray hover:text-cosmic-orange transition-colors disabled:opacity-50 focus:outline-none focus:ring-0"
+            title="Organize"
+          >
+            <span>Organize</span>
+            {organizing ? (
+              <svg className="w-5 h-5 flex-shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+          </button>
+        )
+      )}
       {showDeleteButton && (
         <button
           onClick={handleDelete}
           disabled={deleting}
-          className="p-2 rounded-full text-medium-gray hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+          className="p-2 rounded-full text-medium-gray hover:text-red-400 transition-colors disabled:opacity-50 focus:outline-none focus:ring-0"
           title="Delete"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -545,20 +626,56 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
 
           {/* Content Field (not shown for images or cover photo) — transcription for recording, etc. */}
           {!isImage && !isCoverPhoto && (
-            <div>
-              <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
-                {isFromRecording ? 'TRANSCRIPTION' : isAudio ? 'TRANSCRIPTION' : isDocument ? 'EXTRACTED TEXT' : input.type === 'web_scrape' ? 'SCRAPED CONTENT' : 'CONTENT'}
-              </label>
-              <textarea
-                value={content}
-                onChange={(e) => canEdit && setContent(e.target.value)}
-                placeholder="Enter content..."
-                readOnly={!canEdit}
-                rows={10}
-                className={`w-full min-h-[180px] max-h-[40vh] px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none overflow-y-auto custom-scrollbar ${
-                  canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                }`}
-              />
+            <div ref={isWebScrape ? scrapedContentRef : undefined}>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-caption text-medium-gray uppercase tracking-wider">
+                  {isFromRecording ? 'TRANSCRIPTION' : isAudio ? 'TRANSCRIPTION' : isDocument ? 'EXTRACTED TEXT' : input.type === 'web_scrape' ? 'SCRAPED CONTENT' : 'CONTENT'}
+                </label>
+                {isWebScrape && organizedContent != null && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleAcceptOrganized}
+                      className="p-1.5 rounded text-medium-gray hover:text-green-400 hover:bg-green-400/10 transition-colors"
+                      title="Approve changes (save with Save Changes or when closing)"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeclineOrganized}
+                      className="p-1.5 rounded text-medium-gray hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      title="Keep original content"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isWebScrape && organizedContent != null ? (
+                <textarea
+                  value={organizedContent}
+                  readOnly
+                  rows={10}
+                  className="w-full min-h-[180px] max-h-[40vh] px-4 py-3 bg-white/5 border border-cosmic-orange/30 rounded-glass text-secondary-white text-body-sm resize-none overflow-y-auto custom-scrollbar cursor-default"
+                  aria-label="Organized content (accept or decline)"
+                />
+              ) : (
+                <textarea
+                  value={content}
+                  onChange={(e) => canEdit && setContent(e.target.value)}
+                  placeholder="Enter content..."
+                  readOnly={!canEdit}
+                  rows={10}
+                  className={`w-full min-h-[180px] max-h-[40vh] px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors resize-none overflow-y-auto custom-scrollbar ${
+                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                  }`}
+                />
+              )}
             </div>
           )}
           </div>

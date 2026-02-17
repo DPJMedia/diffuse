@@ -587,14 +587,18 @@ export default function ProjectDetailPage() {
     }
   }
 
-  const handleSaveInput = async (inputId: string, title: string, content: string) => {
+  const handleSaveInput = async (inputId: string, title: string, content: string, metadata?: Record<string, unknown>) => {
     try {
+      const updatePayload: { file_name: string | null; content: string; metadata?: Record<string, unknown> } = {
+        file_name: title || null,
+        content,
+      }
+      if (metadata != null && Object.keys(metadata).length > 0) {
+        updatePayload.metadata = metadata
+      }
       const { error } = await supabase
         .from('diffuse_project_inputs')
-        .update({ 
-          file_name: title || null,
-          content: content 
-        })
+        .update(updatePayload)
         .eq('id', inputId)
 
       if (error) throw error
