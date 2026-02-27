@@ -5,8 +5,8 @@ import { useRef } from 'react'
 
 const features = [
   {
-    title: 'AI Article Generation',
-    description: 'AI-powered writing creates publication-ready articles with headlines, excerpts, and SEO metadata.',
+    title: 'Articles & Advertisements',
+    description: 'Generate publication-ready articles or advertisements with headlines, excerpts, and SEO metadata. One platform for editorial and sponsored content.',
     icon: (
       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -15,7 +15,7 @@ const features = [
   },
   {
     title: 'Smart Transcription',
-    description: 'High-accuracy transcription with automatic title generation. Edit transcriptions before generating articles.',
+    description: 'High-accuracy transcription with speaker identification and automatic titles. Edit transcriptions before generating.',
     icon: (
       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -24,7 +24,7 @@ const features = [
   },
   {
     title: 'Multiple Input Types',
-    description: 'Upload audio files, documents (PDF, DOCX, TXT), or images. Combine multiple sources into one article.',
+    description: 'Recordings, documents (PDF, DOCX, TXT), images, web scrape, and cover photos. Combine multiple sources in one project.',
     icon: (
       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -41,8 +41,8 @@ const features = [
     ),
   },
   {
-    title: 'Project Organization',
-    description: 'Organize content by topic or event. Keep all your source materials and generated outputs in one place.',
+    title: 'Inputs & Outputs',
+    description: 'Organize by project: all source inputs and generated outputs in one place. Multiple outputs per project (articles and ads).',
     icon: (
       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -51,7 +51,7 @@ const features = [
   },
   {
     title: 'Built-in Recording',
-    description: 'Record directly in the browser or upload existing audio files. Supports MP3, WAV, M4A, and more.',
+    description: 'Record directly in the browser or upload existing audio. Supports MP3, WAV, M4A, WebM; resumable uploads for large files.',
     icon: (
       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -105,7 +105,7 @@ export default function Features() {
               Everything You Need to <span className="gradient-text">Automate Your Newsroom</span>
             </h2>
             <p className="text-base sm:text-lg md:text-body-md text-medium-gray max-w-2xl mx-auto">
-              Record, generate, and publish in one smooth workflow—with integrations that make it faster and cheaper than piecing together ChatGPT and manual tools.
+              Multiple inputs (recordings, documents, images, web scrape) and outputs (articles, ads) in one workflow—with team collaboration and publishing integrations.
             </p>
           </motion.div>
 

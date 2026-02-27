@@ -1521,8 +1521,8 @@ export default function ProjectDetailPage() {
                     
                     {/* Subtitle — transcription, caption, or placeholder (match outputs: caption, uppercase, tracking-wider) */}
                     {input.type === 'web_scrape' && input.metadata?.url ? (
-                      <p className="text-caption text-medium-gray mb-2 line-clamp-1 truncate" title={input.metadata.url as string}>
-                        {(input.metadata.url as string).length > 50 ? `${(input.metadata.url as string).slice(0, 50)}…` : (input.metadata.url as string)}
+                      <p className={`text-caption mb-2 line-clamp-2 uppercase tracking-wider break-all ${typeInfo.color}`} title={input.metadata.url as string}>
+                        {((input.metadata.url as string).length > 100 ? `${(input.metadata.url as string).slice(0, 100)}…` : (input.metadata.url as string)).toUpperCase()}
                       </p>
                     ) : input.content ? (
                       <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
@@ -1531,6 +1531,10 @@ export default function ProjectDetailPage() {
                     ) : input.type === 'image' && input.metadata?.photo_caption ? (
                       <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
                         {(input.metadata.photo_caption as string).toUpperCase()}
+                      </p>
+                    ) : input.type === 'image' && input.metadata?.source === 'workflow_generated' ? (
+                      <p className="text-caption text-yellow-400 uppercase tracking-wider mb-2">
+                        IMAGE GENERATED WITH DIFFUSE.AI
                       </p>
                     ) : input.type === 'image' ? (
                       <p className="text-caption text-medium-gray uppercase tracking-wider mb-2 italic">

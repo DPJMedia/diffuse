@@ -617,9 +617,9 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                 href={input.metadata.url as string}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-body-sm text-sky-400 hover:text-sky-300 hover:underline break-all"
+                className="text-body-sm text-sky-400 hover:text-sky-300 hover:underline break-all uppercase tracking-wider"
               >
-                {input.metadata.url as string}
+                {(input.metadata.url as string).toUpperCase()}
               </a>
             </div>
           )}

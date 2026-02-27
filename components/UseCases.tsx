@@ -69,8 +69,8 @@ export default function UseCases() {
 
                     <div className="glass-container flex-1 min-h-0 flex items-center justify-center relative overflow-hidden rounded-none border-t-0 border-b-0 border-x-0 w-full">
                       <Image
-                        src="/sfpcover.png"
-                        alt="Spring-Ford Press Homepage"
+                        src="/sfpthumb.png"
+                        alt="Spring-Ford Press"
                         fill
                         className="object-cover object-top"
                         sizes="(max-width: 768px) 100vw, 50vw"

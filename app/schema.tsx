@@ -8,7 +8,7 @@ export const faqSchema = {
       name: 'What is Diffuse.AI?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse.AI is an AI-powered tool that turns meeting recordings, documents (PDF, DOCX, TXT), images, and web pages into publication-ready news articles. You can combine multiple inputs in one project, get AI transcription and article generation with headlines and SEO metadata, and publish via integrations or copy-paste. Free to start, with team collaboration and publishing integrations.',
+        text: 'Diffuse.AI is an AI-powered platform that turns meeting recordings, documents (PDF, DOCX, TXT), images, and web pages into publication-ready articles and advertisements. You can combine multiple inputs in one project, get AI transcription with speaker identification and article or ad generation with headlines and SEO metadata, and publish via integrations or copy-paste. Free to start, with team collaboration and publishing integrations.',
       },
     },
     {
@@ -24,7 +24,7 @@ export const faqSchema = {
       name: 'What input types does Diffuse support?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse supports recordings (in-app or upload: MP3, WAV, M4A), documents (PDF, DOCX, TXT), images (JPG, PNG), and web scraping. You can combine multiple inputs in a single project to generate one comprehensive article.',
+        text: 'Diffuse supports recordings (in-app or upload: MP3, WAV, M4A), documents (PDF, DOCX, TXT), images (JPG, PNG), web scraping, and cover photos. You can combine multiple inputs in a single project to generate articles or advertisements.',
       },
     },
     {
@@ -66,7 +66,7 @@ export const productSchema = {
   '@context': 'https://schema.org',
   '@type': 'Product',
   name: 'Diffuse.AI',
-  description: 'Turn meeting recordings, documents, and web pages into publication-ready articles in minutes. AI transcription, multi-input articles (recordings, PDF/DOCX/TXT, images, web scrape), team collaboration with role-based access, and publishing integrations. Free to start; built for local news, journalists, and content teams.',
+  description: 'Turn meetings, documents, and web pages into publication-ready articles and ads in minutes. AI transcription, multi-input projects (recordings, PDFs, images, web scrape), article and advertisement generation, team collaboration, and publishing integrations. Built for local news, journalists, and content teams.',
   brand: {
     '@type': 'Brand',
     name: 'Diffuse.AI',
@@ -104,7 +104,7 @@ export const serviceSchema = {
     '@type': 'Country',
     name: 'United States',
   },
-  description: 'Turn meetings, documents, and web pages into publication-ready articles. AI transcription, multi-input article generation, team collaboration, and publishing integrations. For local news, journalists, and content teams.',
+  description: 'Turn meetings, documents, and web pages into publication-ready articles and ads. AI transcription, multi-input article and ad generation, team collaboration, and publishing integrations. For local news, journalists, and content teams.',
   offers: {
     '@type': 'Offer',
     availability: 'https://schema.org/InStock',
@@ -118,15 +118,15 @@ export const serviceSchema = {
         itemOffered: {
           '@type': 'Service',
           name: 'Recording & Document Transcription',
-          description: 'AI transcription for audio and extraction from PDF, DOCX, TXT; web scraping for URLs',
+          description: 'AI transcription with speaker identification; extraction from PDF, DOCX, TXT; web scraping for URLs',
         },
       },
       {
         '@type': 'Offer',
         itemOffered: {
           '@type': 'Service',
-          name: 'AI Article Generation',
-          description: 'Generate publication-ready articles from one or many inputs (recordings, documents, images, web scrapes) with headlines and SEO metadata',
+          name: 'AI Article & Ad Generation',
+          description: 'Generate publication-ready articles and advertisements from one or many inputs (recordings, documents, images, web scrapes) with headlines and SEO metadata',
         },
       },
       {
@@ -152,8 +152,8 @@ export const serviceSchema = {
 export const howToSchema = {
   '@context': 'https://schema.org',
   '@type': 'HowTo',
-  name: 'How to Turn Meetings and Documents Into Articles with Diffuse.AI',
-  description: 'Use Diffuse.AI to turn recordings, documents, images, or web pages into publication-ready articles in minutes',
+  name: 'How to Turn Meetings and Documents Into Articles and Ads with Diffuse.AI',
+  description: 'Use Diffuse.AI to turn recordings, documents, images, or web pages into publication-ready articles or advertisements in minutes',
   image: 'https://diffuse.ai/socialcover.png',
   totalTime: 'PT15M',
   step: [
@@ -175,7 +175,7 @@ export const howToSchema = {
       '@type': 'HowToStep',
       position: 3,
       name: 'Generate',
-      text: 'Click Generate to create a publication-ready article with headline, excerpt, and content. Edit and re-edit outputs as needed.',
+      text: 'Click Generate to create publication-ready articles or advertisements with headline, excerpt, and content. Edit and re-edit outputs as needed.',
       url: 'https://diffuse.ai#how-it-works',
     },
     {
@@ -192,7 +192,7 @@ export const videoSchema = {
   '@context': 'https://schema.org',
   '@type': 'VideoObject',
   name: 'Diffuse.AI Platform Demo',
-  description: 'See how Diffuse.AI turns meeting recordings, documents, and web pages into publication-ready articles with AI transcription and multi-input generation',
+  description: 'See how Diffuse.AI turns recordings, documents, and web pages into publication-ready articles and ads with AI transcription and multi-input generation',
   thumbnailUrl: 'https://diffuse.ai/socialcover.png',
   uploadDate: '2024-11-01',
   contentUrl: 'https://diffuse.ai#demo',
