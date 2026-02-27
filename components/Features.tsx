@@ -98,13 +98,13 @@ export default function Features() {
         >
           {/* Section Header */}
           <motion.div variants={itemVariants} className="text-center mb-12 md:mb-16 px-4">
-            <span className="text-cosmic-orange text-caption uppercase tracking-wider font-semibold mb-3 block">
+            <span className="text-cosmic-orange text-body-sm uppercase tracking-wider font-semibold mb-3 block">
               Platform Features
             </span>
-            <h2 className="text-heading-xl font-bold mb-4">
+            <h2 className="text-display-sm font-bold mb-4">
               What you can do with <span className="gradient-text">Diffuse</span>
             </h2>
-            <p className="text-body-md text-medium-gray max-w-2xl mx-auto lg:max-w-4xl lg:whitespace-nowrap">
+            <p className="text-body-lg text-medium-gray max-w-2xl mx-auto lg:max-w-4xl lg:whitespace-nowrap">
               Recordings, documents, web. Articles and ads. Teams and publishing when you need them.
             </p>
           </motion.div>
@@ -123,12 +123,12 @@ export default function Features() {
                 </div>
 
                 {/* Title */}
-                <h3 className="text-heading-md font-bold text-secondary-white mb-2">
+                <h3 className="text-heading-lg font-bold text-secondary-white mb-2">
                   {feature.title}
                 </h3>
 
                 {/* Description */}
-                <p className="text-body-sm text-medium-gray leading-relaxed">
+                <p className="text-body-md text-medium-gray leading-relaxed">
                   {feature.description}
                 </p>
               </motion.div>

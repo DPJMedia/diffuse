@@ -69,13 +69,13 @@ export default function FAQ() {
         >
           {/* Section Header */}
           <motion.div variants={itemVariants} className="text-center mb-12 px-4">
-            <span className="text-cosmic-orange text-caption uppercase tracking-wider font-semibold mb-3 block">
+            <span className="text-cosmic-orange text-body-sm uppercase tracking-wider font-semibold mb-3 block">
               FAQ
             </span>
-            <h2 className="text-heading-xl font-bold mb-4">
+            <h2 className="text-display-sm font-bold mb-4">
               Frequently Asked <span className="gradient-text">Questions</span>
             </h2>
-            <p className="text-body-md text-medium-gray max-w-2xl mx-auto">
+            <p className="text-body-lg text-medium-gray max-w-2xl mx-auto">
               What you need to know before you start.
             </p>
           </motion.div>
@@ -91,7 +91,7 @@ export default function FAQ() {
                   onClick={() => setOpenIndex(openIndex === index ? null : index)}
                   className="w-full px-6 py-5 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
                 >
-                  <span className="text-body-md font-medium text-secondary-white pr-4">
+                  <span className="text-body-lg font-medium text-secondary-white pr-4">
                     {faq.question}
                   </span>
                   <motion.div
@@ -114,7 +114,7 @@ export default function FAQ() {
                       transition={{ duration: 0.3 }}
                       className="overflow-hidden"
                     >
-                      <div className="px-6 pb-5 text-body-sm text-medium-gray leading-relaxed border-t border-white/10 pt-4">
+                      <div className="px-6 pb-5 text-body-md text-medium-gray leading-relaxed border-t border-white/10 pt-4">
                         {faq.answer}
                       </div>
                     </motion.div>

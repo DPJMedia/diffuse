@@ -84,13 +84,13 @@ export default function HowItWorks() {
         >
           {/* Section Header */}
           <motion.div variants={itemVariants} className="text-center mb-12 md:mb-16 px-4">
-            <span className="text-cosmic-orange text-caption uppercase tracking-wider font-semibold mb-3 block">
+            <span className="text-cosmic-orange text-body-sm uppercase tracking-wider font-semibold mb-3 block">
               How it works
             </span>
-            <h2 className="text-heading-xl font-bold mb-4">
+            <h2 className="text-display-sm font-bold mb-4">
               Recording to <span className="gradient-text">published</span> in four steps
             </h2>
-            <p className="text-body-md text-medium-gray max-w-2xl mx-auto">
+            <p className="text-body-lg text-medium-gray max-w-2xl mx-auto">
               Record, transcribe, generate, publish. Same flow for articles and ads.
             </p>
           </motion.div>
@@ -114,12 +114,12 @@ export default function HowItWorks() {
                 </div>
 
                 {/* Title */}
-                <h3 className="text-heading-md font-bold text-secondary-white mb-2">
+                <h3 className="text-heading-lg font-bold text-secondary-white mb-2">
                   {step.title}
                 </h3>
 
                 {/* Description */}
-                <p className="text-body-sm text-medium-gray leading-relaxed">
+                <p className="text-body-md text-medium-gray leading-relaxed">
                   {step.description}
                 </p>
               </motion.div>

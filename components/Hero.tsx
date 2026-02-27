@@ -461,12 +461,11 @@ export default function Hero() {
           className="text-center mb-8 md:mb-10 px-4"
         >
           <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-display-md font-bold mb-4 leading-tight max-w-4xl mx-auto">
-            Turn Meeting Recordings Into
+            Turn Recordings Into <span className="gradient-text">Published Articles</span>
             <br />
-            <span className="gradient-text">Published Articles</span>
-            <span className="text-secondary-white"> in Minutes, Not Hours</span>
+            <span className="text-secondary-white">In Minutes, Not Hours.</span>
           </h1>
-          <p className="text-base sm:text-lg md:text-body-lg text-medium-gray max-w-2xl mx-auto whitespace-nowrap">
+          <p className="text-lg sm:text-xl md:text-body-lg text-medium-gray max-w-2xl mx-auto whitespace-nowrap">
             AI-powered workflow that transforms audio into publication-ready journalism
           </p>
         </motion.div>
