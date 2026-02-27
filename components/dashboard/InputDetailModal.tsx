@@ -152,7 +152,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
     : null
   const coverDisplayUrl = coverImageUrl ?? coverPhotoApiUrl
 
-  // Image inputs (e.g. workflow-generated): same retrieval as output section — use project-file API when we have file_path
+  // Image inputs (e.g. workflow-generated): same retrieval as output section; use project-file API when we have file_path
   const imageInputDisplayUrl = isImage && input.file_path
     ? `/api/project-file?path=${encodeURIComponent(input.file_path)}`
     : (isImage && input.metadata?.storage_url ? input.metadata.storage_url as string : null)
@@ -385,7 +385,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
       <ModalBody>
         <ModalScrollRegion>
           <div className="flex flex-col gap-6">
-          {/* Title Field (not for image inputs — they use the layout below) */}
+          {/* Title Field (not for image inputs; they use the layout below) */}
           {!isImage && (
             <div className="shrink-0">
               <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">TITLE</label>
@@ -404,7 +404,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             </div>
           )}
 
-          {/* Image input: image left (title + download + copy), title/caption/credit right — same style as output popup */}
+          {/* Image input: image left (title + download + copy), title/caption/credit right; same style as output popup */}
           {isImage && imageInputDisplayUrl && (
             <div className="flex flex-col md:flex-row md:gap-5 md:items-stretch shrink-0">
               {/* Image window: label row + image (zoom to fill); larger to match taller right column */}
@@ -467,7 +467,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                   />
                 </div>
               </div>
-              {/* Title, Photo caption, Photo credit — label + copy above each field */}
+              {/* Title, Photo caption, Photo credit: label + copy above each field */}
               <div className="flex-1 min-w-0 flex flex-col justify-center gap-5">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -624,7 +624,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
             </div>
           )}
 
-          {/* Content Field (not shown for images or cover photo) — transcription for recording, etc. */}
+          {/* Content Field (not shown for images or cover photo): transcription for recording, etc. */}
           {!isImage && !isCoverPhoto && (
             <div ref={isWebScrape ? scrapedContentRef : undefined}>
               <div className="flex items-center justify-between mb-2">

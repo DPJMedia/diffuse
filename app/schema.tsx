@@ -16,7 +16,7 @@ export const faqSchema = {
       name: 'How does Diffuse.AI work?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse.AI works in four steps: (1) Record or upload—capture audio in-app or upload recordings, documents, images, or add web scrapes; (2) Transcribe—AI transcribes audio and extracts text from documents; (3) Generate—create articles from one or many inputs with one click; (4) Publish—connect to your publishing frontend to auto-populate articles, or copy and paste. You can edit transcriptions and outputs, and re-edit generated articles.',
+        text: 'Diffuse.AI works in four steps: (1) Record or upload: capture audio in-app or upload recordings, documents, images, or add web scrapes; (2) Transcribe: AI transcribes audio and extracts text from documents; (3) Generate: create articles from one or many inputs with one click; (4) Publish: connect to your publishing frontend to auto-populate articles, or copy and paste. You can edit transcriptions and outputs, and re-edit generated articles.',
       },
     },
     {
@@ -32,7 +32,7 @@ export const faqSchema = {
       name: 'How is Diffuse different from using ChatGPT?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse is built for the full workflow: record or upload, transcribe, generate, and publish. It supports multiple input types in one article, team collaboration with roles, and publishing integrations so articles auto-populate your frontend—no copy-paste. One tool instead of juggling ChatGPT and manual steps.',
+        text: 'Diffuse is built for the full workflow: record or upload, transcribe, generate, and publish. It supports multiple input types in one article, team collaboration with roles, and publishing integrations so articles auto-populate your frontend. No copy-paste. One tool instead of juggling ChatGPT and manual steps.',
       },
     },
     {
@@ -48,7 +48,7 @@ export const faqSchema = {
       name: 'Can I edit the generated articles?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Yes. You can edit transcriptions before generating, and every generated article is fully editable—title, subtitle, excerpt, content, and SEO fields. You can also re-edit and create revisions of outputs.',
+        text: 'Yes. You can edit transcriptions before generating, and every generated article is fully editable: title, subtitle, excerpt, content, and SEO fields. You can also re-edit and create revisions of outputs.',
       },
     },
     {

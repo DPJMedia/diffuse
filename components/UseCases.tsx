@@ -29,7 +29,7 @@ export default function UseCases() {
                     <span className="text-[#dbdbdb]">Spring-Ford</span> <span className="text-[#3391af]">Press</span>
                   </h3>
                   <p className="text-body-md text-secondary-white mb-6 leading-relaxed">
-                    A local news site. Diffuse pushes articles into their CMS so headline, byline, and body are ready to schedule—no re-typing.
+                    A local news site. Diffuse pushes articles into their CMS so headline, byline, and body are ready to schedule. No re-typing.
                   </p>
 
                   <div className="space-y-4">

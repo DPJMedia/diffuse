@@ -104,7 +104,7 @@ export default function Features() {
             <h2 className="text-heading-xl font-bold mb-4">
               What you can do with <span className="gradient-text">Diffuse</span>
             </h2>
-            <p className="text-body-md text-medium-gray max-w-2xl mx-auto">
+            <p className="text-body-md text-medium-gray max-w-2xl mx-auto lg:max-w-4xl lg:whitespace-nowrap">
               Recordings, documents, web. Articles and ads. Teams and publishing when you need them.
             </p>
           </motion.div>
@@ -115,10 +115,10 @@ export default function Features() {
               <motion.div
                 key={feature.title}
                 variants={itemVariants}
-                className="glass-container p-6 group hover:bg-white/10 transition-all duration-300"
+                className="glass-container p-6"
               >
                 {/* Icon */}
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cosmic-orange/20 to-rich-orange/20 flex items-center justify-center text-cosmic-orange mb-4 group-hover:scale-110 transition-transform duration-300">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cosmic-orange/20 to-rich-orange/20 flex items-center justify-center text-cosmic-orange mb-4">
                   {feature.icon}
                 </div>
 

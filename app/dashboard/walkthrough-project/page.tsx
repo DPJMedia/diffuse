@@ -266,7 +266,7 @@ export default function WalkthroughProjectPage() {
               </p>
             </div>
           </div>
-          <button className="btn-primary px-6 py-3">Save Visibility Settings</button>
+          <button className="btn-primary px-6 py-3 text-xs font-medium">Save Visibility Settings</button>
         </div>
       )}
     </div>

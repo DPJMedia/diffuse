@@ -1519,7 +1519,7 @@ export default function ProjectDetailPage() {
                       {input.file_name || defaultTitle}
                     </h3>
                     
-                    {/* Subtitle — transcription, caption, or placeholder (match outputs: caption, uppercase, tracking-wider) */}
+                    {/* Subtitle: transcription, caption, or placeholder (match outputs: caption, uppercase, tracking-wider) */}
                     {input.type === 'web_scrape' && input.metadata?.url ? (
                       <p className={`text-caption mb-2 line-clamp-2 uppercase tracking-wider break-all ${typeInfo.color}`} title={input.metadata.url as string}>
                         {((input.metadata.url as string).length > 100 ? `${(input.metadata.url as string).slice(0, 100)}…` : (input.metadata.url as string)).toUpperCase()}
@@ -1822,7 +1822,7 @@ export default function ProjectDetailPage() {
           <button
             onClick={handleSaveVisibility}
             disabled={savingVisibility}
-            className="btn-primary px-6 py-3 disabled:opacity-50"
+            className="btn-primary px-6 py-3 text-xs font-medium disabled:opacity-50"
           >
             {savingVisibility ? 'Saving...' : 'Save Visibility Settings'}
           </button>

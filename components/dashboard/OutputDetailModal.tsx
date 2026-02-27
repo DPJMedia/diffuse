@@ -254,7 +254,7 @@ export default function OutputDetailModal({
     return undefined
   })()
   const generatedImageUrl = generatedImageUrlFromDb ?? generatedImageUrlFromContent
-  // When the output came with a workflow image (URL or path), never show the project cover — only workflow image or stored path.
+  // When the output came with a workflow image (URL or path), never show the project cover; only workflow image or stored path.
   const effectiveCoverPath = output.cover_photo_path ?? (generatedImageUrl ? null : fallbackCoverPhotoPath ?? null)
   // Prefer stored path; for external URLs use proxy so browser never hits Azure (avoids ERR_NAME_NOT_RESOLVED)
   const coverPhotoUrl = (uploadedCoverPath ? `/api/project-file?path=${encodeURIComponent(uploadedCoverPath)}` : null)

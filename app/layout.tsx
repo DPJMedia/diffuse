@@ -9,7 +9,7 @@ const siteDescription = 'Turn meetings, documents, and web pages into publicatio
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'Diffuse.AI — Recordings, Documents & Web → Articles & Ads in Minutes',
+    default: 'Diffuse.AI - Recordings, Documents & Web → Articles & Ads in Minutes',
     template: '%s | Diffuse.AI',
   },
   description: siteDescription,
@@ -69,7 +69,7 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: siteUrl,
     siteName: siteName,
-    title: 'Diffuse.AI — Recordings, Documents & Web → Articles & Ads in Minutes',
+    title: 'Diffuse.AI - Recordings, Documents & Web → Articles & Ads in Minutes',
     description: siteDescription,
     images: [
       {
@@ -85,7 +85,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@DiffuseAI',
     creator: '@DiffuseAI',
-    title: 'Diffuse.AI — Recordings, Documents & Web → Articles & Ads in Minutes',
+    title: 'Diffuse.AI - Recordings, Documents & Web → Articles & Ads in Minutes',
     description: siteDescription,
     images: ['/socialcover.png'],
   },
@@ -180,7 +180,7 @@ export default function RootLayout({
                 'Multiple output types: articles and ads; combine multiple sources per project',
                 'Built-in recording and file upload; project organization with inputs and outputs',
                 'Team collaboration with organizations and role-based access',
-                'Publishing integrations—auto-populate articles to your frontend',
+                'Publishing integrations: auto-populate articles to your frontend',
                 'Edit transcriptions and generated content; re-edit and revise outputs',
               ],
               offers: {

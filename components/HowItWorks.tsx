@@ -101,7 +101,7 @@ export default function HowItWorks() {
               <motion.div
                 key={step.number}
                 variants={itemVariants}
-                className="glass-container p-6 group hover:bg-white/10 transition-all duration-300"
+                className="glass-container p-6"
               >
                 {/* Step number */}
                 <div className="text-cosmic-orange/30 text-4xl font-bold mb-4">
@@ -109,7 +109,7 @@ export default function HowItWorks() {
                 </div>
 
                 {/* Icon */}
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cosmic-orange/20 to-rich-orange/20 flex items-center justify-center text-cosmic-orange mb-4 group-hover:scale-110 transition-transform duration-300">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cosmic-orange/20 to-rich-orange/20 flex items-center justify-center text-cosmic-orange mb-4">
                   {step.icon}
                 </div>
 

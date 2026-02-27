@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'OpenRouter API key not configured' }, { status: 503 })
     }
 
-    const userMessage = `Organize the following scraped web content. Output ONLY the organized content—no intro line, no "Here's..." or "Key information:" or similar. Start directly with the first paragraph.\n\n${content.slice(0, 120000)}`
+    const userMessage = `Organize the following scraped web content. Output ONLY the organized content. No intro line, no "Here's..." or "Key information:" or similar. Start directly with the first paragraph.\n\n${content.slice(0, 120000)}`
 
     const payload = {
       model: OPENROUTER_MODEL_PRIMARY,

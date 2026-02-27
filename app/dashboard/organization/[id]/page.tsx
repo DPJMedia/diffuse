@@ -555,7 +555,7 @@ export default function OrganizationDetailPage() {
               {copiedCode ? 'Copied!' : workspace.invite_code}
             </button>
           ) : (
-            <span className="text-heading-lg text-medium-gray">—</span>
+            <span className="text-heading-lg text-medium-gray">-</span>
           )}
         </div>
       </div>
