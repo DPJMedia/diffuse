@@ -6,6 +6,10 @@ import { requireAuth, requireProjectOwnership, unauthorizedResponse, forbiddenRe
 import { validateSchema, validateProjectId, validateOutputType, sanitizeString } from '@/lib/security/validation'
 import { getN8nWebhookUrl } from '@/lib/n8n'
 
+// Workflow timeout: 5 minutes. Same limit locally and when deployed.
+// When deployed: Vercel Pro allows up to 300s; Hobby is 10s. Other hosts may differ.
+export const maxDuration = 300
+
 /** Download image via Node https (fallback when fetch fails with "fetch failed" on some networks). */
 function downloadImageViaHttps(url: string, timeoutMs: number): Promise<{ buffer: Buffer; contentType: string }> {
   return new Promise((resolve, reject) => {
@@ -279,18 +283,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const N8N_FETCH_TIMEOUT_MS = 300_000 // 5 min - matches maxDuration (same locally and on Vercel Pro)
     const n8nResponse = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(n8nPayload),
+      signal: AbortSignal.timeout(N8N_FETCH_TIMEOUT_MS),
     })
 
     if (!n8nResponse.ok) {
       const errorText = await n8nResponse.text()
-      console.error('n8n webhook error:', errorText)
-      return NextResponse.json({ error: 'Workflow execution failed' }, { status: 500 })
+      console.error('[workflow] n8n webhook returned', n8nResponse.status, errorText?.slice(0, 500))
+      const message = errorText?.trim()
+        ? `Workflow returned ${n8nResponse.status}: ${errorText.slice(0, 200)}${errorText.length > 200 ? '…' : ''}`
+        : 'Workflow execution failed'
+      return NextResponse.json({ error: message }, { status: 502 })
     }
 
     const responseContentType = n8nResponse.headers.get('content-type') || ''
@@ -334,7 +343,19 @@ export async function POST(request: NextRequest) {
         console.log('[workflow] Multipart response had no image part; formData keys:', partNames.join(', ') || '(none)')
       }
     } else {
-      n8nResult = await n8nResponse.json()
+      // n8n sometimes responds with text/plain or empty body; don't hard-fail JSON parsing.
+      const responseText = await n8nResponse.text()
+      if (!responseText || responseText.trim() === '') {
+        console.log('[workflow] n8n returned empty body; continuing with empty payload')
+        n8nResult = {}
+      } else {
+        try {
+          n8nResult = JSON.parse(responseText)
+        } catch {
+          // Preserve raw output so extractArticleContent can still read it via `.output`.
+          n8nResult = { output: responseText }
+        }
+      }
     }
 
     // Normalize external image URL so it always has https (avoids <img> / next/image failing)
@@ -737,7 +758,14 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Workflow API error:', error)
-    
+
+    if (error?.name === 'AbortError' || error?.message?.includes?.('timeout') || error?.message?.includes?.('aborted')) {
+      return NextResponse.json(
+        { error: 'Workflow timed out. The workflow may still be running in the background; refresh the outputs tab in a few minutes.' },
+        { status: 504 }
+      )
+    }
+
     // Don't expose internal error details
     if (error.message && (error.message.includes('Unauthorized') || error.message.includes('Forbidden'))) {
       return NextResponse.json(
@@ -745,7 +773,7 @@ export async function POST(request: NextRequest) {
         { status: error.message.includes('Unauthorized') ? 401 : 403 }
       )
     }
-    
+
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

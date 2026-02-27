@@ -9,6 +9,7 @@ import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 import EmptyState from '@/components/dashboard/EmptyState'
 import AudioPlayer from '@/components/dashboard/AudioPlayer'
 import RecordingModal from '@/components/dashboard/RecordingModal'
+import { diffWordsWithSpace, type Change } from 'diff'
 // tus-js-client will be dynamically imported when needed
 
 type RecordingStatus = 'recorded' | 'generating' | 'transcribed'
@@ -21,70 +22,108 @@ interface Recording {
   file_path: string
   transcription: string | null
   original_transcription: string | null
+  speaker_map?: Record<string, { name: string; position?: string }> | null
+  utterances?: Array<{ speaker: string; text: string; start: number; end: number }> | null
+  original_utterances?: Array<{ speaker: string; text: string; start: number; end: number }> | null
   status: RecordingStatus
   created_at: string
 }
 
-// Component to show diff between original and edited transcription
-function TranscriptionDiffView({ original, current }: { original: string; current: string }) {
-  // Split into words while preserving whitespace
-  const originalWords = original.split(/(\s+)/)
-  const currentWords = current.split(/(\s+)/)
-  
-  const result: { text: string; type: 'same' | 'added' | 'removed' }[] = []
-  
-  let i = 0
-  let j = 0
-  
-  while (i < originalWords.length || j < currentWords.length) {
-    if (i >= originalWords.length) {
-      result.push({ text: currentWords[j], type: 'added' })
-      j++
-    } else if (j >= currentWords.length) {
-      result.push({ text: originalWords[i], type: 'removed' })
-      i++
-    } else if (originalWords[i] === currentWords[j]) {
-      result.push({ text: originalWords[i], type: 'same' })
-      i++
-      j++
+type InlineDiffPart = { text: string; type: 'same' | 'added' | 'removed' }
+
+function buildInlineDiffParts(original: string, current: string): InlineDiffPart[] {
+  const changes = diffWordsWithSpace(original, current) as Change[]
+
+  const parts: InlineDiffPart[] = []
+  const pushPart = (type: InlineDiffPart['type'], text: string) => {
+    if (!text) return
+    const last = parts[parts.length - 1]
+    if (last && last.type === type) last.text += text
+    else parts.push({ type, text })
+  }
+
+  const commonPrefixLen = (a: string, b: string) => {
+    const n = Math.min(a.length, b.length)
+    let k = 0
+    while (k < n && a[k] === b[k]) k++
+    return k
+  }
+
+  const commonSuffixLen = (a: string, b: string) => {
+    const n = Math.min(a.length, b.length)
+    let k = 0
+    while (k < n && a[a.length - 1 - k] === b[b.length - 1 - k]) k++
+    return k
+  }
+
+  const buffer: Change[] = []
+  const flushBuffer = () => {
+    if (buffer.length === 0) return
+
+    const hasAdded = buffer.some((c) => !!c.added)
+    const hasRemoved = buffer.some((c) => !!c.removed)
+
+    if (hasAdded && hasRemoved) {
+      // Build the original/current text for this "change region" and collapse it into:
+      // [same prefix] [removed chunk] [added chunk] [same suffix]
+      const originalSeg = buffer.filter((c) => !c.added).map((c) => c.value ?? '').join('')
+      const currentSeg = buffer.filter((c) => !c.removed).map((c) => c.value ?? '').join('')
+
+      const prefix = commonPrefixLen(originalSeg, currentSeg)
+      const aRest = originalSeg.slice(prefix)
+      const bRest = currentSeg.slice(prefix)
+      let suffix = commonSuffixLen(aRest, bRest)
+      // Avoid overlap in degenerate cases.
+      suffix = Math.min(suffix, aRest.length, bRest.length)
+
+      const prefixStr = originalSeg.slice(0, prefix)
+      const suffixStr = suffix > 0 ? originalSeg.slice(originalSeg.length - suffix) : ''
+      const removedMid = originalSeg.slice(prefix, originalSeg.length - suffix)
+      const addedMid = currentSeg.slice(prefix, currentSeg.length - suffix)
+
+      pushPart('same', prefixStr)
+      pushPart('removed', removedMid)
+      pushPart('added', addedMid)
+      pushPart('same', suffixStr)
     } else {
-      // Look ahead to find matches
-      let foundInOriginal = -1
-      let foundInCurrent = -1
-      
-      for (let k = i; k < Math.min(i + 15, originalWords.length); k++) {
-        if (originalWords[k] === currentWords[j]) {
-          foundInOriginal = k
-          break
-        }
-      }
-      
-      for (let k = j; k < Math.min(j + 15, currentWords.length); k++) {
-        if (currentWords[k] === originalWords[i]) {
-          foundInCurrent = k
-          break
-        }
-      }
-      
-      if (foundInCurrent !== -1 && (foundInOriginal === -1 || foundInCurrent - j <= foundInOriginal - i)) {
-        while (j < foundInCurrent) {
-          result.push({ text: currentWords[j], type: 'added' })
-          j++
-        }
-      } else if (foundInOriginal !== -1) {
-        while (i < foundInOriginal) {
-          result.push({ text: originalWords[i], type: 'removed' })
-          i++
-        }
-      } else {
-        result.push({ text: originalWords[i], type: 'removed' })
-        result.push({ text: currentWords[j], type: 'added' })
-        i++
-        j++
+      for (const c of buffer) {
+        const type: InlineDiffPart['type'] = c.added ? 'added' : c.removed ? 'removed' : 'same'
+        pushPart(type, c.value ?? '')
       }
     }
+
+    buffer.length = 0
   }
-  
+
+  for (const c of changes) {
+    const value = c.value ?? ''
+    const isSame = !c.added && !c.removed
+    const isWhitespaceOnlySame = isSame && !/\S/.test(value)
+
+    // Treat whitespace-only "same" as part of the surrounding change region so it doesn't
+    // break removed/added runs into alternating fragments.
+    if (isWhitespaceOnlySame) {
+      buffer.push(c)
+      continue
+    }
+
+    if (isSame) {
+      flushBuffer()
+      pushPart('same', value)
+      continue
+    }
+
+    buffer.push(c)
+  }
+
+  flushBuffer()
+  return parts
+}
+
+// Component to show diff between original and edited transcription
+function TranscriptionDiffView({ original, current }: { original: string; current: string }) {
+  const result = buildInlineDiffParts(original, current)
+
   return (
     <p className="text-body-md leading-relaxed whitespace-pre-wrap">
       {result.map((item, idx) => {
@@ -97,6 +136,35 @@ function TranscriptionDiffView({ original, current }: { original: string; curren
         }
       })}
     </p>
+  )
+}
+
+function InlineDiff({
+  original,
+  current,
+}: {
+  original: string
+  current: string
+}) {
+  const result = buildInlineDiffParts(original, current)
+
+  return (
+    <span className="whitespace-pre-wrap">
+      {result.map((item, idx) => {
+        if (item.type === 'same') return <span key={idx}>{item.text}</span>
+        if (item.type === 'added')
+          return (
+            <span key={idx} className="text-cosmic-orange">
+              {item.text}
+            </span>
+          )
+        return (
+          <span key={idx} className="text-medium-gray line-through">
+            {item.text}
+          </span>
+        )
+      })}
+    </span>
   )
 }
 
@@ -116,6 +184,8 @@ export default function RecordingsPage() {
   const [editingTitle, setEditingTitle] = useState(false)
   const [editedTitle, setEditedTitle] = useState('')
   const [editedTranscription, setEditedTranscription] = useState<string | null>(null)
+  const [editedUtterances, setEditedUtterances] = useState<Array<{ speaker: string; text: string; start: number; end: number }> | null>(null)
+  const [isEditingUtterances, setIsEditingUtterances] = useState(false)
   const [savingTranscription, setSavingTranscription] = useState(false)
   const [generatingProject, setGeneratingProject] = useState(false)
   const [generatingStatusIndex, setGeneratingStatusIndex] = useState(0)
@@ -136,7 +206,49 @@ export default function RecordingsPage() {
   
   // Upload state
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+  const [uploadRecordingId, setUploadRecordingId] = useState<string | null>(null)
+  const [processingPercent, setProcessingPercent] = useState(0)
+  const [uploadBytesLoaded, setUploadBytesLoaded] = useState(0)
+  const [uploadBytesTotal, setUploadBytesTotal] = useState(0)
+  const processingPercentTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Failed recording state
+  const [failedRecordingId, setFailedRecordingId] = useState<string | null>(null)
+  const [failedErrorMessage, setFailedErrorMessage] = useState('')
+  const [failedErrorCode, setFailedErrorCode] = useState('')
+  const failedDismissTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Speaker identification (diarization) state
+  type TranscribePhase = 'idle' | 'transcribing' | 'identifying_speakers' | 'done'
+  const [transcribePhase, setTranscribePhase] = useState<TranscribePhase>('idle')
+  const [utterances, setUtterances] = useState<Array<{ speaker: string; text: string; start: number; end: number }>>([])
+  const [originalUtterances, setOriginalUtterances] = useState<Array<{ speaker: string; text: string; start: number; end: number }>>([])
+  const [speakerList, setSpeakerList] = useState<string[]>([])
+  const [speakerMap, setSpeakerMap] = useState<Record<string, { name: string; position?: string }>>({})
+  const [currentSpeakerIndex, setCurrentSpeakerIndex] = useState(0)
+  const [speakerName, setSpeakerName] = useState('')
+  const [speakerPosition, setSpeakerPosition] = useState('')
+  const [clipError, setClipError] = useState(false)
+  const [clipPlaying, setClipPlaying] = useState(false)
+  const [currentClipSegment, setCurrentClipSegment] = useState(0)
+  const [currentPlaybackTimeMs, setCurrentPlaybackTimeMs] = useState<number | null>(null)
+  const [frozenHighlightIndex, setFrozenHighlightIndex] = useState<number | null>(null)
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null)
+  const clipStopHandlerRef = useRef<((this: HTMLAudioElement, ev: Event) => any) | null>(null)
+  const utteranceLineRefs = useRef<(HTMLParagraphElement | null)[]>([])
+  const transcriptScrollRef = useRef<HTMLDivElement | null>(null)
+  const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastScrolledToIndexRef = useRef<number>(-1)
+  const [isUserScrollingTranscript, setIsUserScrollingTranscript] = useState(false)
+
+  const scrollUtteranceToTopWithGap = useCallback((index: number) => {
+    const container = transcriptScrollRef.current
+    const el = utteranceLineRefs.current[index]
+    if (!container || !el) return
+    const GAP_PX = 10
+    const targetTop = el.offsetTop - container.offsetTop - GAP_PX
+    container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+  }, [])
   
   const supabase = createClient()
 
@@ -432,17 +544,42 @@ export default function RecordingsPage() {
       return
     }
 
+    const ext = fileExt || '.mp3'
+    const fileName = `${user.id}/${Date.now()}${ext}`
+
     setUploading(true)
-    setUploadProgress(`Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)...`)
+    setProcessingPercent(0)
+    setUploadBytesLoaded(0)
+    setUploadBytesTotal(file.size)
+
+    // Create recording row FIRST so the "Processing" card appears immediately
+    const { data: newRecording, error: dbError } = await supabase
+      .from('diffuse_recordings')
+      .insert({
+        user_id: user.id,
+        title: 'Processing...',
+        duration: 0,
+        file_path: fileName,
+        status: 'recorded',
+      })
+      .select()
+      .single()
+
+    if (dbError) {
+      console.error('Failed to create recording in database:', dbError)
+      setUploading(false)
+      setProcessingPercent(0)
+      alert('Failed to create recording entry. Please try again.')
+      return
+    }
+
+    console.log('Created recording in database:', newRecording.id, 'Status:', newRecording.status)
+    setUploadRecordingId(newRecording.id)
+    await fetchRecordings()
 
     try {
-      // Determine file extension for storage
-      const ext = fileExt || '.mp3'
-      const fileName = `${user.id}/${Date.now()}${ext}`
-      
-      // For files over 6MB, use resumable uploads (TUS protocol)
-      // For smaller files, use standard upload
-      const useResumable = file.size > 6 * 1024 * 1024 // 6MB threshold
+      // Upload phase
+      const useResumable = file.size > 6 * 1024 * 1024
       
       if (useResumable) {
         // Get Supabase URL and extract project ref
@@ -488,10 +625,14 @@ export default function RecordingsPage() {
               reject(error)
             },
             onProgress: (bytesUploaded, bytesTotal) => {
-              const percent = ((bytesUploaded / bytesTotal) * 100).toFixed(1)
-              setUploadProgress(`Uploading ${file.name}... ${percent}% (${(bytesUploaded / 1024 / 1024).toFixed(1)}MB / ${(bytesTotal / 1024 / 1024).toFixed(1)}MB)`)
+              setUploadBytesLoaded(bytesUploaded)
+              setUploadBytesTotal(bytesTotal)
+              setProcessingPercent(Math.round((bytesUploaded / bytesTotal) * 100))
             },
             onSuccess: () => {
+              setUploadBytesLoaded(file.size)
+              setUploadBytesTotal(file.size)
+              setProcessingPercent(100)
               resolve()
             },
           })
@@ -527,11 +668,11 @@ export default function RecordingsPage() {
           }
           throw uploadError
         }
+        setUploadBytesLoaded(file.size)
+        setProcessingPercent(100)
       }
 
-      setUploadProgress('Extracting audio duration...')
-
-      // Get signed URL to extract duration
+      // Duration extraction
       const { data: signedUrlForDuration, error: durationUrlError } = await supabase.storage
         .from('recordings')
         .createSignedUrl(fileName, 3600)
@@ -577,156 +718,40 @@ export default function RecordingsPage() {
         }
       }
 
-      setUploadProgress('Creating recording entry...')
+      // Update recording with duration
+      if (detectedDuration > 0) {
+        await supabase.from('diffuse_recordings').update({ duration: detectedDuration }).eq('id', newRecording.id)
+      }
 
-      // Create recording entry with detected duration
-      const { data: newRecording, error: dbError } = await supabase
-        .from('diffuse_recordings')
-        .insert({
-          user_id: user.id,
-          title: 'Processing...',
-          duration: detectedDuration,
-          file_path: fileName,
-          status: 'generating',
-        })
-        .select()
-        .single()
-
-      if (dbError) throw dbError
-
-      // Show the recording detail
-      setSelectedRecording(newRecording)
+      // Done - refresh and clear upload state
+      console.log('Upload complete, recording ID:', newRecording.id, 'Duration:', detectedDuration, 'Status: recorded')
       await fetchRecordings()
+      setUploadRecordingId(null)
+      setProcessingPercent(0)
+      setUploadBytesLoaded(0)
+      setUploadBytesTotal(0)
+      console.log('Upload state cleared, recordings list refreshed')
 
-      setUploadProgress('Transcribing audio... (this may take a few minutes for large files)')
-
-      // Start transcription
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from('recordings')
-        .createSignedUrl(newRecording.file_path, 3600)
-
-      if (signedUrlError || !signedUrlData?.signedUrl) {
-        throw new Error('Failed to get audio URL for transcription')
-      }
-
-      // Create AbortController for timeout handling (10 minutes max for very large files)
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000) // 10 minutes
-
-      try {
-        const response = await fetch('/api/transcribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recordingId: newRecording.id,
-            audioUrl: signedUrlData.signedUrl,
-            autoSave: true,
-            currentTitle: '', // Let it auto-generate from transcription
-          }),
-          signal: controller.signal,
-        })
-        
-        clearTimeout(timeoutId)
-
-        // Handle non-JSON responses
-        let data
-        const contentType = response.headers.get('content-type')
-        if (contentType && contentType.includes('application/json')) {
-          data = await response.json()
-        } else {
-          const text = await response.text()
-          console.error('Non-JSON response:', text)
-          throw new Error('Transcription service returned an unexpected response. The file may be too large or the service timed out.')
-        }
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Transcription failed')
-        }
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId)
-        if (fetchError.name === 'AbortError') {
-          throw new Error('Transcription timed out after 10 minutes. The file may be too large. Please try a shorter recording or contact support.')
-        }
-        throw fetchError
-      }
-
-      // Refresh to show the updated recording
-      await fetchRecordings()
-      
-      // Update selected recording
-      const { data: updatedRecording } = await supabase
-        .from('diffuse_recordings')
-        .select('*')
-        .eq('id', newRecording.id)
-        .single()
-      
-      if (updatedRecording) {
-        setSelectedRecording(updatedRecording)
-        
-        // If duration is still 0, try to update it from the audio URL
-        if (updatedRecording.duration === 0 && signedUrlData?.signedUrl) {
-          try {
-            const finalDuration = await new Promise<number>((resolve) => {
-              const audio = new Audio()
-              audio.preload = 'metadata'
-              
-              const handleLoadedMetadata = () => {
-                if (audio.duration && isFinite(audio.duration) && audio.duration !== Infinity) {
-                  resolve(Math.round(audio.duration))
-                } else {
-                  resolve(0)
-                }
-                audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
-                audio.removeEventListener('error', handleError)
-              }
-              
-              const handleError = () => {
-                resolve(0)
-                audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
-                audio.removeEventListener('error', handleError)
-              }
-              
-              audio.addEventListener('loadedmetadata', handleLoadedMetadata)
-              audio.addEventListener('error', handleError)
-              audio.src = signedUrlData.signedUrl
-              
-              setTimeout(() => {
-                audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
-                audio.removeEventListener('error', handleError)
-                resolve(0)
-              }, 10000)
-            })
-            
-            // Update duration in database if we detected it
-            if (finalDuration > 0) {
-              await supabase
-                .from('diffuse_recordings')
-                .update({ duration: finalDuration })
-                .eq('id', newRecording.id)
-              
-              // Refresh again to show updated duration
-              await fetchRecordings()
-              const { data: finalRecording } = await supabase
-                .from('diffuse_recordings')
-                .select('*')
-                .eq('id', newRecording.id)
-                .single()
-              
-              if (finalRecording) {
-                setSelectedRecording(finalRecording)
-              }
-            }
-          } catch (error) {
-            console.warn('Failed to update duration after transcription:', error)
-          }
-        }
-      }
-
-      setUploadProgress(null)
+      // Auto-start transcription for the uploaded recording (don't open modal)
+      const recordingToTranscribe: Recording = { ...newRecording, duration: detectedDuration }
+      transcribeRecording(recordingToTranscribe, { openModal: false })
     } catch (error) {
       console.error('Upload error:', error)
-      alert(error instanceof Error ? error.message : 'Failed to upload recording')
-      setUploadProgress(null)
+      if (processingPercentTimerRef.current) {
+        clearInterval(processingPercentTimerRef.current)
+        processingPercentTimerRef.current = null
+      }
+      setUploadRecordingId(null)
+      setProcessingPercent(0)
+      setUploadBytesLoaded(0)
+      setUploadBytesTotal(0)
+      const message = error instanceof Error ? error.message : 'Failed to upload recording'
+      const code = message.includes('timeout') ? 'TIMEOUT' : message.includes('413') || message.includes('Payload') ? 'TOO_LARGE' : message.includes('URL') ? 'URL_ERR' : 'UPLOAD_ERR'
+      if (newRecording?.id) {
+        setFailedRecordingId(newRecording.id)
+        setFailedErrorMessage(message)
+        setFailedErrorCode(code)
+      }
     } finally {
       setUploading(false)
       if (uploadInputRef.current) uploadInputRef.current.value = ''
@@ -745,7 +770,181 @@ export default function RecordingsPage() {
     }
   }, [])
 
-  const transcribeRecording = async (recording: Recording) => {
+  // Utterances that look like clear speech: at least 4 words, at least 2s duration, not just filler
+  const FILLER_ONLY = /^(um|uh|hmm|yeah|yes|no|so|well|like|okay|ok|right)\s*\.?$/i
+  const MIN_WORDS = 4
+  const MIN_DURATION_MS = 2000
+
+  function getClearClipSegmentsForSpeaker(speaker: string): Array<{ start: number; end: number }> {
+    const speakerUtterances = utterances
+      .filter((u) => u.speaker === speaker)
+      .sort((a, b) => a.start - b.start)
+    if (!speakerUtterances.length) return []
+
+    const clear = speakerUtterances.filter((u) => {
+      const words = u.text.trim().split(/\s+/).filter(Boolean)
+      const durationMs = u.end - u.start
+      if (words.length < MIN_WORDS || durationMs < MIN_DURATION_MS) return false
+      if (FILLER_ONLY.test(u.text.trim())) return false
+      return true
+    })
+
+    const segments = (clear.length > 0 ? clear : speakerUtterances).map((u) => ({
+      start: u.start,
+      end: u.end,
+    }))
+    return segments
+  }
+
+  // Play one clip segment for the current speaker: segment 0 = first (clear) utterance, segment 1 = next time they spoke, etc.
+  const playCurrentSpeakerClip = (segmentIndex: number = currentClipSegment) => {
+    // Clear any previous error so we don't show stale failures
+    setClipError(false)
+    if (!audioUrl || !utterances.length || currentSpeakerIndex >= speakerList.length || !audioPlayerRef.current) {
+      setClipError(true)
+      return
+    }
+
+    const currentSpeaker = speakerList[currentSpeakerIndex]
+    const segments = getClearClipSegmentsForSpeaker(currentSpeaker)
+
+    if (!segments.length || segmentIndex >= segments.length) {
+      setClipError(true)
+      return
+    }
+
+    const seg = segments[segmentIndex]
+    const startTimeSec = seg.start / 1000
+    const clipDuration = (seg.end - seg.start) / 1000
+    if (!isFinite(clipDuration) || clipDuration <= 0) {
+      setClipError(true)
+      return
+    }
+
+    try {
+      const audio = audioPlayerRef.current
+      // Remove any previous clip stop handler to avoid immediately pausing the new clip
+      if (clipStopHandlerRef.current) {
+        audio.removeEventListener('timeupdate', clipStopHandlerRef.current)
+        clipStopHandlerRef.current = null
+      }
+      audio.currentTime = startTimeSec
+      setClipPlaying(true)
+      setClipError(false)
+
+      const playPromise = audio.play()
+
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            const stopClip = () => {
+              if (audio.currentTime >= startTimeSec + clipDuration) {
+                audio.pause()
+                setClipPlaying(false)
+                audio.removeEventListener('timeupdate', stopClip)
+                if (clipStopHandlerRef.current === stopClip) clipStopHandlerRef.current = null
+              }
+            }
+            clipStopHandlerRef.current = stopClip
+            audio.addEventListener('timeupdate', stopClip)
+          })
+          .catch((error) => {
+            console.warn('Autoplay failed:', error)
+            setClipPlaying(false)
+            setClipError(true)
+            if (clipStopHandlerRef.current) {
+              audio.removeEventListener('timeupdate', clipStopHandlerRef.current)
+              clipStopHandlerRef.current = null
+            }
+          })
+      }
+    } catch (error) {
+      console.error('Error playing clip:', error)
+      setClipError(true)
+      setClipPlaying(false)
+    }
+  }
+
+  const pauseCurrentSpeakerClip = () => {
+    if (audioPlayerRef.current) {
+      if (clipStopHandlerRef.current) {
+        audioPlayerRef.current.removeEventListener('timeupdate', clipStopHandlerRef.current)
+        clipStopHandlerRef.current = null
+      }
+      audioPlayerRef.current.pause()
+      setClipPlaying(false)
+    }
+  }
+
+  const tryAnotherClip = () => {
+    pauseCurrentSpeakerClip()
+    setClipError(false)
+    const segments = getClearClipSegmentsForSpeaker(speakerList[currentSpeakerIndex] ?? '')
+    if (!segments.length) return
+    const nextSegment = segments.length > 1 ? (currentClipSegment + 1) % segments.length : 0
+    setCurrentClipSegment(nextSegment)
+    playCurrentSpeakerClip(nextSegment)
+  }
+
+  const handleIdentifySpeaker = async () => {
+    const currentSpeaker = speakerList[currentSpeakerIndex]
+    const defaultName = `Speaker ${currentSpeakerIndex + 1}`
+    const finalName = speakerName.trim() || defaultName
+    const newSpeakerMap = {
+      ...speakerMap,
+      [currentSpeaker]: {
+        name: finalName,
+        position: speakerPosition.trim() || undefined,
+      },
+    }
+    setSpeakerMap(newSpeakerMap)
+
+    if (currentSpeakerIndex < speakerList.length - 1) {
+      pauseCurrentSpeakerClip()
+      const nextIndex = currentSpeakerIndex + 1
+      const nextSpeaker = speakerList[nextIndex]
+      const existing = newSpeakerMap[nextSpeaker]
+      setCurrentSpeakerIndex(nextIndex)
+      setSpeakerName(existing?.name && existing.name.startsWith('Speaker ') ? '' : (existing?.name || ''))
+      setSpeakerPosition(existing?.position || '')
+      setClipError(false)
+      setCurrentClipSegment(0)
+    } else {
+      // Replace A, B, C, D in the transcript with the names (and positions) the user entered
+      const enrichedTranscript = utterances
+        .map((u) => {
+          const speaker = newSpeakerMap[u.speaker]
+          const displayName = speaker.position
+            ? `${speaker.name} (${speaker.position})`
+            : speaker.name
+          return `${displayName}: ${u.text}`
+        })
+        .join('\n\n')
+
+      setTranscribePhase('done')
+      if (!selectedRecording) return
+      try {
+        await supabase
+          .from('diffuse_recordings')
+          .update({
+            transcription: enrichedTranscript,
+            original_transcription: enrichedTranscript,
+            status: 'transcribed',
+            speaker_map: newSpeakerMap,
+          })
+          .eq('id', selectedRecording.id)
+        await fetchRecordings()
+        setSelectedRecording({ ...selectedRecording, transcription: enrichedTranscript, original_transcription: enrichedTranscript, status: 'transcribed', speaker_map: newSpeakerMap })
+        setPendingTranscription(null)
+      } catch (err) {
+        console.error('Error saving transcription:', err)
+        alert('Failed to save transcription')
+      }
+    }
+  }
+
+  const transcribeRecording = async (recording: Recording, options?: { openModal?: boolean }) => {
+    const openModal = options?.openModal !== false
     setTranscribing(true)
 
     try {
@@ -754,7 +953,7 @@ export default function RecordingsPage() {
         .update({ status: 'generating' })
         .eq('id', recording.id)
 
-      setSelectedRecording({ ...recording, status: 'generating' })
+      if (openModal) setSelectedRecording({ ...recording, status: 'generating' })
       fetchRecordings()
 
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
@@ -775,6 +974,8 @@ export default function RecordingsPage() {
         body: JSON.stringify({
           recordingId: recording.id,
           audioUrl: signedUrlData.signedUrl,
+          autoSave: true,
+          currentTitle: recording.title,
         }),
       })
 
@@ -788,8 +989,46 @@ export default function RecordingsPage() {
         throw new Error(data.error || 'Transcription failed')
       }
 
-      setPendingTranscription(data.transcription)
-      setSelectedRecording({ ...recording, status: 'generating' })
+      // Server-side autosave (API) writes title/transcript/status/utterances.
+      // We refetch the list so the card never regresses to "generating" when opened.
+      const newTitle = data.suggestedTitle || data.finalTitle || recording.title
+      const rawTranscript = data.utterances?.length
+        ? data.utterances.map((u: { speaker: string; text: string }) => `${u.speaker}: ${u.text}`).join('\n\n')
+        : data.transcription
+      await fetchRecordings()
+
+      // If we have speaker labels (A, B, C, D), run "Who is this?" flow before showing transcript.
+      // Speaker 1 = A, Speaker 2 = B, etc. We replace A/B/C/D with names (and positions) in the final transcript.
+      if (data.utterances && data.utterances.length > 0) {
+        const uniqueSpeakers: string[] = []
+        for (const utterance of data.utterances) {
+          if (!uniqueSpeakers.includes(utterance.speaker)) {
+            uniqueSpeakers.push(utterance.speaker)
+          }
+        }
+        uniqueSpeakers.sort((a, b) => a.localeCompare(b)) // Guarantee order: A, B, C, D, ...
+
+        setUtterances(data.utterances)
+        setSpeakerList(uniqueSpeakers)
+        setSpeakerMap({})
+        setCurrentSpeakerIndex(0)
+        setCurrentClipSegment(0)
+        setSpeakerName('')
+        setSpeakerPosition('')
+        setTranscribePhase('identifying_speakers')
+        setClipError(false)
+        setCurrentClipSegment(0)
+
+        if (openModal) {
+          setSelectedRecording({ ...recording, status: 'transcribed', title: newTitle, transcription: rawTranscript, original_transcription: rawTranscript })
+        }
+      } else {
+        setTranscribePhase('done')
+        if (openModal) {
+          setSelectedRecording({ ...recording, status: 'transcribed', title: newTitle, transcription: rawTranscript, original_transcription: rawTranscript })
+          setPendingTranscription(null)
+        }
+      }
     } catch (error) {
       console.error('Error transcribing:', error)
       alert(error instanceof Error ? error.message : 'Failed to transcribe recording')
@@ -803,21 +1042,32 @@ export default function RecordingsPage() {
     if (!selectedRecording || !pendingTranscription) return
 
     try {
-      // Save both transcription and original_transcription (first time saving)
+      const updateData: Record<string, unknown> = {
+        transcription: pendingTranscription,
+        original_transcription: pendingTranscription,
+        status: 'transcribed',
+      }
+      if (Object.keys(speakerMap).length > 0) {
+        updateData.speaker_map = speakerMap
+      }
+
       const { error } = await supabase
         .from('diffuse_recordings')
-        .update({ 
-          transcription: pendingTranscription,
-          original_transcription: pendingTranscription,
-          status: 'transcribed'
-        })
+        .update(updateData)
         .eq('id', selectedRecording.id)
 
       if (error) throw error
 
-      // Update local state and close modal
       setPendingTranscription(null)
       setSelectedRecording(null)
+      setTranscribePhase('idle')
+      setUtterances([])
+      setSpeakerList([])
+      setSpeakerMap({})
+      setCurrentSpeakerIndex(0)
+      setCurrentClipSegment(0)
+      setSpeakerName('')
+      setSpeakerPosition('')
       fetchRecordings()
     } catch (error) {
       console.error('Error saving transcription:', error)
@@ -826,22 +1076,64 @@ export default function RecordingsPage() {
   }
 
   const saveEditedTranscription = async () => {
-    if (!selectedRecording || editedTranscription === null) return
+    if (!selectedRecording) return
 
     setSavingTranscription(true)
     try {
-      const { error } = await supabase
-        .from('diffuse_recordings')
-        .update({ transcription: editedTranscription })
-        .eq('id', selectedRecording.id)
+      if (isEditingUtterances && editedUtterances && editedUtterances.length > 0) {
+        const uniqueSpeakers: string[] = []
+        for (const u of editedUtterances) {
+          if (!uniqueSpeakers.includes(u.speaker)) uniqueSpeakers.push(u.speaker)
+        }
+        uniqueSpeakers.sort((a, b) => a.localeCompare(b))
 
-      if (error) throw error
+        const allNamed = uniqueSpeakers.every((s) => speakerMap?.[s]?.name)
+        const transcriptionToSave = editedUtterances
+          .map((u) => {
+            const mapped = speakerMap?.[u.speaker]
+            const display = allNamed && mapped?.name
+              ? (mapped.position ? `${mapped.name} (${mapped.position})` : mapped.name)
+              : u.speaker
+            return `${display}: ${u.text}`
+          })
+          .join('\n\n')
 
-      setSelectedRecording({ 
-        ...selectedRecording, 
-        transcription: editedTranscription 
-      })
-      setEditedTranscription(null)
+        const { error } = await supabase
+          .from('diffuse_recordings')
+          .update({
+            transcription: transcriptionToSave,
+            utterances: editedUtterances,
+          })
+          .eq('id', selectedRecording.id)
+
+        if (error) throw error
+
+        setSelectedRecording({
+          ...selectedRecording,
+          transcription: transcriptionToSave,
+          utterances: editedUtterances,
+        })
+        setUtterances(editedUtterances)
+        setIsEditingUtterances(false)
+        setEditedUtterances(null)
+        setEditedTranscription(null)
+        setFrozenHighlightIndex(null)
+      } else {
+        if (editedTranscription === null) return
+        const { error } = await supabase
+          .from('diffuse_recordings')
+          .update({ transcription: editedTranscription })
+          .eq('id', selectedRecording.id)
+
+        if (error) throw error
+
+        setSelectedRecording({
+          ...selectedRecording,
+          transcription: editedTranscription,
+        })
+        setEditedTranscription(null)
+        setFrozenHighlightIndex(null)
+      }
       fetchRecordings()
     } catch (error) {
       console.error('Error saving transcription:', error)
@@ -920,13 +1212,45 @@ export default function RecordingsPage() {
     }
   }, [supabase])
 
+  // Auto-load audio whenever a recording is selected (works for any status: recorded, generating, transcribed)
   useEffect(() => {
-    if (selectedRecording) {
+    if (selectedRecording?.file_path) {
       fetchAudioUrl(selectedRecording.file_path)
     } else {
       setAudioUrl(null)
     }
-  }, [selectedRecording, fetchAudioUrl])
+  }, [selectedRecording?.id, selectedRecording?.file_path, fetchAudioUrl])
+
+  // When upload completes, refetch audio if the modal is open for that recording so the player loads
+  const prevUploadRecordingIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevUploadRecordingIdRef.current !== null && uploadRecordingId === null && selectedRecording?.id === prevUploadRecordingIdRef.current) {
+      if (selectedRecording?.file_path) fetchAudioUrl(selectedRecording.file_path)
+    }
+    prevUploadRecordingIdRef.current = uploadRecordingId
+  }, [uploadRecordingId, selectedRecording?.id, selectedRecording?.file_path, fetchAudioUrl])
+
+  // Scroll transcript every couple of lines so the highlight advances in chunks and user can follow
+  const displayUtterances = utterances.length > 0 ? utterances : (selectedRecording?.utterances ?? [])
+  const displayOriginalUtterances = originalUtterances.length > 0
+    ? originalUtterances
+    : (selectedRecording?.original_utterances ?? selectedRecording?.utterances ?? [])
+  const LINES_BEFORE_SCROLL = 2
+  useEffect(() => {
+    if (isUserScrollingTranscript) return
+    if (isEditingUtterances || editedTranscription !== null) return
+    if (currentPlaybackTimeMs == null || displayUtterances.length === 0) return
+    const activeIndex = displayUtterances.findIndex(
+      (u) => currentPlaybackTimeMs >= u.start && currentPlaybackTimeMs <= u.end
+    )
+    if (activeIndex < 0 || !utteranceLineRefs.current[activeIndex]) return
+    const last = lastScrolledToIndexRef.current
+    const shouldScroll = last < 0 || Math.abs(activeIndex - last) >= LINES_BEFORE_SCROLL
+    if (shouldScroll) {
+      lastScrolledToIndexRef.current = activeIndex
+      scrollUtteranceToTopWithGap(activeIndex)
+    }
+  }, [currentPlaybackTimeMs, displayUtterances, isUserScrollingTranscript, scrollUtteranceToTopWithGap, isEditingUtterances, editedTranscription])
 
   useEffect(() => {
     if (!selectedRecording || selectedRecording.status !== 'generating') return
@@ -978,7 +1302,19 @@ export default function RecordingsPage() {
     setPendingTranscription(null)
     setEditingTitle(false)
     setEditedTitle('')
-    
+    setTranscribePhase('idle')
+    setUtterances([])
+    setOriginalUtterances([])
+    setSpeakerList([])
+    setSpeakerMap({})
+    setCurrentSpeakerIndex(0)
+    setCurrentClipSegment(0)
+    setSpeakerName('')
+    setSpeakerPosition('')
+    setCurrentPlaybackTimeMs(null)
+    setIsUserScrollingTranscript(false)
+    lastScrolledToIndexRef.current = -1
+
     const { data, error } = await supabase
       .from('diffuse_recordings')
       .select('*')
@@ -992,6 +1328,70 @@ export default function RecordingsPage() {
     }
 
     setSelectedRecording(data)
+    const loadedUtterances = Array.isArray(data.utterances) ? data.utterances : []
+    setUtterances(loadedUtterances)
+    const loadedOriginalUtterances = Array.isArray(data.original_utterances)
+      ? data.original_utterances
+      : loadedUtterances
+    setOriginalUtterances(loadedOriginalUtterances)
+
+    const existingMap: Record<string, { name: string; position?: string }> =
+      data.speaker_map && typeof data.speaker_map === 'object' ? data.speaker_map : {}
+    setSpeakerMap(existingMap)
+
+    // If we have diarization utterances but speaker names aren't filled yet, resume "Who is this?" flow.
+    if (loadedUtterances.length > 0) {
+      const uniqueSpeakers: string[] = []
+      for (const u of loadedUtterances) {
+        if (!uniqueSpeakers.includes(u.speaker)) uniqueSpeakers.push(u.speaker)
+      }
+      uniqueSpeakers.sort((a, b) => a.localeCompare(b))
+
+      const firstMissingIndex = uniqueSpeakers.findIndex((s) => !existingMap?.[s]?.name)
+      if (firstMissingIndex !== -1) {
+        pauseCurrentSpeakerClip()
+        setSpeakerList(uniqueSpeakers)
+        setCurrentSpeakerIndex(firstMissingIndex)
+        setCurrentClipSegment(0)
+        const s = uniqueSpeakers[firstMissingIndex]
+        const existing = existingMap[s]
+        setSpeakerName(existing?.name && existing.name.startsWith('Speaker ') ? '' : (existing?.name || ''))
+        setSpeakerPosition(existing?.position || '')
+        setClipError(false)
+        setTranscribePhase('identifying_speakers')
+      } else {
+        setSpeakerList(uniqueSpeakers)
+      }
+    }
+  }
+
+  const startSpeakerWalkthrough = () => {
+    if (!selectedRecording) return
+    const existingMap: Record<string, { name: string; position?: string }> =
+      selectedRecording.speaker_map && typeof selectedRecording.speaker_map === 'object' ? selectedRecording.speaker_map : speakerMap
+    const baseUtterances = displayUtterances
+    if (!baseUtterances.length) return
+
+    const uniqueSpeakers: string[] = []
+    for (const u of baseUtterances) {
+      if (!uniqueSpeakers.includes(u.speaker)) uniqueSpeakers.push(u.speaker)
+    }
+    uniqueSpeakers.sort((a, b) => a.localeCompare(b))
+
+    pauseCurrentSpeakerClip()
+    audioPlayerRef.current?.pause()
+    setClipPlaying(false)
+
+    setSpeakerList(uniqueSpeakers)
+    setSpeakerMap(existingMap)
+    setCurrentSpeakerIndex(0)
+    setCurrentClipSegment(0)
+    const first = uniqueSpeakers[0]
+    const existing = existingMap[first]
+    setSpeakerName(existing?.name && existing.name.startsWith('Speaker ') ? '' : (existing?.name || ''))
+    setSpeakerPosition(existing?.position || '')
+    setClipError(false)
+    setTranscribePhase('identifying_speakers')
   }
 
   const updateRecordingTitle = async (newTitle: string) => {
@@ -1111,18 +1511,6 @@ export default function RecordingsPage() {
         </div>
       </div>
 
-      {/* Upload Progress Banner */}
-      {uploadProgress && (
-        <div className="mb-6 p-4 glass-container border border-cosmic-orange/30 bg-cosmic-orange/5">
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-cosmic-orange animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span className="text-body-sm text-secondary-white">{uploadProgress}</span>
-          </div>
-        </div>
-      )}
-
       {/* Recordings Grid */}
       {loading ? (
         <div className="flex items-center justify-center py-16">
@@ -1178,40 +1566,60 @@ export default function RecordingsPage() {
             </button>
             <RecordingButton className="flex-1" />
           </div>
-          {recordings.map((rec) => (
-            <div
-              key={rec.id}
-              onClick={() => openRecording(rec)}
-              className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
-            >
-              <h3 className="text-heading-md text-secondary-white font-medium mb-4">
-                {rec.title}
-              </h3>
-              
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-caption uppercase tracking-wider">
-                  <span className="text-accent-purple">{formatDuration(rec.duration)}</span>
-                  <span className="text-medium-gray">•</span>
-                  {rec.status === 'transcribed' ? (
-                    <span className="text-cosmic-orange">TRANSCRIBED</span>
-                  ) : rec.status === 'generating' ? (
-                    <span className="text-pale-blue flex items-center gap-1.5">
-                      <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      GENERATING
-                    </span>
-                  ) : (
-                    <span className="text-medium-gray">RECORDED</span>
-                  )}
-                </div>
+          {recordings.map((rec) => {
+            const isCurrentUpload = rec.id === uploadRecordingId
+            const showUploadProgress = isCurrentUpload && uploadBytesTotal > 0
+            return (
+              <div
+                key={rec.id}
+                onClick={() => !isCurrentUpload && openRecording(rec)}
+                className={`glass-container p-6 transition-colors ${isCurrentUpload ? 'cursor-wait' : 'cursor-pointer hover:bg-white/10'}`}
+              >
+                <h3 className="text-heading-md text-secondary-white font-medium mb-4 line-clamp-2">
+                  {rec.title}
+                </h3>
                 
-                <div className="text-caption text-medium-gray uppercase tracking-wider">
-                  {new Date(rec.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-caption uppercase tracking-wider">
+                    {showUploadProgress ? (
+                      <>
+                        <span className="text-accent-purple">{processingPercent}%</span>
+                        {uploadBytesTotal > 0 && (
+                          <>
+                            <span className="text-medium-gray">•</span>
+                            <span className="text-cosmic-orange">
+                              {((uploadBytesLoaded || 0) / 1024 / 1024).toFixed(1)} MB / {(uploadBytesTotal / 1024 / 1024).toFixed(1)} MB
+                            </span>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-accent-purple">{formatDuration(rec.duration)}</span>
+                        <span className="text-medium-gray">•</span>
+                        {rec.status === 'transcribed' ? (
+                          <span className="text-cosmic-orange">TRANSCRIBED</span>
+                        ) : rec.status === 'generating' ? (
+                          <span className="text-cosmic-orange flex items-center gap-1.5">
+                            <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            GENERATING
+                          </span>
+                        ) : (
+                          <span className="text-medium-gray">RECORDED</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="text-caption text-medium-gray uppercase tracking-wider">
+                    {new Date(rec.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -1311,6 +1719,7 @@ export default function RecordingsPage() {
                       deleteRecording(selectedRecording.id, selectedRecording.file_path)
                       setSelectedRecording(null)
                       setEditedTranscription(null)
+                      setFrozenHighlightIndex(null)
                     }
                   }}
                   className="text-medium-gray hover:text-red-400 transition-colors p-1"
@@ -1328,6 +1737,7 @@ export default function RecordingsPage() {
                     setEditedTitle('')
                     setPendingTranscription(null)
                     setEditedTranscription(null)
+                    setFrozenHighlightIndex(null)
                   }}
                   className="text-medium-gray hover:text-secondary-white transition-colors p-1"
                   title="Close"
@@ -1345,18 +1755,35 @@ export default function RecordingsPage() {
               </p>
             </div>
 
-            <div className="mb-6 flex-shrink-0">
-              <h3 className="text-body-sm text-medium-gray mb-3">Audio Playback</h3>
-              {loadingAudio ? (
+            <div className="mb-4 flex-shrink-0">
+              {uploadRecordingId === selectedRecording.id ? (
+                <div className="flex flex-col items-center justify-center py-6 bg-white/5 rounded-glass gap-3">
+                  <span className="text-body-md text-pale-blue font-medium">{processingPercent}%</span>
+                  {uploadBytesTotal > 0 && (
+                    <span className="text-body-sm text-medium-gray">
+                      {((uploadBytesLoaded || 0) / 1024 / 1024).toFixed(1)} MB / {(uploadBytesTotal / 1024 / 1024).toFixed(1)} MB
+                    </span>
+                  )}
+                  <div className="w-full max-w-xs h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-cosmic-orange transition-all duration-300"
+                      style={{ width: `${processingPercent}%` }}
+                    />
+                  </div>
+                </div>
+              ) : loadingAudio ? (
                 <div className="flex items-center justify-center py-4 bg-white/5 rounded-glass">
                   <LoadingSpinner size="sm" />
                   <span className="ml-2 text-body-sm text-medium-gray">Loading audio...</span>
                 </div>
               ) : audioUrl ? (
-                <AudioPlayer 
-                  src={audioUrl} 
-                  onError={() => setAudioUrl(null)} 
+                <AudioPlayer
+                  ref={audioPlayerRef}
+                  src={audioUrl}
+                  onError={() => setAudioUrl(null)}
                   initialDuration={selectedRecording?.duration || 0}
+                  onTimeUpdate={(sec) => setCurrentPlaybackTimeMs(sec * 1000)}
+                  compact
                 />
               ) : (
                 <div className="p-4 bg-white/5 rounded-glass text-center">
@@ -1368,23 +1795,63 @@ export default function RecordingsPage() {
             <div className="flex-1 flex flex-col min-h-0">
               <div className="flex items-center justify-between mb-3 flex-shrink-0">
                 <h3 className="text-body-sm text-medium-gray">
-                  Transcription
-                  {editedTranscription !== null && editedTranscription !== selectedRecording.transcription && (
-                    <span className="text-cosmic-orange ml-2">(unsaved changes)</span>
-                  )}
-                  {selectedRecording.original_transcription && 
-                   selectedRecording.transcription !== selectedRecording.original_transcription &&
-                   editedTranscription === null && (
-                    <span className="text-medium-gray ml-2">(edited)</span>
-                  )}
+                  {transcribePhase === 'identifying_speakers' ? 'Diarization' : 'Transcription'}
+                  {transcribePhase !== 'identifying_speakers' &&
+                    editedTranscription !== null &&
+                    editedTranscription !== selectedRecording.transcription && (
+                      <span className="text-cosmic-orange ml-2">(unsaved changes)</span>
+                    )}
+                  {transcribePhase !== 'identifying_speakers' &&
+                    selectedRecording.original_transcription && 
+                    selectedRecording.transcription !== selectedRecording.original_transcription &&
+                    editedTranscription === null && (
+                      <span className="text-medium-gray ml-2">(edited)</span>
+                    )}
                 </h3>
-                {/* Edit button when viewing diff */}
-                {selectedRecording.status === 'transcribed' && 
+                <div className="flex items-center gap-3">
+                  {/* Speakers button */}
+                  {transcribePhase !== 'identifying_speakers' &&
+                   selectedRecording.status === 'transcribed' &&
+                   displayUtterances.length > 0 &&
+                   editedTranscription === null &&
+                   !isEditingUtterances && (
+                    <button
+                      onClick={startSpeakerWalkthrough}
+                      className="text-body-sm text-medium-gray hover:text-secondary-white transition-colors flex items-center gap-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      Speakers
+                    </button>
+                  )}
+
+                  {/* Edit button */}
+                {transcribePhase !== 'identifying_speakers' &&
+                 selectedRecording.status === 'transcribed' &&
                  selectedRecording.transcription && 
                  editedTranscription === null && (
                   <button
-                    onClick={() => setEditedTranscription(selectedRecording.transcription || '')}
-                    className="text-body-sm text-cosmic-orange hover:text-cosmic-orange/80 flex items-center gap-1"
+                    onClick={() => {
+                      // Pause playback when editing so audio doesn't keep running in background
+                      audioPlayerRef.current?.pause()
+                      setClipPlaying(false)
+                      if (displayUtterances.length > 0) {
+                        const activeIndex = currentPlaybackTimeMs != null
+                          ? displayUtterances.findIndex((u) => currentPlaybackTimeMs >= u.start && currentPlaybackTimeMs <= u.end)
+                          : -1
+                        setFrozenHighlightIndex(activeIndex >= 0 ? activeIndex : null)
+                        setIsEditingUtterances(true)
+                        setEditedUtterances(displayUtterances.map((u) => ({ ...u })))
+                        setEditedTranscription(null)
+                      } else {
+                        setFrozenHighlightIndex(null)
+                        setIsEditingUtterances(false)
+                        setEditedUtterances(null)
+                        setEditedTranscription(selectedRecording.transcription || '')
+                      }
+                    }}
+                    className="text-body-sm text-medium-gray hover:text-secondary-white transition-colors flex items-center gap-1"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -1392,52 +1859,235 @@ export default function RecordingsPage() {
                     Edit
                   </button>
                 )}
+                </div>
               </div>
-              {selectedRecording.status === 'transcribed' && selectedRecording.transcription ? (
+              {transcribePhase === 'identifying_speakers' ? (
+                <div className="flex flex-col flex-1 min-h-0 overflow-auto">
+                  <div className="p-4 sm:p-5 bg-white/5 border border-white/10 rounded-glass">
+                    <h3 className="text-heading-md text-secondary-white mb-2">Who is this?</h3>
+                    <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                      <button
+                        type="button"
+                        onClick={clipPlaying ? pauseCurrentSpeakerClip : () => playCurrentSpeakerClip(currentClipSegment)}
+                        className="btn-secondary px-3 py-2 text-body-sm inline-flex items-center justify-center gap-2 w-full sm:w-auto"
+                      >
+                        {clipPlaying ? (
+                          <svg className="w-4 h-4 text-cosmic-orange" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="6" y="4" width="4" height="16" rx="1" />
+                            <rect x="14" y="4" width="4" height="16" rx="1" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        )}
+                        Play Speaker {currentSpeakerIndex + 1} of {speakerList.length}
+                      </button>
+
+                      {(() => {
+                        const currentSpeaker = speakerList[currentSpeakerIndex]
+                        const segments = getClearClipSegmentsForSpeaker(currentSpeaker)
+                        const canTryAnother = segments.length > 1
+                        return (
+                          <button
+                            type="button"
+                            onClick={tryAnotherClip}
+                            disabled={!canTryAnother}
+                            className="btn-secondary px-3 py-2 text-body-sm inline-flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Try Another Clip
+                          </button>
+                        )
+                      })()}
+                    </div>
+                    {clipError && (
+                      <p className="text-body-sm text-red-400 mb-2">Couldn’t play that clip. Try “Play Speaker” again.</p>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="block text-body-sm text-medium-gray mb-2">
+                          Name
+                        </label>
+                        <input
+                          type="text"
+                          value={speakerName}
+                          onChange={(e) => setSpeakerName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleIdentifySpeaker()
+                          }}
+placeholder="First Last"
+                        className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md focus:outline-none focus:border-cosmic-orange transition-colors"
+                        autoFocus
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-body-sm text-medium-gray mb-2">
+                          Position or Title
+                        </label>
+                        <input
+                          type="text"
+                          value={speakerPosition}
+                          onChange={(e) => setSpeakerPosition(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleIdentifySpeaker()
+                          }}
+                        placeholder="Council Member"
+                        className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md focus:outline-none focus:border-cosmic-orange transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleIdentifySpeaker}
+                      className="btn-primary w-full py-2.5"
+                    >
+                      {currentSpeakerIndex < speakerList.length - 1 ? 'Next' : 'Confirm'}
+                    </button>
+                  </div>
+                </div>
+              ) : selectedRecording.status === 'transcribed' && selectedRecording.transcription ? (
                 <div className="flex flex-col flex-1 min-h-0">
-                  {editedTranscription !== null ? (
-                    /* Editing mode - show textarea */
-                    <>
-                      <textarea
-                        value={editedTranscription}
-                        onChange={(e) => setEditedTranscription(e.target.value)}
-                        className="flex-1 min-h-[150px] px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md focus:outline-none focus:border-cosmic-orange transition-colors resize-none leading-relaxed overflow-y-auto"
-                      />
-                      <div className="flex gap-2 mt-3 flex-shrink-0">
+                  {/* Same layout in view/edit: transcript box stays the same size */} 
+                  <div
+                    ref={transcriptScrollRef}
+                    onScroll={() => {
+                      setIsUserScrollingTranscript(true)
+                      lastScrolledToIndexRef.current = -1
+                      if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current)
+                      scrollEndTimerRef.current = setTimeout(() => {
+                        setIsUserScrollingTranscript(false)
+                        if (isEditingUtterances || editedTranscription !== null) return
+                        if (currentPlaybackTimeMs == null || displayUtterances.length === 0) return
+                        const activeIndex = displayUtterances.findIndex(
+                          (u) => currentPlaybackTimeMs >= u.start && currentPlaybackTimeMs <= u.end
+                        )
+                        if (activeIndex >= 0 && utteranceLineRefs.current[activeIndex]) {
+                          scrollUtteranceToTopWithGap(activeIndex)
+                        }
+                      }, 600)
+                    }}
+                    className="flex-1 min-h-[150px] px-4 py-3 bg-white/5 border border-white/10 rounded-glass overflow-y-auto"
+                  >
+                    {displayUtterances.length > 0 ? (
+                      <div className="space-y-2">
+                        {(isEditingUtterances && editedUtterances ? editedUtterances : displayUtterances).map((u, i) => {
+                          const displayName = speakerMap[u.speaker]
+                            ? (speakerMap[u.speaker].position
+                                ? `${speakerMap[u.speaker].name} (${speakerMap[u.speaker].position})`
+                                : speakerMap[u.speaker].name)
+                            : u.speaker
+                          const isHighlight = isEditingUtterances
+                            ? frozenHighlightIndex !== null && i === frozenHighlightIndex
+                            : (currentPlaybackTimeMs != null && currentPlaybackTimeMs >= u.start && currentPlaybackTimeMs <= u.end)
+                          const originalText = displayOriginalUtterances?.[i]?.text ?? u.text
+                          const currentText = u.text
+                          return (
+                            <p
+                              key={i}
+                              ref={(el) => {
+                                utteranceLineRefs.current[i] = el
+                              }}
+                              onClick={() => {
+                                if (isEditingUtterances) return
+                                if (!audioPlayerRef.current) return
+                                audioPlayerRef.current.currentTime = u.start / 1000
+                                audioPlayerRef.current.play().catch(() => {})
+                              }}
+                              role={isEditingUtterances ? undefined : 'button'}
+                              tabIndex={isEditingUtterances ? undefined : 0}
+                              onKeyDown={isEditingUtterances ? undefined : (e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  if (!audioPlayerRef.current) return
+                                  audioPlayerRef.current.currentTime = u.start / 1000
+                                  audioPlayerRef.current.play().catch(() => {})
+                                }
+                              }}
+                              className={`text-body-md leading-relaxed py-1 px-2 -mx-2 rounded transition-colors ${
+                                isHighlight ? 'bg-cosmic-orange/15 text-cosmic-orange' : 'text-secondary-white ' + (isEditingUtterances ? 'cursor-text' : 'hover:bg-white/5 cursor-pointer')
+                              }`}
+                            >
+                              <span className={`font-medium ${isHighlight ? 'text-cosmic-orange/90' : 'text-medium-gray'}`}>{displayName}: </span>
+                              {isEditingUtterances && editedUtterances ? (
+                                <textarea
+                                  value={currentText}
+                                  onChange={(e) => {
+                                    const el = e.currentTarget
+                                    const value = el.value
+
+                                    // Keep textarea height in sync as user types.
+                                    el.style.height = '0px'
+                                    el.style.height = `${el.scrollHeight}px`
+
+                                    setEditedUtterances((prev) => {
+                                      if (!prev) return prev
+                                      if (!prev[i]) return prev
+                                      const next = prev.map((x) => ({ ...x }))
+                                      next[i].text = value
+                                      return next
+                                    })
+                                  }}
+                                  onInput={(e) => {
+                                    const el = e.currentTarget
+                                    el.style.height = '0px'
+                                    el.style.height = `${el.scrollHeight}px`
+                                  }}
+                                  className="inline-block align-top w-full bg-transparent outline-none resize-none leading-relaxed"
+                                  rows={1}
+                                />
+                              ) : selectedRecording.original_transcription &&
+                                selectedRecording.transcription !== selectedRecording.original_transcription ? (
+                                <InlineDiff original={originalText} current={currentText} />
+                              ) : (
+                                currentText
+                              )}
+                            </p>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      editedTranscription !== null ? (
+                        <textarea
+                          value={editedTranscription}
+                          onChange={(e) => setEditedTranscription(e.target.value)}
+                          className="w-full h-full min-h-[150px] bg-transparent text-secondary-white text-body-md focus:outline-none resize-none leading-relaxed"
+                        />
+                      ) : (
+                        <p className="text-body-md text-secondary-white leading-relaxed whitespace-pre-wrap">
+                          {selectedRecording.transcription}
+                        </p>
+                      )
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="mt-4 flex-shrink-0 flex gap-3">
+                    {isEditingUtterances || editedTranscription !== null ? (
+                      <>
                         <button
-                          onClick={() => setEditedTranscription(null)}
-                          className="btn-secondary px-4 py-2 text-body-sm"
+                          onClick={() => {
+                            setIsEditingUtterances(false)
+                            setEditedUtterances(null)
+                            setEditedTranscription(null)
+                            setFrozenHighlightIndex(null)
+                          }}
+                          className="btn-secondary flex-1 py-3"
                           disabled={savingTranscription}
                         >
                           Cancel
                         </button>
                         <button
                           onClick={saveEditedTranscription}
-                          className="btn-primary px-4 py-2 text-body-sm disabled:opacity-50"
-                          disabled={savingTranscription || editedTranscription === selectedRecording.transcription}
+                          className="btn-primary flex-1 py-3 disabled:opacity-50"
+                          disabled={savingTranscription}
                         >
                           {savingTranscription ? 'Saving...' : 'Save Changes'}
                         </button>
-                      </div>
-                    </>
-                  ) : (
-                    /* View mode - show diff if edited, plain text if not */
-                    <>
-                      <div className="flex-1 min-h-[150px] px-4 py-3 bg-white/5 border border-white/10 rounded-glass overflow-y-auto">
-                        {selectedRecording.original_transcription && 
-                         selectedRecording.transcription !== selectedRecording.original_transcription ? (
-                          <TranscriptionDiffView 
-                            original={selectedRecording.original_transcription} 
-                            current={selectedRecording.transcription} 
-                          />
-                        ) : (
-                          <p className="text-body-md text-secondary-white leading-relaxed whitespace-pre-wrap">
-                            {selectedRecording.transcription}
-                          </p>
-                        )}
-                      </div>
-                      {/* Action Buttons */}
-                      <div className="mt-4 flex-shrink-0 flex gap-3">
+                      </>
+                    ) : (
+                      <>
                         <button
                           onClick={() => setSelectedRecording(null)}
                           disabled={generatingProject}
@@ -1481,9 +2131,9 @@ export default function RecordingsPage() {
                             </>
                           )}
                         </button>
-                      </div>
-                    </>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </div>
               ) : pendingTranscription ? (
                 <div className="flex flex-col flex-1 min-h-0">

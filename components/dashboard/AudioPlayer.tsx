@@ -1,15 +1,28 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, forwardRef } from 'react'
 
 interface AudioPlayerProps {
   src: string
   onError?: () => void
   initialDuration?: number // Duration in seconds from database
+  onTimeUpdate?: (currentTimeSec: number) => void
+  compact?: boolean // no border, single line full width (e.g. in recording modal)
 }
 
-export default function AudioPlayer({ src, onError, initialDuration }: AudioPlayerProps) {
-  const audioRef = useRef<HTMLAudioElement>(null)
+const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(function AudioPlayer(
+  { src, onError, initialDuration, onTimeUpdate, compact },
+  forwardedRef
+) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const setRef = useCallback(
+    (el: HTMLAudioElement | null) => {
+      (audioRef as React.MutableRefObject<HTMLAudioElement | null>).current = el
+      if (typeof forwardedRef === 'function') forwardedRef(el)
+      else if (forwardedRef) (forwardedRef as React.MutableRefObject<HTMLAudioElement | null>).current = el
+    },
+    [forwardedRef]
+  )
   const progressRef = useRef<HTMLDivElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -41,6 +54,7 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
       if (!isDragging) {
         setCurrentTime(audio.currentTime)
       }
+      onTimeUpdate?.(audio.currentTime)
       // Try to get duration if not set yet
       if (duration === 0 && audio.duration && isFinite(audio.duration) && audio.duration !== Infinity) {
         setDuration(audio.duration)
@@ -51,6 +65,9 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
       setIsPlaying(false)
       setCurrentTime(0)
     }
+
+    const handlePlay = () => setIsPlaying(true)
+    const handlePause = () => setIsPlaying(false)
 
     const handleError = () => {
       setHasError(true)
@@ -72,7 +89,7 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
     }
 
     const handleSeeked = () => {
-      // After seeking, check if duration is now available
+      if (!isDragging) setCurrentTime(audio.currentTime)
       if (duration === 0 && audio.duration && isFinite(audio.duration) && audio.duration !== Infinity) {
         setDuration(audio.duration)
       }
@@ -81,6 +98,8 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
     audio.addEventListener('loadedmetadata', handleLoadedMetadata)
     audio.addEventListener('timeupdate', handleTimeUpdate)
     audio.addEventListener('ended', handleEnded)
+    audio.addEventListener('play', handlePlay)
+    audio.addEventListener('pause', handlePause)
     audio.addEventListener('error', handleError)
     audio.addEventListener('canplay', handleCanPlay)
     audio.addEventListener('durationchange', handleDurationChange)
@@ -102,12 +121,14 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
       audio.removeEventListener('timeupdate', handleTimeUpdate)
       audio.removeEventListener('ended', handleEnded)
+      audio.removeEventListener('play', handlePlay)
+      audio.removeEventListener('pause', handlePause)
       audio.removeEventListener('error', handleError)
       audio.removeEventListener('canplay', handleCanPlay)
       audio.removeEventListener('durationchange', handleDurationChange)
       audio.removeEventListener('seeked', handleSeeked)
     }
-  }, [onError, isDragging, duration])
+  }, [onError, isDragging, duration, onTimeUpdate])
 
   // Smooth playback: use requestAnimationFrame when playing so progress updates at ~60fps
   useEffect(() => {
@@ -139,7 +160,6 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
         console.error('Play error:', err)
       })
     }
-    setIsPlaying(!isPlaying)
   }
 
   // Calculate time based on click/drag position
@@ -248,15 +268,14 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
   }
 
   return (
-    <div className="bg-white/5 rounded-glass p-4 border border-white/10">
-      <audio ref={audioRef} src={src} preload="auto" />
-      
-      <div className="flex items-center gap-4">
+    <div className={compact ? 'w-full' : 'bg-white/5 rounded-glass p-4 border border-white/10'}>
+      <audio ref={setRef} src={src} preload="auto" />
+      <div className={`flex items-center w-full ${compact ? 'gap-3' : 'gap-4'}`}>
         {/* Play/Pause Button */}
         <button
           onClick={togglePlay}
           disabled={isLoading && effectiveDuration === 0}
-          className="w-8 h-8 flex items-center justify-center text-cosmic-orange hover:text-rich-orange transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+          className={`flex items-center justify-start text-cosmic-orange hover:text-rich-orange transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 ${compact ? 'w-7 h-7' : 'w-8 h-8'}`}
         >
           {isLoading && effectiveDuration === 0 ? (
             <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -274,7 +293,7 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
           )}
         </button>
 
-        {/* Progress Bar - larger hit area for easier interaction */}
+        {/* Progress Bar - fills space between play and time */}
         <div className="flex-1 min-w-0 py-2 -my-2">
           <div
             ref={progressRef}
@@ -282,7 +301,7 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            className={`h-2 bg-white/10 rounded-full cursor-pointer group relative select-none ${
+            className={`h-2 bg-white/10 rounded-full overflow-hidden cursor-pointer group relative select-none ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
@@ -292,20 +311,22 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
               style={{ width: `${Math.min(100, progressPercentage)}%` }}
             />
             {/* Progress Knob */}
-            <div
-              className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-cosmic-orange rounded-full shadow-lg pointer-events-none transition-transform ${
-                isDragging ? 'scale-125' : 'scale-100 opacity-0 group-hover:opacity-100'
-              }`}
-              style={{ 
-                left: `calc(${Math.min(100, progressPercentage)}% - 8px)`,
-                opacity: isDragging ? 1 : undefined
-              }}
-            />
+            {!compact && (
+              <div
+                className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-cosmic-orange rounded-full shadow-lg pointer-events-none transition-transform ${
+                  isDragging ? 'scale-125' : 'scale-100 opacity-0 group-hover:opacity-100'
+                }`}
+                style={{ 
+                  left: `calc(${Math.min(100, progressPercentage)}% - 8px)`,
+                  opacity: isDragging ? 1 : undefined
+                }}
+              />
+            )}
           </div>
         </div>
 
-        {/* Time Display */}
-        <div className="flex-shrink-0 tabular-nums">
+        {/* Time Display - right side */}
+        <div className="flex-shrink-0 tabular-nums text-caption">
           <span className="text-caption text-secondary-white font-medium">
             {formatTime(currentTime)}
           </span>
@@ -317,4 +338,6 @@ export default function AudioPlayer({ src, onError, initialDuration }: AudioPlay
       </div>
     </div>
   )
-}
+})
+
+export default AudioPlayer

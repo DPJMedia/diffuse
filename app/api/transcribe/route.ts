@@ -21,6 +21,19 @@ function getAssemblyAIClient(): AssemblyAI {
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const OPENROUTER_MODEL = 'anthropic/claude-3.5-haiku'
 
+/** Strip markdown/formatting artifacts from AI-generated title (backticks, code fences, etc.). */
+function sanitizeGeneratedTitle(raw: string): string {
+  return raw
+    .replace(/```+/g, ' ')           // code fences -> space so words don't run together
+    .replace(/`/g, '')               // inline backticks
+    .replace(/^\s*#+\s*/gm, '')      // leading markdown headers
+    .replace(/\*\*?/g, '')           // bold asterisks
+    .replace(/__?/g, '')             // bold underscores
+    .trim()
+    .replace(/\s+/g, ' ')            // collapse multiple spaces/newlines
+    .trim()
+}
+
 /** Generate a short title from transcription using Open Router (Claude 3.5 Haiku). Returns null if key missing or request fails. */
 async function generateTitleWithOpenRouter(transcriptionText: string): Promise<string | null> {
   const apiKey = process.env.OPENROUTER
@@ -41,7 +54,7 @@ async function generateTitleWithOpenRouter(transcriptionText: string): Promise<s
         messages: [
           {
             role: 'user',
-            content: `Based only on this transcription, suggest a short, clear title (no quotes, under 80 characters). Reply with only the title, nothing else.\n\nTranscription:\n${excerpt}`,
+            content: `Based only on this transcription, suggest a short, clear title (no quotes, no markdown, under 80 characters). Reply with only the title, nothing else.\n\nTranscription:\n${excerpt}`,
           },
         ],
         max_tokens: 80,
@@ -54,8 +67,10 @@ async function generateTitleWithOpenRouter(transcriptionText: string): Promise<s
     }
 
     const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const title = data?.choices?.[0]?.message?.content?.trim()
-    if (title && title.length > 0 && title.length <= 500) return title
+    const raw = data?.choices?.[0]?.message?.content?.trim()
+    if (!raw || raw.length === 0) return null
+    const title = sanitizeGeneratedTitle(raw)
+    if (title.length > 0 && title.length <= 500) return title
     return null
   } catch (err) {
     console.warn('Open Router title generation error:', err)
@@ -152,10 +167,11 @@ export async function POST(request: NextRequest) {
     console.log('Audio URL:', audioUrl.substring(0, 100) + '...')
 
     const assemblyai = getAssemblyAIClient()
-    // Transcribe using AssemblyAI (title is generated via Open Router below)
+    // Transcribe using AssemblyAI with speaker diarization (returns utterances with A, B, C, D)
     const transcript = await assemblyai.transcripts.transcribe({
       audio: audioUrl,
       speech_model: 'universal',
+      speaker_labels: true,
     })
 
     if (transcript.status === 'error') {
@@ -173,8 +189,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Build transcription text and utterances (for speaker diarization / "Who is this?" flow)
+    let transcriptionText: string | null = null
+    let utterances: Array<{ speaker: string; text: string; start: number; end: number }> | undefined
+
+    if (transcript.utterances && transcript.utterances.length > 0) {
+      transcriptionText = transcript.utterances
+        .map((u) => `${u.speaker}: ${u.text}`)
+        .join('\n\n')
+      utterances = transcript.utterances.map((u) => ({
+        speaker: u.speaker,
+        text: u.text,
+        start: u.start ?? 0,
+        end: u.end ?? 0,
+      }))
+    } else {
+      transcriptionText = transcript.text ?? null
+    }
+
     // Generate title: prefer Open Router (Claude 3.5 Haiku), fallback to excerpt from transcription
-    const transcriptionText = transcript.text ?? null
     const openRouterTitle = transcriptionText
       ? await generateTitleWithOpenRouter(transcriptionText)
       : null
@@ -193,9 +226,11 @@ export async function POST(request: NextRequest) {
         .from('diffuse_recordings')
         .update({ 
           title: finalTitle,
-          transcription: transcript.text,
-          original_transcription: transcript.text,
-          status: 'transcribed'
+          transcription: transcriptionText,
+          original_transcription: transcriptionText,
+          status: 'transcribed',
+          utterances: utterances ?? null,
+          original_utterances: utterances ?? null,
         })
         .eq('id', recordingId)
         .select()
@@ -213,7 +248,8 @@ export async function POST(request: NextRequest) {
 
     const response = NextResponse.json({
       success: true,
-      transcription: transcript.text,
+      transcription: transcriptionText,
+      utterances: utterances ?? undefined,
       suggestedTitle: suggestedTitle,
       finalTitle: finalTitle,
     })

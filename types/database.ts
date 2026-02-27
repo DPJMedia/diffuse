@@ -80,6 +80,13 @@ export interface DiffuseProjectOutput {
   deleted_at?: string | null
 }
 
+export type RecordingUtterance = {
+  speaker: string
+  text: string
+  start: number
+  end: number
+}
+
 export interface DiffuseRecording {
   id: string
   user_id: string
@@ -87,8 +94,13 @@ export interface DiffuseRecording {
   duration: number
   file_path: string
   transcription: string | null
+  original_transcription?: string | null
+  speaker_map?: Record<string, { name: string; position?: string }> | null
+  utterances?: RecordingUtterance[] | null
+  original_utterances?: RecordingUtterance[] | null
   status: RecordingStatus
   created_at: string
+  updated_at: string
 }
 
 export interface UserWithWorkspaces {

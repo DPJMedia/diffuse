@@ -135,7 +135,6 @@ export default function CreateProjectModal({
   return (
     <ModalShell onClose={onClose} maxWidth="max-w-md" maxHeight="max-h-[90vh]">
       <ModalHeader
-        icon={<span className={MODAL_ICONS.createProject.color}>{MODAL_ICONS.createProject.icon}</span>}
         title={`Create New ${typeLabel}`}
         onClose={onClose}
       />
