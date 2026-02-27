@@ -7,7 +7,7 @@ const steps = [
   {
     number: '01',
     title: 'Record',
-    description: 'Upload any audio or video from meetings, interviews, press conferences, or community events.',
+    description: 'Record or upload. Add docs, images, or a URL. One piece can use multiple sources.',
     icon: (
       <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -17,7 +17,7 @@ const steps = [
   {
     number: '02',
     title: 'Transcribe',
-    description: 'AI automatically transcribes your audio with high accuracy and generates a smart title.',
+    description: 'We separate speakers; you name them. Edit the transcript, then generate.',
     icon: (
       <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -27,7 +27,7 @@ const steps = [
   {
     number: '03',
     title: 'Generate',
-    description: 'Smart AI structures content into publication-ready articles with headlines, quotes, and proper formatting.',
+    description: 'Pick article or ad. Get headline, excerpt, body. Edit and re-run when you want a new version.',
     icon: (
       <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -37,7 +37,7 @@ const steps = [
   {
     number: '04',
     title: 'Publish',
-    description: 'Connect to your frontend to auto-publish, or copy and paste. Either way, you\'re live in minutes.',
+    description: 'Connect your site to auto-fill, or copy and paste. Record to live in one flow.',
     icon: (
       <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -84,14 +84,14 @@ export default function HowItWorks() {
         >
           {/* Section Header */}
           <motion.div variants={itemVariants} className="text-center mb-12 md:mb-16 px-4">
-            <span className="text-cosmic-orange text-xs sm:text-sm md:text-caption uppercase tracking-wider font-semibold mb-3 block">
-              Simple Process
+            <span className="text-cosmic-orange text-caption uppercase tracking-wider font-semibold mb-3 block">
+              How it works
             </span>
-            <h2 className="text-2xl sm:text-3xl md:text-heading-xl lg:text-display-sm font-bold mb-4">
-              From Recording to <span className="gradient-text">Published Article</span>
+            <h2 className="text-heading-xl font-bold mb-4">
+              Recording to <span className="gradient-text">published</span> in four steps
             </h2>
-            <p className="text-base sm:text-lg md:text-body-md text-medium-gray max-w-2xl mx-auto">
-              Four simple steps to transform any meeting or event into professional journalism
+            <p className="text-body-md text-medium-gray max-w-2xl mx-auto">
+              Record, transcribe, generate, publish. Same flow for articles and ads.
             </p>
           </motion.div>
 
@@ -114,12 +114,12 @@ export default function HowItWorks() {
                 </div>
 
                 {/* Title */}
-                <h3 className="text-lg md:text-xl font-bold text-secondary-white mb-2">
+                <h3 className="text-heading-md font-bold text-secondary-white mb-2">
                   {step.title}
                 </h3>
 
                 {/* Description */}
-                <p className="text-sm md:text-base text-medium-gray leading-relaxed">
+                <p className="text-body-sm text-medium-gray leading-relaxed">
                   {step.description}
                 </p>
               </motion.div>

@@ -28,18 +28,15 @@ export default function UseCases() {
                   <h3 className="text-2xl sm:text-3xl md:text-heading-xl font-bold mb-4 md:mb-6">
                     <span className="text-[#dbdbdb]">Spring-Ford</span> <span className="text-[#3391af]">Press</span>
                   </h3>
-                  <p className="text-sm text-[#3391af] font-medium mb-3">
-                    See how diffuse.ai connects to publishing frontends
-                  </p>
-                  <p className="text-base sm:text-lg md:text-body-md text-secondary-white mb-6 leading-relaxed">
-                    Connect your diffuse.ai account to frontends like Spring-Ford Press. Generated articles auto-populate fields—no copy-paste. Record, generate, and publish within minutes of a meeting.
+                  <p className="text-body-md text-secondary-white mb-6 leading-relaxed">
+                    A local news site. Diffuse pushes articles into their CMS so headline, byline, and body are ready to schedule—no re-typing.
                   </p>
 
                   <div className="space-y-4">
                     {[
-                      'Connect diffuse.ai to your publishing frontend',
-                      'Auto-populate article fields—no copy-paste',
-                      'Record, generate, and publish within minutes',
+                      'Live site in production, not a demo',
+                      'Real newsroom workflow',
+                      'See it at springford.press',
                     ].map((feature, index) => (
                       <div key={index} className="flex items-start gap-3">
                         <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#3391af]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -47,7 +44,7 @@ export default function UseCases() {
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                         </div>
-                        <span className="text-sm sm:text-base md:text-body-md text-secondary-white">{feature}</span>
+                        <span className="text-body-sm text-secondary-white">{feature}</span>
                       </div>
                     ))}
                   </div>

@@ -5,40 +5,28 @@ import { useRef, useState } from 'react'
 
 const faqs = [
   {
-    question: 'What is Diffuse.AI?',
-    answer: 'Diffuse.AI is an AI-powered tool that transforms audio recordings into publication-ready news articles. Record or upload audio from meetings, interviews, or events, and our AI generates structured articles with headlines, excerpts, and SEO metadata.',
+    question: 'What is Diffuse?',
+    answer: 'Diffuse turns recordings, documents, and web pages into publication-ready articles and ads in one place. You get transcription with speaker names, the ability to mix multiple sources per project, and optional publishing integrations so you can go from record to live article without switching tools.',
   },
   {
-    question: 'How does Diffuse.AI work?',
-    answer: 'Diffuse.AI follows a simple 4-step process: (1) Record - Capture audio in-app or upload existing files, (2) Transcribe - AI automatically transcribes with high accuracy, (3) Generate - Create articles from your transcription and other inputs, (4) Publish - Connect to your frontend to auto-publish, or copy and paste. Either way, you\'re live in minutes.',
+    question: 'How does the recording to publish process work?',
+    answer: 'Record in the app or upload audio, add documents or web links if you want. We transcribe and optionally identify speakers so you can name them. Edit the transcript, then click Generate to get an article or ad. Connect your site to auto-fill fields, or copy and paste. Same flow for solo use or teams.',
   },
   {
-    question: 'How is Diffuse different from using ChatGPT?',
-    answer: 'Diffuse is built for the full workflow: record, transcribe, generate, and publish. Connect to publishing frontends to auto-populate articles—no copy-paste. Designed for small teams at a fraction of the cost, with one smooth workflow instead of juggling multiple tools.',
+    question: 'What can I use as input?',
+    answer: 'Audio (record or upload MP3, WAV, M4A), documents (PDF, DOCX, TXT), images, and URLs for web scraping. You can combine several inputs in one project so one piece can pull from a meeting, a press release, and a scraped page.',
   },
   {
-    question: 'Can I use Diffuse as an individual?',
-    answer: 'Absolutely! Diffuse works perfectly for independent journalists, freelancers, and content creators. You don\'t need to create an organization. Just sign up for a free account to get started, or upgrade to a paid plan for more. See Plans in the dashboard for tier options.',
+    question: 'Can I edit the transcription and the generated content?',
+    answer: 'Yes. You can fix the transcript and speaker names before generating. Every output is fully editable: headline, excerpt, body, SEO fields. You can also re-edit and create new versions so the tool adapts to your edits instead of locking you in.',
   },
   {
-    question: 'What file types can I upload?',
-    answer: 'Diffuse supports audio files (MP3, WAV, M4A), documents (PDF, DOCX, TXT), and images (JPG, PNG). You can combine multiple input types in a single project to generate comprehensive articles.',
+    question: 'Who is Diffuse for?',
+    answer: 'Freelancers, small newsrooms, and content teams who need to turn meetings, interviews, or documents into articles or ads quickly. Free tier gets you started; paid plans add more projects and team features. No organization required to try it.',
   },
   {
-    question: 'What\'s included in the free tier?',
-    answer: 'The free tier includes full AI article generation, audio transcription, and file uploads. No credit card required. It\'s perfect for trying out Diffuse. Paid tiers offer more—see Plans in the dashboard for details.',
-  },
-  {
-    question: 'How accurate is the AI-generated content?',
-    answer: 'Diffuse.AI generates publication-ready articles using advanced AI. The output includes headlines, subtitles, excerpts, and full article content. We always recommend reviewing and editing before publishing to add your own voice and verify accuracy.',
-  },
-  {
-    question: 'Can I edit the generated articles?',
-    answer: 'Yes! All generated content is fully editable. You can modify the transcription before generating, and then edit all parts of the output article including title, subtitle, excerpt, content, and SEO fields.',
-  },
-  {
-    question: 'How does team collaboration work?',
-    answer: 'Team plans let you create an organization and invite members with role-based access. Owners have full control, Admins can manage members, Editors can create and modify content, and Viewers have read-only access. Teams join via invite codes.',
+    question: 'How is this different from using ChatGPT or other AI writing tools?',
+    answer: 'Diffuse is built for the full path from source to published piece. You get recording and upload, transcription with speaker ID, multi-input projects, and article or ad generation in one workflow. If you connect a publishing frontend, articles can auto-populate there so you are not copy-pasting. It is one product for the job, not a generic chatbot plus manual steps.',
   },
 ]
 
@@ -81,14 +69,14 @@ export default function FAQ() {
         >
           {/* Section Header */}
           <motion.div variants={itemVariants} className="text-center mb-12 px-4">
-            <span className="text-cosmic-orange text-xs sm:text-sm md:text-caption uppercase tracking-wider font-semibold mb-3 block">
+            <span className="text-cosmic-orange text-caption uppercase tracking-wider font-semibold mb-3 block">
               FAQ
             </span>
-            <h2 className="text-2xl sm:text-3xl md:text-heading-xl lg:text-display-sm font-bold mb-4">
+            <h2 className="text-heading-xl font-bold mb-4">
               Frequently Asked <span className="gradient-text">Questions</span>
             </h2>
-            <p className="text-base sm:text-lg md:text-body-md text-medium-gray max-w-2xl mx-auto">
-              Everything you need to know about Diffuse.AI
+            <p className="text-body-md text-medium-gray max-w-2xl mx-auto">
+              What you need to know before you start.
             </p>
           </motion.div>
 
@@ -103,7 +91,7 @@ export default function FAQ() {
                   onClick={() => setOpenIndex(openIndex === index ? null : index)}
                   className="w-full px-6 py-5 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
                 >
-                  <span className="text-base md:text-lg font-medium text-secondary-white pr-4">
+                  <span className="text-body-md font-medium text-secondary-white pr-4">
                     {faq.question}
                   </span>
                   <motion.div
@@ -126,7 +114,7 @@ export default function FAQ() {
                       transition={{ duration: 0.3 }}
                       className="overflow-hidden"
                     >
-                      <div className="px-6 pb-5 text-medium-gray leading-relaxed border-t border-white/10 pt-4">
+                      <div className="px-6 pb-5 text-body-sm text-medium-gray leading-relaxed border-t border-white/10 pt-4">
                         {faq.answer}
                       </div>
                     </motion.div>
