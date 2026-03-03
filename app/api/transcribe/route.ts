@@ -165,14 +165,18 @@ export async function POST(request: NextRequest) {
 
     console.log('Starting transcription' + (recordingId ? ` for recording: ${recordingId}` : ' for file upload'))
     console.log('Audio URL:', audioUrl.substring(0, 100) + '...')
+    console.log('Full audio URL for debugging:', audioUrl)
 
     const assemblyai = getAssemblyAIClient()
-    // Transcribe using AssemblyAI with speaker diarization (returns utterances with A, B, C, D)
+    // For speaker diarization: omitting speakers_expected allows auto-detection,
+    // but we'll add it if we detect a failed diarization (single giant utterance).
+    console.log('Submitting to AssemblyAI with speaker_labels: true...')
     const transcript = await assemblyai.transcripts.transcribe({
       audio: audioUrl,
       speech_model: 'universal',
       speaker_labels: true,
     })
+    console.log('AssemblyAI processing complete')
 
     if (transcript.status === 'error') {
       console.error('AssemblyAI transcription error:', transcript.error)
@@ -193,7 +197,67 @@ export async function POST(request: NextRequest) {
     let transcriptionText: string | null = null
     let utterances: Array<{ speaker: string; text: string; start: number; end: number }> | undefined
 
-    if (transcript.utterances && transcript.utterances.length > 0) {
+    console.log('AssemblyAI response - status:', transcript.status)
+    console.log('AssemblyAI response - has utterances:', !!transcript.utterances)
+    console.log('AssemblyAI response - utterances count:', transcript.utterances?.length ?? 0)
+    console.log('AssemblyAI response - has text:', !!transcript.text)
+    console.log('AssemblyAI response - text length:', transcript.text?.length ?? 0)
+    console.log('AssemblyAI response - audio_duration:', transcript.audio_duration)
+    
+    // Detect failed diarization: single utterance spanning most/all of the file
+    const isSingleGiantUtterance = 
+      transcript.utterances?.length === 1 && 
+      transcript.audio_duration && 
+      transcript.utterances[0].end && 
+      (transcript.utterances[0].end / 1000) > (transcript.audio_duration * 0.95)
+    
+    if (isSingleGiantUtterance) {
+      console.log('⚠️  FAILED DIARIZATION DETECTED: Single utterance spans entire file')
+      console.log('Retrying with speakers_expected hint...')
+      
+      // Retry with speakers_expected to force better diarization
+      const retryTranscript = await assemblyai.transcripts.transcribe({
+        audio: audioUrl,
+        speech_model: 'universal',
+        speaker_labels: true,
+        speakers_expected: 4, // Hint: look for at least 4 speakers
+      })
+      
+      console.log('Retry complete - utterances:', retryTranscript.utterances?.length ?? 0)
+      
+      if (retryTranscript.status === 'completed' && retryTranscript.utterances && retryTranscript.utterances.length > 1) {
+        console.log('✅ Retry successful! Using retry result.')
+        // Use retry result
+        const uniqueSpeakers = new Set(retryTranscript.utterances.map(u => u.speaker))
+        console.log('Retry detected speakers:', Array.from(uniqueSpeakers).sort())
+        console.log('Total unique speakers:', uniqueSpeakers.size)
+        
+        transcriptionText = retryTranscript.utterances
+          .map((u) => `${u.speaker}: ${u.text}`)
+          .join('\n\n')
+        utterances = retryTranscript.utterances.map((u) => ({
+          speaker: u.speaker,
+          text: u.text,
+          start: u.start ?? 0,
+          end: u.end ?? 0,
+        }))
+      } else {
+        console.log('❌ Retry also failed - falling back to plain transcript')
+        transcriptionText = transcript.text ?? null
+        utterances = undefined
+      }
+    } else if (transcript.utterances && transcript.utterances.length > 0) {
+      // Count unique speakers
+      const uniqueSpeakers = new Set(transcript.utterances.map(u => u.speaker))
+      console.log('AssemblyAI detected speakers:', Array.from(uniqueSpeakers).sort())
+      console.log('Total unique speakers:', uniqueSpeakers.size)
+      console.log('First 5 utterances:', transcript.utterances.slice(0, 5).map(u => ({
+        speaker: u.speaker,
+        text: u.text?.substring(0, 50),
+        start: u.start,
+        end: u.end
+      })))
+      
       transcriptionText = transcript.utterances
         .map((u) => `${u.speaker}: ${u.text}`)
         .join('\n\n')
@@ -204,6 +268,8 @@ export async function POST(request: NextRequest) {
         end: u.end ?? 0,
       }))
     } else {
+      console.log('No utterances returned - falling back to plain text transcript')
+      console.log('Plain text first 200 chars:', transcript.text?.substring(0, 200))
       transcriptionText = transcript.text ?? null
     }
 

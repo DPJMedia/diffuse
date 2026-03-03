@@ -770,10 +770,11 @@ export default function RecordingsPage() {
     }
   }, [])
 
-  // Utterances that look like clear speech: at least 4 words, at least 2s duration, not just filler
+  // Utterances that count as playable clips: at least 2 words, 1s duration, not just filler.
+  // Keeps bar low so "Try Another Clip" is available whenever a speaker spoke more than once.
   const FILLER_ONLY = /^(um|uh|hmm|yeah|yes|no|so|well|like|okay|ok|right)\s*\.?$/i
-  const MIN_WORDS = 4
-  const MIN_DURATION_MS = 2000
+  const MIN_WORDS = 2
+  const MIN_DURATION_MS = 1000
 
   function getClearClipSegmentsForSpeaker(speaker: string): Array<{ start: number; end: number }> {
     const speakerUtterances = utterances
@@ -999,6 +1000,8 @@ export default function RecordingsPage() {
 
       // If we have speaker labels (A, B, C, D), run "Who is this?" flow before showing transcript.
       // Speaker 1 = A, Speaker 2 = B, etc. We replace A/B/C/D with names (and positions) in the final transcript.
+      // HOWEVER: If AssemblyAI returns only 1 utterance spanning the whole file, diarization failed.
+      // In that case, skip the identification flow and just use the plain transcript.
       if (data.utterances && data.utterances.length > 0) {
         const uniqueSpeakers: string[] = []
         for (const utterance of data.utterances) {
@@ -1008,19 +1011,33 @@ export default function RecordingsPage() {
         }
         uniqueSpeakers.sort((a, b) => a.localeCompare(b)) // Guarantee order: A, B, C, D, ...
 
-        setUtterances(data.utterances)
-        setSpeakerList(uniqueSpeakers)
-        setSpeakerMap({})
-        setCurrentSpeakerIndex(0)
-        setCurrentClipSegment(0)
-        setSpeakerName('')
-        setSpeakerPosition('')
-        setTranscribePhase('identifying_speakers')
-        setClipError(false)
-        setCurrentClipSegment(0)
+        // Check if this is a failed diarization: 1 speaker with 1 giant utterance
+        const isSingleGiantUtterance = data.utterances.length === 1 && uniqueSpeakers.length === 1
+        
+        if (isSingleGiantUtterance) {
+          // Diarization failed - skip "Who is this?" and use plain transcript
+          console.log('Diarization failed: single utterance detected, skipping speaker identification')
+          setTranscribePhase('done')
+          if (openModal) {
+            setSelectedRecording({ ...recording, status: 'transcribed', title: newTitle, transcription: rawTranscript, original_transcription: rawTranscript })
+            setPendingTranscription(null)
+          }
+        } else {
+          // Normal multi-speaker flow
+          setUtterances(data.utterances)
+          setSpeakerList(uniqueSpeakers)
+          setSpeakerMap({})
+          setCurrentSpeakerIndex(0)
+          setCurrentClipSegment(0)
+          setSpeakerName('')
+          setSpeakerPosition('')
+          setTranscribePhase('identifying_speakers')
+          setClipError(false)
+          setCurrentClipSegment(0)
 
-        if (openModal) {
-          setSelectedRecording({ ...recording, status: 'transcribed', title: newTitle, transcription: rawTranscript, original_transcription: rawTranscript })
+          if (openModal) {
+            setSelectedRecording({ ...recording, status: 'transcribed', title: newTitle, transcription: rawTranscript, original_transcription: rawTranscript })
+          }
         }
       } else {
         setTranscribePhase('done')
@@ -1896,7 +1913,7 @@ export default function RecordingsPage() {
                             disabled={!canTryAnother}
                             className="btn-secondary px-3 py-2 text-body-sm inline-flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Try Another Clip
+                            Try Clip {currentClipSegment + 1} of {segments.length}
                           </button>
                         )
                       })()}
