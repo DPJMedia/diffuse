@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 
 /**
- * Test script to check what AssemblyAI returns for your 88-minute file
+ * Test script to check what AssemblyAI returns for your audio files
  * 
  * Usage:
- * 1. Get the signed URL from Supabase for your 88-minute recording
- * 2. Run: node test-assemblyai.js "YOUR_SIGNED_URL_HERE"
+ * 1. Set ASSEMBLYAI_API_KEY environment variable
+ * 2. Get the signed URL from Supabase for your recording
+ * 3. Run: ASSEMBLYAI_API_KEY=your_key node test-assemblyai.js "YOUR_SIGNED_URL_HERE"
  */
 
-const ASSEMBLYAI_API_KEY = '195bb5a691ea406eba83b0ca21c47d2b'
+const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY
+
+if (!ASSEMBLYAI_API_KEY) {
+  console.error('❌ ASSEMBLYAI_API_KEY environment variable is required')
+  console.error('Usage: ASSEMBLYAI_API_KEY=your_key node test-assemblyai.js "AUDIO_URL"')
+  process.exit(1)
+}
 
 async function testTranscription(audioUrl) {
   console.log('🎙️  Testing AssemblyAI Speaker Diarization')

@@ -168,12 +168,11 @@ export async function POST(request: NextRequest) {
     console.log('Full audio URL for debugging:', audioUrl)
 
     const assemblyai = getAssemblyAIClient()
-    // For speaker diarization: omitting speakers_expected allows auto-detection,
-    // but we'll add it if we detect a failed diarization (single giant utterance).
+    // Use Universal-2 (free tier standard model) for speaker diarization
+    // Universal-3 Pro requires paid plan or special free tier access
     console.log('Submitting to AssemblyAI with speaker_labels: true...')
     const transcript = await assemblyai.transcripts.transcribe({
       audio: audioUrl,
-      speech_model: 'universal',
       speaker_labels: true,
     })
     console.log('AssemblyAI processing complete')
@@ -218,7 +217,6 @@ export async function POST(request: NextRequest) {
       // Retry with speakers_expected to force better diarization
       const retryTranscript = await assemblyai.transcripts.transcribe({
         audio: audioUrl,
-        speech_model: 'universal',
         speaker_labels: true,
         speakers_expected: 4, // Hint: look for at least 4 speakers
       })
