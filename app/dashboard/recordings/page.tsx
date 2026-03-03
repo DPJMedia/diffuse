@@ -170,6 +170,54 @@ function InlineDiff({
 
 type SubscriptionTier = 'free' | 'pro' | 'pro_max'
 
+/** Format minute as "[0 min]" or "[1:05 min]" for display and save */
+function formatMinuteLabel(minute: number): string {
+  const hours = Math.floor(minute / 60)
+  const mins = minute % 60
+  return hours > 0 ? `[${hours}:${mins.toString().padStart(2, '0')} min]` : `[${minute} min]`
+}
+
+/** Build full transcript string with minute markers at the right spots (for save and for use as input) */
+function buildTranscriptWithMinuteMarkers(
+  utterances: Array<{ speaker: string; text: string; start: number; end?: number }>,
+  speakerMap: Record<string, { name: string; position?: string }>
+): string {
+  if (!utterances.length) return ''
+  const lines: string[] = []
+  let lastMinute = -1
+  for (const u of utterances) {
+    const startMinute = Math.floor(u.start / 60000)
+    if (startMinute > lastMinute) {
+      lines.push(formatMinuteLabel(startMinute))
+      lastMinute = startMinute
+    }
+    const mapped = speakerMap[u.speaker]
+    const displayName = mapped
+      ? (mapped.position ? `${mapped.name} (${mapped.position})` : mapped.name)
+      : u.speaker
+    lines.push(`${displayName}: ${u.text}`)
+  }
+  return lines.join('\n\n')
+}
+
+// Helper function to format transcription with styled minute markers (same size as body text)
+function formatTranscriptionWithStyledMinuteMarkers(transcription: string | null): React.ReactNode {
+  if (!transcription) return null
+
+  const parts = transcription.split(/(\[\d+(?::\d+)? min\])/g)
+  
+  return parts.map((part, index) => {
+    if (part.match(/^\[\d+(?::\d+)? min\]$/)) {
+      return (
+        <span key={index} className="text-medium-gray text-body-md">
+          {part}
+        </span>
+      )
+    }
+    return <React.Fragment key={index}>{part}</React.Fragment>
+  })
+}
+
 export default function RecordingsPage() {
   const router = useRouter()
   const { user, currentWorkspace } = useAuth()
@@ -911,16 +959,8 @@ export default function RecordingsPage() {
       setClipError(false)
       setCurrentClipSegment(0)
     } else {
-      // Replace A, B, C, D in the transcript with the names (and positions) the user entered
-      const enrichedTranscript = utterances
-        .map((u) => {
-          const speaker = newSpeakerMap[u.speaker]
-          const displayName = speaker.position
-            ? `${speaker.name} (${speaker.position})`
-            : speaker.name
-          return `${displayName}: ${u.text}`
-        })
-        .join('\n\n')
+      // Replace A, B, C, D in the transcript with names (and positions); include minute markers at correct spots
+      const enrichedTranscript = buildTranscriptWithMinuteMarkers(utterances, newSpeakerMap)
 
       setTranscribePhase('done')
       if (!selectedRecording) return
@@ -1104,16 +1144,8 @@ export default function RecordingsPage() {
         }
         uniqueSpeakers.sort((a, b) => a.localeCompare(b))
 
-        const allNamed = uniqueSpeakers.every((s) => speakerMap?.[s]?.name)
-        const transcriptionToSave = editedUtterances
-          .map((u) => {
-            const mapped = speakerMap?.[u.speaker]
-            const display = allNamed && mapped?.name
-              ? (mapped.position ? `${mapped.name} (${mapped.position})` : mapped.name)
-              : u.speaker
-            return `${display}: ${u.text}`
-          })
-          .join('\n\n')
+        const mapForBuild = (speakerMap ?? {}) as Record<string, { name: string; position?: string }>
+        const transcriptionToSave = buildTranscriptWithMinuteMarkers(editedUtterances, mapForBuild)
 
         const { error } = await supabase
           .from('diffuse_recordings')
@@ -1989,80 +2021,91 @@ placeholder="First Last"
                   >
                     {displayUtterances.length > 0 ? (
                       <div className="space-y-2">
-                        {(isEditingUtterances && editedUtterances ? editedUtterances : displayUtterances).map((u, i) => {
-                          const displayName = speakerMap[u.speaker]
-                            ? (speakerMap[u.speaker].position
-                                ? `${speakerMap[u.speaker].name} (${speakerMap[u.speaker].position})`
-                                : speakerMap[u.speaker].name)
-                            : u.speaker
-                          const isHighlight = isEditingUtterances
-                            ? frozenHighlightIndex !== null && i === frozenHighlightIndex
-                            : (currentPlaybackTimeMs != null && currentPlaybackTimeMs >= u.start && currentPlaybackTimeMs <= u.end)
-                          const originalText = displayOriginalUtterances?.[i]?.text ?? u.text
-                          const currentText = u.text
-                          return (
-                            <p
-                              key={i}
-                              ref={(el) => {
-                                utteranceLineRefs.current[i] = el
-                              }}
-                              onClick={() => {
-                                if (isEditingUtterances) return
-                                if (!audioPlayerRef.current) return
-                                audioPlayerRef.current.currentTime = u.start / 1000
-                                audioPlayerRef.current.play().catch(() => {})
-                              }}
-                              role={isEditingUtterances ? undefined : 'button'}
-                              tabIndex={isEditingUtterances ? undefined : 0}
-                              onKeyDown={isEditingUtterances ? undefined : (e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
+                        {(() => {
+                          const utterancesToShow = isEditingUtterances && editedUtterances ? editedUtterances : displayUtterances
+                          let lastMinute = -1
+                          return utterancesToShow.map((u, i) => {
+                            const startMinute = Math.floor(u.start / 60000)
+                            const showMinuteMarker = startMinute > lastMinute
+                            if (showMinuteMarker) lastMinute = startMinute
+                            const minuteLabel = showMinuteMarker ? formatMinuteLabel(startMinute) : null
+                            const displayName = speakerMap[u.speaker]
+                              ? (speakerMap[u.speaker].position
+                                  ? `${speakerMap[u.speaker].name} (${speakerMap[u.speaker].position})`
+                                  : speakerMap[u.speaker].name)
+                              : u.speaker
+                            const isHighlight = isEditingUtterances
+                              ? frozenHighlightIndex !== null && i === frozenHighlightIndex
+                              : (currentPlaybackTimeMs != null && currentPlaybackTimeMs >= u.start && currentPlaybackTimeMs <= u.end)
+                            const originalText = displayOriginalUtterances?.[i]?.text ?? u.text
+                            const currentText = u.text
+                            return (
+                              <p
+                                key={`u-${i}`}
+                                ref={(el) => {
+                                  utteranceLineRefs.current[i] = el
+                                }}
+                                onClick={() => {
+                                  if (isEditingUtterances) return
                                   if (!audioPlayerRef.current) return
                                   audioPlayerRef.current.currentTime = u.start / 1000
                                   audioPlayerRef.current.play().catch(() => {})
-                                }
-                              }}
-                              className={`text-body-md leading-relaxed py-1 px-2 -mx-2 rounded transition-colors ${
-                                isHighlight ? 'bg-cosmic-orange/15 text-cosmic-orange' : 'text-secondary-white ' + (isEditingUtterances ? 'cursor-text' : 'hover:bg-white/5 cursor-pointer')
-                              }`}
-                            >
-                              <span className={`font-medium ${isHighlight ? 'text-cosmic-orange/90' : 'text-medium-gray'}`}>{displayName}: </span>
-                              {isEditingUtterances && editedUtterances ? (
-                                <textarea
-                                  value={currentText}
-                                  onChange={(e) => {
-                                    const el = e.currentTarget
-                                    const value = el.value
+                                }}
+                                role={isEditingUtterances ? undefined : 'button'}
+                                tabIndex={isEditingUtterances ? undefined : 0}
+                                onKeyDown={isEditingUtterances ? undefined : (e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    if (!audioPlayerRef.current) return
+                                    audioPlayerRef.current.currentTime = u.start / 1000
+                                    audioPlayerRef.current.play().catch(() => {})
+                                  }
+                                }}
+                                className={`text-body-md leading-relaxed py-1 px-2 -mx-2 rounded transition-colors ${
+                                  isHighlight ? 'bg-cosmic-orange/15 text-cosmic-orange' : 'text-secondary-white ' + (isEditingUtterances ? 'cursor-text' : 'hover:bg-white/5 cursor-pointer')
+                                }`}
+                              >
+                                {minuteLabel && (
+                                  <span className="text-medium-gray text-body-md mr-2">{minuteLabel}</span>
+                                )}
+                                <span className={`font-medium ${isHighlight ? 'text-cosmic-orange/90' : 'text-medium-gray'}`}>{displayName}: </span>
+                                {isEditingUtterances && editedUtterances ? (
+                                  <textarea
+                                    value={currentText}
+                                    onChange={(e) => {
+                                      const el = e.currentTarget
+                                      const value = el.value
 
-                                    // Keep textarea height in sync as user types.
-                                    el.style.height = '0px'
-                                    el.style.height = `${el.scrollHeight}px`
+                                      // Keep textarea height in sync as user types.
+                                      el.style.height = '0px'
+                                      el.style.height = `${el.scrollHeight}px`
 
-                                    setEditedUtterances((prev) => {
-                                      if (!prev) return prev
-                                      if (!prev[i]) return prev
-                                      const next = prev.map((x) => ({ ...x }))
-                                      next[i].text = value
-                                      return next
-                                    })
-                                  }}
-                                  onInput={(e) => {
-                                    const el = e.currentTarget
-                                    el.style.height = '0px'
-                                    el.style.height = `${el.scrollHeight}px`
-                                  }}
-                                  className="inline-block align-top w-full bg-transparent outline-none resize-none leading-relaxed"
-                                  rows={1}
-                                />
-                              ) : selectedRecording.original_transcription &&
-                                selectedRecording.transcription !== selectedRecording.original_transcription ? (
-                                <InlineDiff original={originalText} current={currentText} />
-                              ) : (
-                                currentText
-                              )}
-                            </p>
-                          )
-                        })}
+                                      setEditedUtterances((prev) => {
+                                        if (!prev) return prev
+                                        if (!prev[i]) return prev
+                                        const next = prev.map((x) => ({ ...x }))
+                                        next[i].text = value
+                                        return next
+                                      })
+                                    }}
+                                    onInput={(e) => {
+                                      const el = e.currentTarget
+                                      el.style.height = '0px'
+                                      el.style.height = `${el.scrollHeight}px`
+                                    }}
+                                    className="inline-block align-top w-full bg-transparent outline-none resize-none leading-relaxed"
+                                    rows={1}
+                                  />
+                                ) : selectedRecording.original_transcription &&
+                                  selectedRecording.transcription !== selectedRecording.original_transcription ? (
+                                  <InlineDiff original={originalText} current={currentText} />
+                                ) : (
+                                  currentText
+                                )}
+                              </p>
+                            )
+                          })
+                        })()}
                       </div>
                     ) : (
                       editedTranscription !== null ? (
@@ -2073,7 +2116,7 @@ placeholder="First Last"
                         />
                       ) : (
                         <p className="text-body-md text-secondary-white leading-relaxed whitespace-pre-wrap">
-                          {selectedRecording.transcription}
+                          {formatTranscriptionWithStyledMinuteMarkers(selectedRecording.transcription)}
                         </p>
                       )
                     )}

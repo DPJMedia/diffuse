@@ -34,6 +34,37 @@ function sanitizeGeneratedTitle(raw: string): string {
     .trim()
 }
 
+/** Build transcript with minute markers from utterances with timestamps */
+function buildTranscriptWithMinuteMarkers(
+  utterances: Array<{ speaker: string; text: string; start: number; end?: number }>
+): string {
+  if (!utterances || utterances.length === 0) return ''
+
+  let result = ''
+  let lastMinuteMarker = -1
+
+  for (const utterance of utterances) {
+    const startMinute = Math.floor(utterance.start / 60000) // Convert ms to minutes
+    
+    // Add minute marker if we've crossed into a new minute
+    if (startMinute > lastMinuteMarker) {
+      const hours = Math.floor(startMinute / 60)
+      const minutes = startMinute % 60
+      const timestamp = hours > 0 
+        ? `${hours}:${minutes.toString().padStart(2, '0')}`
+        : `${minutes}`
+      
+      result += `\n[${timestamp} min]\n\n`
+      lastMinuteMarker = startMinute
+    }
+
+    // Add the utterance
+    result += `${utterance.speaker}: ${utterance.text}\n\n`
+  }
+
+  return result.trim()
+}
+
 /** Generate a short title from transcription using Open Router (Claude 3.5 Haiku). Returns null if key missing or request fails. */
 async function generateTitleWithOpenRouter(transcriptionText: string): Promise<string | null> {
   const apiKey = process.env.OPENROUTER
@@ -230,9 +261,8 @@ export async function POST(request: NextRequest) {
         console.log('Retry detected speakers:', Array.from(uniqueSpeakers).sort())
         console.log('Total unique speakers:', uniqueSpeakers.size)
         
-        transcriptionText = retryTranscript.utterances
-          .map((u) => `${u.speaker}: ${u.text}`)
-          .join('\n\n')
+        // Build transcript with minute markers
+        transcriptionText = buildTranscriptWithMinuteMarkers(retryTranscript.utterances)
         utterances = retryTranscript.utterances.map((u) => ({
           speaker: u.speaker,
           text: u.text,
@@ -256,9 +286,8 @@ export async function POST(request: NextRequest) {
         end: u.end
       })))
       
-      transcriptionText = transcript.utterances
-        .map((u) => `${u.speaker}: ${u.text}`)
-        .join('\n\n')
+      // Build transcript with minute markers
+      transcriptionText = buildTranscriptWithMinuteMarkers(transcript.utterances)
       utterances = transcript.utterances.map((u) => ({
         speaker: u.speaker,
         text: u.text,
