@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 import EmptyState from '@/components/dashboard/EmptyState'
 import UpgradeCodeModal from '@/components/dashboard/UpgradeCodeModal'
+import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
 import type { OrganizationPlan } from '@/types/database'
 
 const planDetails = {
@@ -302,10 +303,10 @@ export default function OrganizationPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-          {/* Mobile buttons - row of two at top of grid, hidden on desktop */}
-          <div className="md:hidden col-span-1 flex gap-2">
-            <JoinButton className="flex-1" />
-            <CreateButton className="flex-1" />
+          {/* Mobile buttons - stacked at top of grid, hidden on desktop */}
+          <div className="md:hidden col-span-1 flex flex-col gap-2">
+            <JoinButton className="w-full" />
+            <CreateButton className="w-full" />
           </div>
           {workspaces.map(({ workspace, role }) => {
             const plan = workspace.plan && planDetails[workspace.plan as keyof typeof planDetails]
@@ -370,8 +371,8 @@ export default function OrganizationPage() {
 
       {/* Join Modal */}
       {showJoinModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="glass-container p-8 max-w-md w-full">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden">
+          <div className="glass-container p-4 sm:p-8 max-w-md w-full max-h-[80vh] overflow-y-auto">
             <h2 className="text-heading-lg text-secondary-white mb-6">Join Organization</h2>
             <form onSubmit={handleJoinOrganization} className="space-y-4">
               <div>
@@ -387,18 +388,18 @@ export default function OrganizationPage() {
                   className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md focus:outline-none focus:border-cosmic-orange transition-colors uppercase"
                 />
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   type="button"
                   onClick={() => setShowJoinModal(false)}
-                  className="btn-secondary flex-1 py-3"
+                  className="btn-secondary flex-1 py-3 w-full sm:w-auto"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="btn-primary flex-1 py-3 disabled:opacity-50"
+                  className="btn-primary flex-1 py-3 disabled:opacity-50 w-full sm:w-auto"
                 >
                   {loading ? 'Joining...' : 'Join'}
                 </button>
@@ -410,8 +411,8 @@ export default function OrganizationPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="glass-container p-8 max-w-md w-full">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden">
+          <div className="glass-container p-4 sm:p-8 max-w-md w-full max-h-[80vh] overflow-y-auto">
             <h2 className="text-heading-lg text-secondary-white mb-6">Create Organization</h2>
             <form onSubmit={handleCreateOrganization} className="space-y-4">
               <div>
@@ -471,18 +472,18 @@ export default function OrganizationPage() {
                   ))}
                 </div>
               </div>
-              <div className="flex gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="btn-secondary flex-1 py-3"
+                  className="btn-secondary flex-1 py-3 w-full sm:w-auto"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="btn-primary flex-1 py-3 disabled:opacity-50"
+                  className="btn-primary flex-1 py-3 disabled:opacity-50 w-full sm:w-auto"
                 >
                   {loading ? 'Creating...' : 'Create'}
                 </button>

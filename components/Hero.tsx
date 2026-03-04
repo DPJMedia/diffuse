@@ -134,7 +134,7 @@ const WorkflowDemo = () => {
   }, [])
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-6xl mx-auto">
+    <div ref={containerRef} className="relative w-full max-w-6xl mx-auto overflow-x-hidden">
       <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10">
         <div className="absolute top-1/2 left-1/4 w-72 h-72 bg-cosmic-orange/15 rounded-full blur-[100px] -translate-y-1/2" />
         <div className="absolute top-1/2 right-1/4 w-56 h-56 bg-accent-purple/10 rounded-full blur-[80px] -translate-y-1/2" />
@@ -150,9 +150,9 @@ const WorkflowDemo = () => {
           <span className="text-sm text-medium-gray font-medium">diffuse.ai</span>
         </div>
 
-        <div className="h-[440px] md:h-[520px] bg-[#0a0a0a] flex overflow-hidden">
+        <div className="h-[420px] sm:h-[440px] md:h-[520px] bg-[#0a0a0a] flex overflow-hidden">
           {/* Left sidebar - mock dashboard nav (full labels, proper icons) */}
-          <aside className="w-52 flex-shrink-0 border-r border-white/10 flex flex-col bg-white/[0.06] py-4 px-3">
+          <aside className="hidden md:flex w-52 flex-shrink-0 border-r border-white/10 flex-col bg-white/[0.06] py-4 px-3">
             <div className="mb-4">
               <span className="text-lg font-bold text-secondary-white">diffuse</span>
               <span className="text-lg font-bold text-cosmic-orange">.ai</span>
@@ -460,12 +460,12 @@ export default function Hero() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="text-center mb-8 md:mb-10 px-4"
         >
-          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-display-md font-bold mb-4 leading-tight max-w-4xl mx-auto">
+          <h1 className="text-display-sm font-bold mb-4 leading-tight max-w-4xl mx-auto">
             Turn Recordings Into <span className="gradient-text">Published Articles</span>
             <br />
             <span className="text-secondary-white">In Minutes, Not Hours.</span>
           </h1>
-          <p className="text-lg sm:text-xl md:text-body-lg text-medium-gray max-w-2xl mx-auto whitespace-nowrap">
+          <p className="text-body-lg text-medium-gray max-w-2xl mx-auto">
             AI-powered workflow that transforms audio into publication-ready journalism
           </p>
         </motion.div>

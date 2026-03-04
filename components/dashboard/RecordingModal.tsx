@@ -283,7 +283,7 @@ export default function RecordingModal({
 
   return (
     <ModalShell onClose={handleClose} maxWidth="max-w-lg" maxHeight="max-h-[90vh]">
-      <div className="w-full max-w-lg h-[420px] overflow-hidden relative flex flex-col flex-1 min-h-0">
+      <div className="w-full max-w-lg max-h-[80vh] min-h-[320px] overflow-hidden relative flex flex-col flex-1 min-h-0">
         <ModalHeader
           icon={<span className={MODAL_ICONS.recording.color}>{MODAL_ICONS.recording.icon}</span>}
           title={phaseTitle}
@@ -399,18 +399,18 @@ export default function RecordingModal({
                   autoFocus={showSaveForm}
                 />
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={discardRecording}
                   disabled={saving}
-                  className="btn-secondary flex-1 py-3 disabled:opacity-50"
+                  className="btn-secondary flex-1 py-3 disabled:opacity-50 w-full sm:w-auto"
                 >
                   Discard
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="btn-primary flex-1 py-3 disabled:opacity-50"
+                  className="btn-primary flex-1 py-3 disabled:opacity-50 w-full sm:w-auto"
                 >
                   {saving ? 'Processing...' : 'Save & Transcribe'}
                 </button>

@@ -9,6 +9,7 @@ import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 import EmptyState from '@/components/dashboard/EmptyState'
 import AudioPlayer from '@/components/dashboard/AudioPlayer'
 import RecordingModal from '@/components/dashboard/RecordingModal'
+import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
 import { diffWordsWithSpace, type Change } from 'diff'
 // tus-js-client will be dynamically imported when needed
 
@@ -1601,19 +1602,19 @@ export default function RecordingsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-          {/* Mobile Buttons - full width at top of grid */}
-          <div className="md:hidden col-span-1 flex gap-2">
+          {/* Mobile Buttons - stacked at top of grid */}
+          <div className="md:hidden col-span-1 flex flex-col gap-2">
             <button
               onClick={() => uploadInputRef.current?.click()}
               disabled={uploading}
-              className="flex-1 px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50"
+              className="w-full px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
               Upload
             </button>
-            <RecordingButton className="flex-1" />
+            <RecordingButton className="w-full" />
           </div>
           {recordings.map((rec) => {
             const isCurrentUpload = rec.id === uploadRecordingId
@@ -1689,7 +1690,7 @@ export default function RecordingsPage() {
       {/* Recording Detail Modal */}
       {selectedRecording && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden"
           onClick={() => {
             setSelectedRecording(null)
             setEditingTitle(false)
@@ -1697,7 +1698,7 @@ export default function RecordingsPage() {
           }}
         >
           <div
-            className="glass-container p-8 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
+            className="glass-container p-4 sm:p-8 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header with close and delete buttons */}
@@ -1720,10 +1721,10 @@ export default function RecordingsPage() {
                       className="w-full text-heading-lg bg-white/5 border border-white/10 rounded-glass px-4 py-2 text-secondary-white focus:outline-none focus:border-cosmic-orange transition-colors"
                       autoFocus
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <button
                         onClick={() => updateRecordingTitle(editedTitle)}
-                        className="btn-primary px-4 py-2 text-body-sm"
+                        className="btn-primary px-4 py-2 text-body-sm w-full sm:w-auto"
                       >
                         Save
                       </button>
@@ -1732,7 +1733,7 @@ export default function RecordingsPage() {
                           setEditingTitle(false)
                           setEditedTitle('')
                         }}
-                        className="btn-secondary px-4 py-2 text-body-sm"
+                        className="btn-secondary px-4 py-2 text-body-sm w-full sm:w-auto"
                       >
                         Cancel
                       </button>
@@ -1746,7 +1747,7 @@ export default function RecordingsPage() {
                     }}
                     className="group flex items-center gap-2 text-left w-full px-4 py-2 -mx-4 -my-2 rounded-glass hover:bg-white/5 transition-colors"
                   >
-                    <h2 className="text-heading-lg text-secondary-white">
+                    <h2 className="text-heading-lg text-secondary-white line-clamp-3">
                       {selectedRecording.title}
                     </h2>
                     <svg 
@@ -1841,7 +1842,7 @@ export default function RecordingsPage() {
               )}
             </div>
 
-            <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <div className="flex items-center justify-between mb-3 flex-shrink-0">
                 <h3 className="text-body-sm text-medium-gray">
                   {transcribePhase === 'identifying_speakers' ? 'Diarization' : 'Transcription'}
@@ -1866,7 +1867,7 @@ export default function RecordingsPage() {
                    !isEditingUtterances && (
                     <button
                       onClick={startSpeakerWalkthrough}
-                      className="text-body-sm text-medium-gray hover:text-secondary-white transition-colors flex items-center gap-1"
+                      className="hidden md:flex text-body-sm text-medium-gray hover:text-secondary-white transition-colors items-center gap-1"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -2017,7 +2018,7 @@ placeholder="First Last"
                         }
                       }, 600)
                     }}
-                    className="flex-1 min-h-[150px] px-4 py-3 bg-white/5 border border-white/10 rounded-glass overflow-y-auto"
+                    className="flex-1 min-h-0 px-4 py-3 bg-white/5 border border-white/10 rounded-glass overflow-y-auto"
                   >
                     {displayUtterances.length > 0 ? (
                       <div className="space-y-2">
@@ -2123,7 +2124,7 @@ placeholder="First Last"
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="mt-4 flex-shrink-0 flex gap-3">
+                  <div className="mt-4 flex-shrink-0 flex flex-col sm:flex-row gap-3">
                     {isEditingUtterances || editedTranscription !== null ? (
                       <>
                         <button
@@ -2151,7 +2152,7 @@ placeholder="First Last"
                         <button
                           onClick={() => setSelectedRecording(null)}
                           disabled={generatingProject}
-                          className="flex-1 px-4 py-3 flex items-center justify-center gap-2 text-body-sm rounded-glass btn-secondary"
+                          className="flex-1 w-full sm:w-auto px-4 py-3 flex items-center justify-center gap-2 text-body-sm rounded-glass btn-secondary"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -2161,7 +2162,7 @@ placeholder="First Last"
                         <button
                           onClick={handleCreateProjectAndArticle}
                           disabled={generatingProject}
-                          className={`flex-1 px-4 py-3 flex items-center justify-center gap-2 text-body-sm rounded-glass transition-colors ${
+                          className={`flex-1 w-full sm:w-auto px-4 py-3 flex items-center justify-center gap-2 text-body-sm rounded-glass transition-colors ${
                             generatingProject
                               ? 'btn-primary opacity-50 cursor-not-allowed'
                               : 'btn-primary'
@@ -2228,10 +2229,10 @@ placeholder="First Last"
 
             {/* Action buttons - only show when there's a pending action */}
             {pendingTranscription && (
-              <div className="flex gap-3 pt-4 border-t border-white/10 flex-shrink-0">
+              <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-white/10 flex-shrink-0">
                 <button
                   onClick={saveTranscription}
-                  className="btn-primary flex-1 py-3"
+                  className="btn-primary flex-1 w-full sm:w-auto py-3"
                 >
                   Save
                 </button>

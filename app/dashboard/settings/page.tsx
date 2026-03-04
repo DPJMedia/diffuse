@@ -201,17 +201,17 @@ export default function SettingsPage() {
               const isOwner = role === 'owner'
               
               return (
-                <div key={workspace.id} className="py-4 first:pt-0 last:pb-0 flex items-center justify-between">
+                <div key={workspace.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <p className="text-body-md text-secondary-white font-medium">{workspace.name}</p>
                     <span className={`px-3 py-1 text-caption font-medium rounded-full border ${getRoleBadgeClass(role)}`}>
                       {roleLabels[role] || role}
                     </span>
                   </div>
-                  <div className="flex gap-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
                     <button
                       onClick={() => router.push(`/dashboard/organization/${workspace.id}`)}
-                      className="px-4 py-2 text-body-sm text-secondary-white bg-white/5 border border-white/10 rounded-glass hover:bg-white/10 transition-colors"
+                      className="w-full sm:w-auto px-4 py-2 text-body-sm text-secondary-white bg-white/5 border border-white/10 rounded-glass hover:bg-white/10 transition-colors"
                     >
                       Go to Organization
                     </button>
@@ -219,7 +219,7 @@ export default function SettingsPage() {
                       <button
                         onClick={() => handleLeaveOrganization(workspace.id, workspace.name)}
                         disabled={leavingOrg === workspace.id}
-                        className="px-4 py-2 text-body-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-glass hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                        className="w-full sm:w-auto px-4 py-2 text-body-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-glass hover:bg-red-500/20 transition-colors disabled:opacity-50"
                       >
                         {leavingOrg === workspace.id ? 'Leaving...' : 'Leave Organization'}
                       </button>
@@ -252,17 +252,17 @@ export default function SettingsPage() {
       {/* Help & Support */}
       <div className="glass-container p-6 mb-6">
         <h2 className="text-heading-lg text-secondary-white mb-4">Help & Support</h2>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="text-body-md text-secondary-white mb-1">Platform Walkthrough</p>
             <p className="text-body-sm text-medium-gray">
-              Learn how to use Diffuse.ai with a quick guided tour
+              Learn how to use Diffuse.ai with a quick guided tour. Available on desktop.
             </p>
           </div>
           <button
             onClick={openWalkthrough}
             data-walkthrough="walkthrough-button"
-            className="btn-secondary px-4 py-2 flex items-center gap-2 text-body-sm"
+            className="hidden md:flex btn-secondary px-4 py-2 items-center gap-2 text-body-sm w-full sm:w-auto shrink-0"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -273,14 +273,14 @@ export default function SettingsPage() {
       </div>
 
       {/* Delete Account */}
-      <div className="glass-container p-6 flex items-center justify-between">
+      <div className="glass-container p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <p className="text-body-sm text-medium-gray">
           Once you delete your account, there is no going back.
         </p>
         <button
           onClick={handleDeleteAccount}
           disabled={saving}
-          className="px-4 py-2 text-body-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-glass hover:bg-red-500/20 transition-colors disabled:opacity-50"
+          className="w-full sm:w-auto shrink-0 px-4 py-2 text-body-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-glass hover:bg-red-500/20 transition-colors disabled:opacity-50"
         >
           Delete Account
         </button>

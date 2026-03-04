@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
 
 // Production site URL for email redirects (used in Supabase signUp emailRedirectTo)
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.diffuse.press'
@@ -137,8 +138,8 @@ export default function LoginPage() {
 
   // Verification Pending Modal
   const VerificationModal = () => (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-6">
-      <div className="glass-container p-8 max-w-md w-full text-center">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4 sm:px-6 overflow-hidden">
+      <div className="glass-container p-4 sm:p-8 max-w-md w-full max-h-[80vh] overflow-y-auto text-center">
         {/* Mail Icon - No animation */}
         <div className="mb-6">
           <div className="w-20 h-20 mx-auto rounded-full bg-cosmic-orange/10 flex items-center justify-center">

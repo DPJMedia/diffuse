@@ -1,6 +1,52 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
+
+let bodyScrollLockCount = 0
+let savedScrollY = 0
+
+function lockBodyScroll() {
+  if (bodyScrollLockCount === 0) {
+    savedScrollY = typeof window !== 'undefined' ? window.scrollY ?? window.pageYOffset : 0
+    const { body, documentElement } = document
+    documentElement.style.overflow = 'hidden'
+    body.style.position = 'fixed'
+    body.style.top = `-${savedScrollY}px`
+    body.style.left = '0'
+    body.style.right = '0'
+    body.style.width = '100%'
+    body.style.overflow = 'hidden'
+  }
+  bodyScrollLockCount++
+}
+
+function unlockBodyScroll() {
+  bodyScrollLockCount--
+  if (bodyScrollLockCount <= 0) {
+    bodyScrollLockCount = 0
+    const { body, documentElement } = document
+    documentElement.style.overflow = ''
+    body.style.position = ''
+    body.style.top = ''
+    body.style.left = ''
+    body.style.right = ''
+    body.style.width = ''
+    body.style.overflow = ''
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, savedScrollY)
+    }
+  }
+}
+
+/** Call when a modal is open so the page behind it does not scroll. Use in ModalShell and in custom modal overlays. */
+export function useBodyScrollLock(open: boolean) {
+  useEffect(() => {
+    if (open) {
+      lockBodyScroll()
+      return () => unlockBodyScroll()
+    }
+  }, [open])
+}
 
 export interface ModalShellProps {
   /** Click overlay to close */
@@ -29,15 +75,16 @@ export function ModalShell({
   className = '',
   overlayClassName = '',
 }: ModalShellProps) {
+  useBodyScrollLock(true)
   return (
     <div
-      className={`fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4 ${overlayClassName}`.trim()}
+      className={`fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4 overflow-hidden ${overlayClassName}`.trim()}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className={`glass-container p-8 w-full ${maxWidth} ${maxHeight} overflow-hidden flex flex-col ${className}`}
+        className={`glass-container p-4 sm:p-8 w-full ${maxWidth} ${maxHeight} overflow-hidden flex flex-col ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}
@@ -121,7 +168,7 @@ export interface ModalFooterProps {
 
 export function ModalFooter({ children }: ModalFooterProps) {
   return (
-    <div className="mt-6 flex gap-3 flex-shrink-0 flex-wrap items-center justify-end">
+    <div className="mt-6 flex flex-col sm:flex-row gap-3 flex-shrink-0 items-stretch sm:items-center justify-end">
       {children}
     </div>
   )

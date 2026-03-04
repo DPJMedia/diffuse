@@ -497,11 +497,11 @@ export default function OrganizationDetailPage() {
                 rows={2}
                 className="w-full text-body-lg bg-white/5 border border-white/10 rounded-glass px-4 py-2 text-medium-gray focus:outline-none focus:border-cosmic-orange resize-none"
               />
-              <div className="flex gap-2">
-                <button onClick={handleSaveOrg} className="btn-primary px-4 py-2 text-body-sm">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button onClick={handleSaveOrg} className="btn-primary px-4 py-2 text-body-sm w-full sm:w-auto">
                   Save
                 </button>
-                <button onClick={() => setEditingOrg(false)} className="btn-secondary px-4 py-2 text-body-sm">
+                <button onClick={() => setEditingOrg(false)} className="btn-secondary px-4 py-2 text-body-sm w-full sm:w-auto">
                   Cancel
                 </button>
               </div>

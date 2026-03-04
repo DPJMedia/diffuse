@@ -107,18 +107,21 @@ export function WalkthroughProvider({ children }: { children: ReactNode }) {
     checkDismissed()
   }, [user, authLoading, supabase])
 
-  // Auto-open walkthrough when appropriate (after we've checked)
+  // Auto-open walkthrough when appropriate (after we've checked). Disabled on mobile.
   useEffect(() => {
     if (!hasCheckedStorage || hasCompletedWalkthrough) return
 
     const timer = setTimeout(() => {
-      setIsWalkthroughOpen(true)
+      if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+        setIsWalkthroughOpen(true)
+      }
     }, 500)
 
     return () => clearTimeout(timer)
   }, [hasCheckedStorage, hasCompletedWalkthrough])
 
   const openWalkthrough = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) return // disabled on mobile
     setCurrentStep(0)
     setIsWalkthroughOpen(true)
   }

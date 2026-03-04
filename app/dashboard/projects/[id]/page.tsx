@@ -14,6 +14,7 @@ import WebScrapingModal from '@/components/dashboard/WebScrapingModal'
 import GenerateOptionsModal, { WORKFLOW_PREFERENCES_KEY, type WorkflowPreferences } from '@/components/dashboard/GenerateOptionsModal'
 import QuickGenerateModal from '@/components/dashboard/QuickGenerateModal'
 import { addRecentProject } from '@/components/dashboard/DashboardNav'
+import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
 import type { DiffuseProject, DiffuseProjectInput, DiffuseProjectOutput, ProjectVisibility, UserRole, InputType, OutputType } from '@/types/database'
 // tus-js-client will be dynamically imported when needed
 
@@ -80,6 +81,7 @@ export default function ProjectDetailPage() {
   const coverPhotoInputRef = useRef<HTMLInputElement>(null)
   const addInputDropdownRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
+  useBodyScrollLock(showTextInputModal || showProjectSettings)
 
   // Close Add Input dropdown when clicking outside (same behavior as modals)
   useEffect(() => {
@@ -1957,16 +1959,16 @@ export default function ProjectDetailPage() {
                       
                       {/* Action Buttons - Only for editors and above */}
                       {canEdit && (
-                        <div className="flex gap-2 mt-4">
+                        <div className="flex flex-col sm:flex-row gap-2 mt-4">
                           <button
                             onClick={() => handleRestoreOutput(output.id)}
-                            className="btn-secondary flex-1 py-2 text-body-sm"
+                            className="btn-secondary flex-1 py-2 text-body-sm w-full sm:w-auto"
                           >
                             Restore
                           </button>
                           <button
                             onClick={() => handlePermanentDeleteOutput(output.id)}
-                            className="flex-1 py-2 text-body-sm bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 rounded-glass transition-colors"
+                            className="flex-1 py-2 text-body-sm w-full sm:w-auto bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 rounded-glass transition-colors"
                           >
                             Delete Forever
                           </button>
@@ -2057,7 +2059,7 @@ export default function ProjectDetailPage() {
       {/* Text Input Modal */}
       {showTextInputModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="glass-container p-8 max-w-2xl w-full h-[500px] overflow-hidden flex flex-col">
+          <div className="glass-container p-4 sm:p-8 max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between flex-shrink-0">
               <h2 className="text-heading-lg text-secondary-white">Add Text Input</h2>
@@ -2133,8 +2135,8 @@ export default function ProjectDetailPage() {
 
       {/* Project Settings Modal */}
       {showProjectSettings && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="glass-container p-6 max-w-md w-full">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden">
+          <div className="glass-container p-4 sm:p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-heading-md text-secondary-white">Project Settings</h2>
@@ -2236,30 +2238,31 @@ export default function ProjectDetailPage() {
               {canDelete && showDeleteConfirm && (
                 <div className="col-span-2 p-3 bg-red-500/10 border border-red-500/30 rounded-glass">
                   <p className="text-body-sm text-red-400 font-medium mb-2">Type &quot;DELETE&quot; to confirm:</p>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="text"
                       value={deleteConfirmText}
                       onChange={(e) => setDeleteConfirmText(e.target.value.toUpperCase())}
                       placeholder="DELETE"
-                      className="flex-1 px-3 py-2 bg-white/5 border border-red-500/30 rounded-glass text-secondary-white text-body-sm focus:outline-none focus:border-red-400 transition-colors"
+                      className="flex-1 min-w-0 px-3 py-2 bg-white/5 border border-red-500/30 rounded-glass text-secondary-white text-body-sm focus:outline-none focus:border-red-400 transition-colors"
                       autoFocus
                     />
-                    <button
-                      onClick={handleDeleteProject}
-                      disabled={deletingProject || deleteConfirmText !== 'DELETE'}
-                      className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-glass text-body-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {deletingProject ? 'Deleting...' : 'Delete'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowDeleteConfirm(false)
-                        setDeleteConfirmText('')
-                      }}
-                      className="px-3 py-2 text-medium-gray hover:text-secondary-white transition-colors"
-                    >
-                      Cancel
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleDeleteProject}
+                        disabled={deletingProject || deleteConfirmText !== 'DELETE'}
+                        className="flex-1 sm:flex-none px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-glass text-body-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {deletingProject ? 'Deleting...' : 'Delete'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowDeleteConfirm(false)
+                          setDeleteConfirmText('')
+                        }}
+                        className="flex-1 sm:flex-none px-3 py-2 text-medium-gray hover:text-secondary-white transition-colors"
+                      >
+                        Cancel
                     </button>
                   </div>
                 </div>
