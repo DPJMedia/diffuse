@@ -293,10 +293,10 @@ export default function CreateProjectModal({
           </div>
         </ModalBody>
         <ModalFooter>
-          <button type="button" onClick={onClose} className="btn-secondary flex-1 py-3" disabled={loading}>
+          <button type="button" onClick={onClose} className="hidden md:inline-flex btn-secondary flex-1 py-3" disabled={loading}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary flex-1 py-3" disabled={loading}>
+          <button type="submit" className="btn-primary flex-1 py-3 w-full md:w-auto" disabled={loading}>
             {loading ? 'Creating...' : `Create ${typeLabel}`}
           </button>
         </ModalFooter>
