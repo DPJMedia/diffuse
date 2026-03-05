@@ -14,6 +14,14 @@ const mockArticle = {
   content: "A Philadelphia-based technology startup is transforming the way local newsrooms operate with an innovative AI platform that converts meeting recordings directly into publication-ready articles.\n\nDiffuse.AI has developed a workflow tool that allows journalists to record public meetings, press conferences, and interviews, then automatically generates structured news articles complete with headlines, quotes, and proper formatting.\n\nThe response has been strong. One reporter said she now covers three times as many meetings. The AI handles transcription and drafting so journalists can focus on reporting and editing."
 }
 
+// Short mock for mobile hero: one-line title, one-line subtitle, three-line body
+const mockArticleMobile = {
+  title: "Local startup transforms newsroom workflow",
+  subtitle: "AI platform cuts article production time by 80%",
+  author: "Jane Smith",
+  content: "A Philadelphia startup is transforming how local newsrooms operate.\nThe AI platform converts meetings and sources into publication-ready articles.\nJournalists can focus on reporting and editing instead of transcription."
+}
+
 // Match real project page: label, color, icon path, title, optional sub (e.g. duration), date
 const INPUT_TYPES = [
   { type: 'recording', label: 'RECORDING', title: 'Board meeting 3.12', sub: '4:32', color: 'text-rose-400', date: 'Mar 10, 2025', path: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z' },
@@ -30,6 +38,8 @@ type Phase = 'inputs' | 'outputs-empty' | 'output' | 'visibility'
 
 const WorkflowDemo = () => {
   const containerRef = useRef<HTMLDivElement>(null)
+  const isMobileRef = useRef(false)
+  const [isMobile, setIsMobile] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('inputs')
   const [phase, setPhase] = useState<Phase>('inputs')
   const [visibleInputCount, setVisibleInputCount] = useState(0)
@@ -40,6 +50,17 @@ const WorkflowDemo = () => {
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [showCursor, setShowCursor] = useState(true)
   const [selectedTeams, setSelectedTeams] = useState<string[]>([])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => {
+      isMobileRef.current = mq.matches
+      setIsMobile(mq.matches)
+    }
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
 
   // Main timeline (no mouse; dropdown opens once, inputs add one by one)
   useEffect(() => {
@@ -62,17 +83,21 @@ const WorkflowDemo = () => {
       add(() => setShowAddDropdown(true), t); t += 1400
       // Add Input clicked again (or dismiss) → dropdown closes and disappears
       add(() => setShowAddDropdown(false), t); t += 800
-      // After dropdown is closed: input 1 appears, then 2, 3, 4, 5 one by one
+      // After dropdown is closed: input 1, then 2; on mobile stop at 2, on desktop add 3–7
       add(() => {
         setShowAddDropdown(false)
         setVisibleInputCount(1)
       }, t); t += 600
       add(() => setVisibleInputCount(2), t); t += 550
-      add(() => setVisibleInputCount(3), t); t += 550
-      add(() => setVisibleInputCount(4), t); t += 550
-      add(() => setVisibleInputCount(5), t); t += 550
-      add(() => setVisibleInputCount(6), t); t += 550
-      add(() => setVisibleInputCount(7), t); t += 900
+      if (!isMobileRef.current) {
+        add(() => setVisibleInputCount(3), t); t += 550
+        add(() => setVisibleInputCount(4), t); t += 550
+        add(() => setVisibleInputCount(5), t); t += 550
+        add(() => setVisibleInputCount(6), t); t += 550
+        add(() => setVisibleInputCount(7), t); t += 900
+      } else {
+        t += 700
+      }
 
       // Switch to Outputs tab
       add(() => { setActiveTab('outputs'); setPhase('outputs-empty'); }, t); t += 600
@@ -99,14 +124,17 @@ const WorkflowDemo = () => {
     return () => timeouts.forEach(clearTimeout)
   }, [])
 
-  // Type title then body character by character (fast)
-  const fullBody = mockArticle.excerpt + '\n\n' + mockArticle.content
+  // Use short article on mobile (one-line title, one-line subtitle, four-line body)
+  const article = isMobile ? mockArticleMobile : mockArticle
+  const fullBody = isMobile ? mockArticleMobile.content : (mockArticle.excerpt + '\n\n' + mockArticle.content)
+
   useEffect(() => {
     if (phase !== 'output') return
+    const art = isMobileRef.current ? mockArticleMobile : mockArticle
     let i = 0
     const iv = setInterval(() => {
-      if (i < mockArticle.title.length) {
-        setTypedTitle(mockArticle.title.slice(0, i + 1))
+      if (i < art.title.length) {
+        setTypedTitle(art.title.slice(0, i + 1))
         i++
       } else clearInterval(iv)
     }, 22)
@@ -114,16 +142,18 @@ const WorkflowDemo = () => {
   }, [phase])
   useEffect(() => {
     if (phase !== 'output') return
+    const art = isMobileRef.current ? mockArticleMobile : mockArticle
+    const body = isMobileRef.current ? mockArticleMobile.content : (mockArticle.excerpt + '\n\n' + mockArticle.content)
     const delay = setTimeout(() => {
       let i = 0
       const iv = setInterval(() => {
-        if (i < fullBody.length) {
-          setTypedContent(fullBody.slice(0, i + 1))
+        if (i < body.length) {
+          setTypedContent(body.slice(0, i + 1))
           i++
         } else clearInterval(iv)
       }, 5)
       return () => clearInterval(iv)
-    }, mockArticle.title.length * 22 + 180)
+    }, art.title.length * 22 + 180)
     return () => clearTimeout(delay)
   }, [phase])
 
@@ -183,7 +213,7 @@ const WorkflowDemo = () => {
           {/* Main content area */}
           <div className="flex-1 min-w-0 relative overflow-hidden">
           <AnimatePresence mode="wait">
-            {/* ——— INPUTS TAB ——— */}
+            {/* INPUTS TAB */}
             {phase === 'inputs' && (
               <motion.div
                 key="inputs"
@@ -271,7 +301,7 @@ const WorkflowDemo = () => {
               </motion.div>
             )}
 
-            {/* ——— OUTPUTS TAB (empty then generating then output) ——— */}
+            {/* OUTPUTS TAB (empty then generating then output) */}
             {activeTab === 'outputs' && phase === 'outputs-empty' && (
               <motion.div
                 key="outputs-empty"
@@ -297,7 +327,7 @@ const WorkflowDemo = () => {
                   </div>
                 </div>
                 <div className="flex gap-4 border-b border-white/10 mb-4">
-                  <button className="pb-2 text-xs font-medium text-medium-gray">Inputs (7)</button>
+                  <button className="pb-2 text-xs font-medium text-medium-gray">Inputs ({isMobile ? 2 : 7})</button>
                   <button className="pb-2 text-xs font-medium text-cosmic-orange border-b-2 border-cosmic-orange">Outputs (0)</button>
                   <button className="pb-2 text-xs font-medium text-medium-gray">Visibility</button>
                 </div>
@@ -326,13 +356,13 @@ const WorkflowDemo = () => {
                   </div>
                 </div>
                 <div className="flex gap-4 border-b border-white/10 mb-3 flex-shrink-0">
-                  <button className="pb-2 text-xs font-medium text-medium-gray">Inputs (7)</button>
+                  <button className="pb-2 text-xs font-medium text-medium-gray">Inputs ({isMobile ? 2 : 7})</button>
                   <button className="pb-2 text-xs font-medium text-cosmic-orange border-b-2 border-cosmic-orange">Outputs (1)</button>
                   <button className="pb-2 text-xs font-medium text-medium-gray">Visibility</button>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-hidden rounded-lg glass-container border border-white/10">
-                  <div className="p-4 h-full overflow-y-auto flex flex-col">
+                <div className="flex-1 min-h-0 overflow-hidden rounded-lg glass-container border border-white/10 flex flex-col">
+                  <div className="p-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2 text-[10px] text-teal-400 uppercase tracking-wider">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -345,15 +375,15 @@ const WorkflowDemo = () => {
                     </div>
                     <h3 className="text-base font-bold text-secondary-white mb-1.5 leading-tight min-h-[1.25rem]">
                       {typedTitle}
-                      {typedTitle.length < mockArticle.title.length && showCursor && <span className="inline-block w-0.5 h-4 bg-white ml-0.5 align-middle animate-pulse" />}
+                      {typedTitle.length < article.title.length && showCursor && <span className="inline-block w-0.5 h-4 bg-white ml-0.5 align-middle animate-pulse" />}
                     </h3>
-                    <p className="text-sm text-accent-purple italic mb-2">{mockArticle.subtitle}</p>
+                    <p className="text-sm text-accent-purple italic mb-2">{article.subtitle}</p>
                     <div className="flex items-center gap-2 text-[10px] text-medium-gray uppercase tracking-wider mb-2 pb-2 border-b border-white/10">
-                      <span className="text-cosmic-orange">By {mockArticle.author}</span>
+                      <span className="text-cosmic-orange">By {article.author}</span>
                       <span>•</span>
                       <span>Just now</span>
                     </div>
-                    <div className="text-sm text-secondary-white/85 leading-relaxed whitespace-pre-line overflow-hidden">
+                    <div className="text-sm text-secondary-white/85 leading-relaxed whitespace-pre-line">
                       {typedContent}
                       {typedContent.length < fullBody.length && showCursor && (
                         <span className="inline-block w-0.5 h-4 bg-white/80 ml-0.5 align-middle animate-pulse" />
@@ -364,7 +394,7 @@ const WorkflowDemo = () => {
               </motion.div>
             )}
 
-            {/* ——— VISIBILITY TAB ——— */}
+            {/* VISIBILITY TAB */}
             {phase === 'visibility' && activeTab === 'visibility' && (
               <motion.div
                 key="visibility"
@@ -380,7 +410,7 @@ const WorkflowDemo = () => {
                   </div>
                 </div>
                 <div className="flex gap-4 border-b border-white/10 mb-4">
-                  <button className="pb-2 text-xs font-medium text-medium-gray">Inputs (7)</button>
+                  <button className="pb-2 text-xs font-medium text-medium-gray">Inputs ({isMobile ? 2 : 7})</button>
                   <button className="pb-2 text-xs font-medium text-medium-gray">Outputs (1)</button>
                   <button className="pb-2 text-xs font-medium text-cosmic-orange border-b-2 border-cosmic-orange">Visibility</button>
                 </div>
@@ -460,13 +490,11 @@ export default function Hero() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="text-center mb-8 md:mb-10 px-4"
         >
-          <h1 className="text-display-sm font-bold mb-4 leading-tight max-w-4xl mx-auto">
-            Turn Recordings Into <span className="gradient-text">Published Articles</span>
-            <br />
-            <span className="text-secondary-white">In Minutes, Not Hours.</span>
+          <h1 className="text-display-sm font-bold mb-4 leading-tight max-w-4xl mx-auto text-secondary-white">
+            Instant local journalism.
           </h1>
-          <p className="text-body-lg text-medium-gray max-w-2xl mx-auto">
-            AI-powered workflow that transforms audio into publication-ready journalism
+          <p className="text-body-lg text-medium-gray max-w-2xl mx-auto lg:whitespace-nowrap">
+            From source to story in one workflow, meetings, docs, and more, ready to publish.
           </p>
         </motion.div>
 

@@ -73,7 +73,7 @@ export default function FAQ() {
               FAQ
             </span>
             <h2 className="text-display-sm font-bold mb-4">
-              Frequently Asked <span className="gradient-text">Questions</span>
+              Frequently Asked <span className="text-secondary-white">Questions</span>
             </h2>
             <p className="text-body-lg text-medium-gray max-w-2xl mx-auto">
               What you need to know before you start.

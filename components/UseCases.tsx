@@ -19,8 +19,8 @@ export default function UseCases() {
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className="glass-container p-6 sm:p-8 md:p-10 lg:p-14 overflow-hidden">
-              <div className="grid lg:grid-cols-2 gap-8 md:gap-12 items-start">
-                {/* Left Content - sets the height for the row */}
+              <div className="grid lg:grid-cols-[1.35fr_0.65fr] gap-4 md:gap-6 lg:gap-8 items-stretch">
+                {/* Left Content - sets the row height */}
                 <div>
                   <div className="inline-block px-3 py-1 bg-[#3391af]/20 text-[#3391af] text-xs font-semibold uppercase tracking-wider rounded-full mb-4">
                     Live Example
@@ -28,59 +28,41 @@ export default function UseCases() {
                   <h3 className="text-2xl sm:text-3xl md:text-heading-xl font-bold mb-4 md:mb-6">
                     <span className="text-[#dbdbdb]">Spring-Ford</span> <span className="text-[#3391af]">Press</span>
                   </h3>
-                  <p className="text-body-md text-secondary-white mb-6 leading-relaxed">
-                    A local news site. Diffuse pushes articles into their CMS so headline, byline, and body are ready to schedule. No re-typing.
+                  <p className="text-body-md text-secondary-white mb-4 leading-relaxed">
+                    Spring-Ford Press is a local news site covering the Spring-Ford community in Pennsylvania. It serves as the first live newsroom built on Diffuse, demonstrating how AI-assisted workflows can help small teams produce consistent local coverage.
                   </p>
-
-                  <div className="space-y-4">
-                    {[
-                      'Live site in production, not a demo',
-                      'Real newsroom workflow',
-                      'See it at springford.press',
-                    ].map((feature, index) => (
-                      <div key={index} className="flex items-start gap-3">
-                        <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#3391af]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-[#3391af]">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        </div>
-                        <span className="text-body-sm text-secondary-white">{feature}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-body-md text-secondary-white mb-4 leading-relaxed">
+                    Diffuse captures municipal meetings, generates transcripts, and produces structured draft articles that flow directly into the CMS, with headlines, bylines, and body text ready for editorial review and scheduling.
+                  </p>
+                  <p className="text-body-md text-secondary-white mb-6 leading-relaxed">
+                    Spring-Ford Press isn&apos;t a demo. It&apos;s a working newsroom powered by Diffuse in production.
+                  </p>
+                  <a
+                    href="https://springford.press"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#3391af] hover:bg-[#57959f] text-white font-semibold rounded-lg transition-colors duration-200"
+                  >
+                    Visit site
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                  </a>
                 </div>
 
-                {/* Right Visual - matches left height, image crops to fit */}
-                <div className="relative w-full min-h-0 self-stretch">
-                  <a 
-                    href="https://springford.press" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="absolute inset-0 flex flex-col overflow-hidden rounded-glass group transition-transform duration-300 hover:scale-[1.02]"
-                  >
-                    <div className="flex-shrink-0 bg-[#3391af]/90 group-hover:bg-[#57959f] px-4 py-3 flex items-center justify-center transition-colors duration-300">
-                      <span className="text-sm sm:text-base md:text-body-sm font-bold text-white uppercase tracking-wider">
-                        See It In Action
-                      </span>
-                    </div>
-
-                    <div className="glass-container flex-1 min-h-0 flex items-center justify-center relative overflow-hidden rounded-none border-t-0 border-b-0 border-x-0 w-full">
+                {/* Right - image only, height matches left content; no container; hidden on mobile */}
+                <div className="hidden lg:block relative aspect-[3/4] lg:aspect-auto">
+                  <div className="absolute inset-0 flex justify-end">
+                    <div className="relative h-full w-full max-w-sm ml-auto">
                       <Image
-                        src="/sfpthumb.png"
+                        src="/mockupphoner.png"
                         alt="Spring-Ford Press"
                         fill
-                        className="object-cover object-top"
-                        sizes="(max-width: 768px) 100vw, 50vw"
+                        className="object-contain object-right"
+                        sizes="(max-width: 1024px) 100vw, 384px"
                       />
                     </div>
-
-                    <div className="flex-shrink-0 bg-[#3391af]/90 group-hover:bg-[#57959f] px-4 py-3 flex items-center justify-center gap-2 transition-colors duration-300">
-                      <span className="text-sm sm:text-base md:text-body-md font-bold text-white">Visit springford.press</span>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white">
-                        <path d="M5 12h14M12 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                  </a>
+                  </div>
                 </div>
               </div>
             </div>

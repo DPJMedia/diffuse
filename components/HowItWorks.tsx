@@ -88,7 +88,7 @@ export default function HowItWorks() {
               How it works
             </span>
             <h2 className="text-display-sm font-bold mb-4">
-              Recording to <span className="gradient-text">published</span> in four steps
+              Recording to <span className="text-secondary-white">published</span> in four steps
             </h2>
             <p className="text-body-lg text-medium-gray max-w-2xl mx-auto">
               Record, transcribe, generate, publish. Same flow for articles and ads.

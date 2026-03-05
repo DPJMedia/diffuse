@@ -102,7 +102,7 @@ export default function Features() {
               Platform Features
             </span>
             <h2 className="text-display-sm font-bold mb-4">
-              What you can do with <span className="gradient-text">Diffuse</span>
+              What you can do with <span className="text-secondary-white">Diffuse</span>
             </h2>
             <p className="text-body-lg text-medium-gray max-w-2xl mx-auto lg:max-w-4xl lg:whitespace-nowrap">
               Recordings, documents, web. Articles and ads. Teams and publishing when you need them.

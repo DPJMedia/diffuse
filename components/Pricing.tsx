@@ -93,7 +93,7 @@ export default function Pricing() {
               Simple Pricing
             </span>
             <h2 className="text-2xl sm:text-3xl md:text-heading-xl lg:text-display-sm font-bold mb-8">
-              Start Free, <span className={showEnterprise ? 'text-accent-purple' : 'gradient-text'}>Scale As You Grow</span>
+              Start Free, <span className={showEnterprise ? 'text-accent-purple' : 'text-secondary-white'}>Scale As You Grow</span>
             </h2>
 
             {/* Toggle */}
