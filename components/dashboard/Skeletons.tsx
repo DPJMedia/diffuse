@@ -38,9 +38,6 @@ function SkeletonBlock({
 function SkeletonLine({ className = '' }: { className?: string }) {
   return <div className={`bg-white/[0.07] rounded animate-pulse ${className}`} />
 }
-
-// ---------------------------------------------------------------------------
-// Shared card: matches glass-container p-6 structure used across all grid pages
 //
 // Real card layout:
 //   h3.text-heading-md mb-4           — title ~28px + 16px gap
@@ -64,6 +61,38 @@ function SkeletonCard() {
         <SkeletonBlock className="w-14 h-[18px] rounded-full" />
         <SkeletonBlock className="w-10 h-[18px] rounded-full" />
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// List-view row: matches the compact horizontal layout used when viewMode='list'
+//
+// Real row: glass-container p-4 flex items-center gap-4
+//   icon square  w-10 h-10 bg-white/5 rounded-glass   (flex-shrink-0)
+//   info stack   flex-1 min-w-0
+//     h3.text-body-md mb-1                             ~26px
+//     div.flex.text-caption                            ~18px
+//   status badge px-2 py-1 bg-white/5 rounded text-caption  ~26px tall
+//   arrow svg    w-5 h-5                               (flex-shrink-0)
+//
+// Total row height: p-4 (32px) + max(icon 40px, text 48px) = ~80px
+// ---------------------------------------------------------------------------
+
+function SkeletonRow() {
+  return (
+    <div className="glass-container p-4 flex items-center gap-4">
+      {/* Icon square */}
+      <SkeletonBlock className="w-10 h-10 flex-shrink-0" />
+      {/* Title + metadata */}
+      <div className="flex-1 min-w-0 space-y-1.5">
+        <SkeletonLine className="w-1/2 h-6" />
+        <SkeletonLine className="w-1/3 h-[18px]" />
+      </div>
+      {/* Status badge: px-2 py-1 ≈ 8px h-padding + 18px text = ~26px tall */}
+      <SkeletonBlock className="w-20 h-[26px] rounded flex-shrink-0" />
+      {/* Chevron arrow */}
+      <SkeletonBlock className="w-5 h-5 flex-shrink-0" />
     </div>
   )
 }
@@ -117,23 +146,38 @@ function SkeletonPageHeader({
 //   header skeleton + card grid.
 // showHeader=false: inline data-loading — the real page header is already
 //   visible above; renders only the card grid to avoid a duplicate title row.
+//
+// viewMode='grid' (default): 3-col responsive card grid.
+// viewMode='list': single-column rows matching the compact list layout.
 // ---------------------------------------------------------------------------
 
 export function GridPageSkeleton({
   cardCount = 6,
   showHeader = true,
+  viewMode = 'grid',
 }: {
   cardCount?: number
   showHeader?: boolean
+  viewMode?: 'grid' | 'list'
 }) {
   return (
     <div>
       {showHeader && <SkeletonPageHeader />}
-      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-        {Array.from({ length: cardCount }).map((_, i) => (
-          <SkeletonCard key={i} />
-        ))}
-      </div>
+      {viewMode === 'list' ? (
+        // List mode: single-column stack of compact rows (gap-3 matches real list container)
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: cardCount }).map((_, i) => (
+            <SkeletonRow key={i} />
+          ))}
+        </div>
+      ) : (
+        // Grid mode: responsive 3-column card grid
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+          {Array.from({ length: cardCount }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

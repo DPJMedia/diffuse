@@ -300,7 +300,7 @@ export default function DashboardNav() {
         aria-label="Toggle menu"
       >
         <span className="text-xl font-bold whitespace-nowrap flex items-center">
-          <span className="text-white">d</span>
+          <span className="text-white">D</span>
           <span 
             className={`inline-block overflow-hidden transition-all duration-300 ease-in-out text-white ${
               mobileMenuOpen ? 'max-w-[60px] opacity-100' : 'max-w-0 opacity-0'
@@ -308,7 +308,7 @@ export default function DashboardNav() {
           >
             iffuse
           </span>
-          <span className="text-cosmic-orange">.ai</span>
+          <span className="text-cosmic-orange">.AI</span>
         </span>
         <svg 
           className={`w-4 h-4 text-medium-gray transition-transform duration-300 ${mobileMenuOpen ? 'rotate-180' : ''}`}
@@ -339,7 +339,7 @@ export default function DashboardNav() {
         {/* Logo - Hidden on mobile since toggle button shows it */}
         <div className="p-6 hidden md:block">
           <Link href="/" className="text-xl font-bold hover:text-cosmic-orange transition-colors">
-            diffuse<span className="text-cosmic-orange">.ai</span>
+            Diffuse<span className="text-cosmic-orange">.AI</span>
           </Link>
         </div>
         {/* Spacer for mobile to account for toggle button */}
@@ -407,7 +407,7 @@ export default function DashboardNav() {
                   >
                     <Link
                       href={`/dashboard/projects/${project.id}`}
-                      className={`flex items-center gap-3 px-4 py-2 rounded-glass text-body-sm transition-all duration-200 ease-out ${
+                      className={`flex w-full min-w-0 items-center gap-3 px-4 py-2 rounded-glass text-body-sm transition-all duration-200 ease-out ${
                         isActive
                           ? 'bg-cosmic-orange/20 text-cosmic-orange'
                           : 'text-secondary-white hover:bg-white/10'
@@ -422,7 +422,7 @@ export default function DashboardNav() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                       )}
-                      <span className="truncate pr-6">{project.name}</span>
+                      <span className="truncate flex-1 pr-0">{project.name}</span>
                     </Link>
                     {/* Remove button - appears on hover */}
                     <button

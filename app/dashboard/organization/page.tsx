@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
 import { GridPageSkeleton } from '@/components/dashboard/Skeletons'
 import EmptyState from '@/components/dashboard/EmptyState'
 import UpgradeCodeModal from '@/components/dashboard/UpgradeCodeModal'
-import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
 import type { OrganizationPlan } from '@/types/database'
 
 const planDetails = {
@@ -383,29 +382,80 @@ export default function OrganizationPage() {
   const showBulkActions = viewMode === 'list' && selectedWorkspaceIds.size > 0 && !!selectedAction
   const bulkActionLabel = selectedAction === 'delete' ? 'Delete' : 'Leave'
 
-  const JoinButton = ({ className = '' }: { className?: string }) => (
-    <button
-      onClick={() => setShowJoinModal(true)}
-      className={`btn-secondary px-4 py-2 flex items-center justify-center gap-2 text-body-sm ${className}`}
-    >
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-      </svg>
-      Join
-    </button>
-  )
+  const CreateOrJoinButton = ({
+    className = '',
+    menuClassName = 'right-0 mt-2 w-56',
+  }: {
+    className?: string
+    menuClassName?: string
+  }) => {
+    const [menuOpen, setMenuOpen] = useState(false)
+    const menuRef = useRef<HTMLDivElement | null>(null)
 
-  const CreateButton = ({ className = '' }: { className?: string }) => (
-    <button
-      onClick={() => setShowCreateModal(true)}
-      className={`btn-primary px-4 py-2 flex items-center justify-center gap-2 text-body-sm ${className}`}
-    >
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-      </svg>
-      Create
-    </button>
-  )
+    useEffect(() => {
+      if (!menuOpen) return
+
+      const handleClickOutside = (event: MouseEvent) => {
+        if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+          setMenuOpen(false)
+        }
+      }
+
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [menuOpen])
+
+    return (
+      <div ref={menuRef} className={`relative ${className}`}>
+        <button
+          onClick={() => setMenuOpen((prev) => !prev)}
+          className="btn-primary w-full px-4 py-2 flex items-center justify-center gap-2 text-body-sm"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Create or Join
+          <svg
+            className={`w-4 h-4 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {menuOpen && (
+          <div className={`absolute z-20 overflow-hidden rounded-glass border border-white/10 bg-dark-gray shadow-lg ${menuClassName}`}>
+            <button
+              onClick={() => {
+                setMenuOpen(false)
+                setShowCreateModal(true)
+              }}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left text-body-sm text-secondary-white transition-colors hover:bg-white/10"
+            >
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Organization
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false)
+                setShowJoinModal(true)
+              }}
+              className="flex w-full items-center gap-3 border-t border-white/10 px-4 py-3 text-left text-body-sm text-secondary-white transition-colors hover:bg-white/10"
+            >
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
+              Join Organization
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -446,7 +496,8 @@ export default function OrganizationPage() {
             </>
           ) : (
             <>
-              {workspaces.length > 0 && (
+              <div className="flex w-[92px] items-center justify-end gap-3">
+                <div className="h-10 w-10 flex-shrink-0" />
                 <button
                   onClick={toggleViewMode}
                   className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
@@ -462,9 +513,8 @@ export default function OrganizationPage() {
                     </svg>
                   )}
                 </button>
-              )}
-              <JoinButton />
-              <CreateButton />
+              </div>
+              <CreateOrJoinButton className="w-60 flex-shrink-0" />
             </>
           )}
         </div>
@@ -486,8 +536,7 @@ export default function OrganizationPage() {
           {/* Mobile buttons - stacked at top of grid, hidden on desktop */}
           {!showBulkActions ? (
             <div className="md:hidden col-span-1 flex flex-col gap-2">
-              <JoinButton className="w-full" />
-              <CreateButton className="w-full" />
+              <CreateOrJoinButton className="w-full" menuClassName="left-0 right-0 mt-2" />
             </div>
           ) : (
             <div className="md:hidden col-span-1 flex gap-2">

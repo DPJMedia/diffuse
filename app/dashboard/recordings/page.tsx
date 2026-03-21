@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
@@ -10,7 +10,6 @@ import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 import EmptyState from '@/components/dashboard/EmptyState'
 import AudioPlayer from '@/components/dashboard/AudioPlayer'
 import RecordingModal from '@/components/dashboard/RecordingModal'
-import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
 import { diffWordsWithSpace, type Change } from 'diff'
 // tus-js-client will be dynamically imported when needed
 
@@ -167,6 +166,88 @@ function InlineDiff({
         )
       })}
     </span>
+  )
+}
+
+function AddRecordingButton({
+  className = '',
+  menuClassName = 'right-0 mt-2 w-56',
+  uploading,
+  onUpload,
+  onStartRecording,
+}: {
+  className?: string
+  menuClassName?: string
+  uploading: boolean
+  onUpload: () => void
+  onStartRecording: () => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuOpen])
+
+  return (
+    <div ref={menuRef} className={`relative ${className}`}>
+      <button
+        onClick={() => setMenuOpen((prev) => !prev)}
+        className="btn-primary w-full px-4 py-2 flex items-center justify-center gap-2 text-body-sm"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        </svg>
+        Add Recording
+        <svg
+          className={`w-4 h-4 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {menuOpen && (
+        <div className={`absolute z-20 overflow-hidden rounded-glass border border-white/10 bg-dark-gray shadow-lg ${menuClassName}`}>
+          <button
+            onClick={() => {
+              setMenuOpen(false)
+              onUpload()
+            }}
+            disabled={uploading}
+            className="flex w-full items-center gap-3 px-4 py-3 text-left text-body-sm text-secondary-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            {uploading ? 'Uploading...' : 'Upload Recording'}
+          </button>
+          <button
+            onClick={() => {
+              setMenuOpen(false)
+              onStartRecording()
+            }}
+            className="flex w-full items-center gap-3 border-t border-white/10 px-4 py-3 text-left text-body-sm text-secondary-white transition-colors hover:bg-white/10"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+            Start Recording
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1343,10 +1424,17 @@ export default function RecordingsPage() {
   }, [uploadRecordingId, selectedRecording?.id, selectedRecording?.file_path, fetchAudioUrl])
 
   // Scroll transcript every couple of lines so the highlight advances in chunks and user can follow
-  const displayUtterances = utterances.length > 0 ? utterances : (selectedRecording?.utterances ?? [])
-  const displayOriginalUtterances = originalUtterances.length > 0
-    ? originalUtterances
-    : (selectedRecording?.original_utterances ?? selectedRecording?.utterances ?? [])
+  const displayUtterances = useMemo(
+    () => (utterances.length > 0 ? utterances : (selectedRecording?.utterances ?? [])),
+    [utterances, selectedRecording?.utterances]
+  )
+  const displayOriginalUtterances = useMemo(
+    () =>
+      originalUtterances.length > 0
+        ? originalUtterances
+        : (selectedRecording?.original_utterances ?? selectedRecording?.utterances ?? []),
+    [originalUtterances, selectedRecording?.original_utterances, selectedRecording?.utterances]
+  )
   const LINES_BEFORE_SCROLL = 2
 
   // Recompute search match offsets and count whenever query or utterances change
@@ -1639,14 +1727,26 @@ export default function RecordingsPage() {
 
   const isListSelectionActive = viewMode === 'list' && selectedRecordingIds.size > 0
   const showBulkActions = isEditMode || isListSelectionActive
+  const openUploadPicker = () => {
+    uploadInputRef.current?.click()
+  }
+  const openRecordingModal = () => {
+    setShowRecordingModal(true)
+  }
 
   // Dynamic button based on recording state
-  const RecordingButton = ({ className = '' }: { className?: string }) => {
+  const RecordingButton = ({
+    className = '',
+    menuClassName = 'right-0 mt-2 w-56',
+  }: {
+    className?: string
+    menuClassName?: string
+  }) => {
     if (isRecording || pendingBlob) {
       // Recording in progress or pending save
       return (
         <button
-          onClick={() => setShowRecordingModal(true)}
+          onClick={openRecordingModal}
           className={`px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm transition-all ${
             isRecording 
               ? 'bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500/30' 
@@ -1671,15 +1771,13 @@ export default function RecordingsPage() {
     }
 
     return (
-      <button
-        onClick={() => setShowRecordingModal(true)}
-        className={`btn-primary px-4 py-2 flex items-center justify-center gap-2 text-body-sm ${className}`}
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-        </svg>
-        Start Recording
-      </button>
+      <AddRecordingButton
+        className={className}
+        menuClassName={menuClassName}
+        uploading={uploading}
+        onUpload={openUploadPicker}
+        onStartRecording={openRecordingModal}
+      />
     )
   }
 
@@ -1721,47 +1819,37 @@ export default function RecordingsPage() {
             </>
           ) : (
             <>
-              {recordings.length > 0 && (
-                <>
-                  {viewMode === 'grid' && (
-                    <button
-                      onClick={() => setIsEditMode(true)}
-                      className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
-                      title="Edit"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </button>
-                  )}
+              <div className="flex w-[92px] items-center justify-end gap-3">
+                {viewMode === 'grid' && recordings.length > 0 ? (
                   <button
-                    onClick={toggleViewMode}
+                    onClick={() => setIsEditMode(true)}
                     className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
-                    title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+                    title="Edit"
                   >
-                    {viewMode === 'grid' ? (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                      </svg>
-                    )}
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
                   </button>
-                </>
-              )}
-              <button
-                onClick={() => uploadInputRef.current?.click()}
-                disabled={uploading}
-                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                {uploading ? 'Uploading...' : 'Upload Recording'}
-              </button>
-              <RecordingButton />
+                ) : (
+                  <div className="h-10 w-10 flex-shrink-0" />
+                )}
+                <button
+                  onClick={toggleViewMode}
+                  className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                  title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+                >
+                  {viewMode === 'grid' ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <RecordingButton className="w-60 flex-shrink-0" />
             </>
           )}
         </div>
@@ -1780,27 +1868,8 @@ export default function RecordingsPage() {
           title="No Recordings Yet"
           description="Start recording or upload an audio file to create transcriptions for your projects."
           action={
-            <div className="flex flex-col sm:flex-row items-center gap-3 mt-4">
-              <button
-                onClick={() => uploadInputRef.current?.click()}
-                disabled={uploading}
-                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Upload Recording
-              </button>
-              <span className="text-medium-gray text-caption">or</span>
-              <button
-                onClick={() => setShowRecordingModal(true)}
-                className="btn-primary px-4 py-2 flex items-center justify-center gap-2 text-body-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-                Start Recording
-              </button>
+            <div className="mt-4 w-full max-w-xs">
+              <RecordingButton className="w-full" menuClassName="left-0 right-0 mt-2" />
             </div>
           }
         />
@@ -1809,16 +1878,6 @@ export default function RecordingsPage() {
           {/* Mobile Buttons - stacked at top of grid */}
           {!showBulkActions ? (
             <div className="md:hidden col-span-1 flex flex-col gap-2">
-              <button
-                onClick={() => uploadInputRef.current?.click()}
-                disabled={uploading}
-                className="w-full px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Upload
-              </button>
               <RecordingButton className="w-full" />
             </div>
           ) : (

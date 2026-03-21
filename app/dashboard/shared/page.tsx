@@ -123,7 +123,7 @@ export default function SharedWithMePage() {
   }, [user, workspaces, fetchSharedProjects])
 
   if (authLoading || !user) {
-    return <GridPageSkeleton />
+    return <GridPageSkeleton viewMode={viewMode} />
   }
 
   const ViewOrgsButton = ({ className = '' }: { className?: string }) => (
@@ -145,7 +145,8 @@ export default function SharedWithMePage() {
         <h1 className="text-display-sm text-secondary-white">Shared With Me</h1>
         {/* Desktop button - hidden on mobile */}
         <div className="hidden md:flex items-center gap-3">
-          {sharedProjects.length > 0 && (
+          <div className="flex w-[92px] items-center justify-end gap-3">
+            <div className="h-10 w-10 flex-shrink-0" />
             <button
               onClick={toggleViewMode}
               className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
@@ -161,14 +162,14 @@ export default function SharedWithMePage() {
                 </svg>
               )}
             </button>
-          )}
-          <ViewOrgsButton className="flex" />
+          </div>
+          <ViewOrgsButton className="w-60 flex-shrink-0" />
         </div>
       </div>
 
       {/* Shared Projects Grid */}
       {loading ? (
-        <GridPageSkeleton showHeader={false} />
+        <GridPageSkeleton showHeader={false} viewMode={viewMode} />
       ) : workspaces.length === 0 ? (
         <EmptyState
           icon={
