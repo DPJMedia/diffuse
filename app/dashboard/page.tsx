@@ -46,6 +46,8 @@ export default function DashboardPage() {
   // Save view preference to localStorage
   const toggleViewMode = () => {
     const newMode = viewMode === 'grid' ? 'list' : 'grid'
+    setIsEditMode(false)
+    setSelectedIds(new Set())
     setViewMode(newMode)
     localStorage.setItem('projectsViewMode', newMode)
   }
@@ -301,11 +303,13 @@ export default function DashboardPage() {
   }
 
   if (authLoading || !user) {
-    return <GridPageSkeleton />
+    return <GridPageSkeleton viewMode={viewMode} />
   }
 
   const projectLimit = subscriptionLimits[subscriptionTier]
   const hasReachedLimit = totalCountForLimit >= projectLimit
+  const isListSelectionActive = viewMode === 'list' && selectedIds.size > 0
+  const showBulkActions = isEditMode || isListSelectionActive
 
   const CreateProjectButton = ({ className = '' }: { className?: string }) => (
     <button
@@ -344,7 +348,7 @@ export default function DashboardPage() {
         <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Projects</h1>
         {/* Desktop buttons - hidden on mobile */}
         <div className="hidden md:flex items-center gap-3">
-          {isEditMode ? (
+          {showBulkActions ? (
             <>
               <button
                 onClick={handleBulkDelete}
@@ -370,15 +374,17 @@ export default function DashboardPage() {
             <>
               {projects.length > 0 && (
                 <>
-                  <button
-                    onClick={() => setIsEditMode(true)}
-                    className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
-                    title="Edit"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
+                  {viewMode === 'grid' && (
+                    <button
+                      onClick={() => setIsEditMode(true)}
+                      className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                      title="Edit"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                  )}
                   <button
                     onClick={toggleViewMode}
                     className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
@@ -404,7 +410,7 @@ export default function DashboardPage() {
 
       {/* Projects Grid */}
       {loading ? (
-        <GridPageSkeleton showHeader={false} />
+        <GridPageSkeleton showHeader={false} viewMode={viewMode} />
       ) : projects.length === 0 ? (
         <EmptyState
           icon={
@@ -428,7 +434,7 @@ export default function DashboardPage() {
       ) : (
         <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4' : 'flex flex-col gap-3'}>
           {/* Mobile buttons - full width at top of grid, hidden on desktop */}
-          {!isEditMode ? (
+          {!showBulkActions ? (
             <CreateProjectButton className="md:hidden col-span-1" />
           ) : (
             <div className="md:hidden col-span-1 flex gap-2">
@@ -461,34 +467,36 @@ export default function DashboardPage() {
               return (
                 <div
                   key={project.id}
-                  onClick={() => isEditMode ? toggleSelectProject(project.id) : router.push(`/dashboard/projects/${project.id}`)}
+                  onClick={() => router.push(`/dashboard/projects/${project.id}`)}
                   className={`glass-container p-4 transition-colors cursor-pointer flex items-center gap-4 ${
-                    isEditMode
-                      ? isSelected
-                        ? 'bg-cosmic-orange/10 border-cosmic-orange/50 hover:bg-cosmic-orange/15'
-                        : 'hover:bg-white/5'
+                    isSelected
+                      ? 'bg-cosmic-orange/10 border-cosmic-orange/50 hover:bg-cosmic-orange/15'
                       : 'hover:bg-white/10'
                   }`}
                 >
-                  {/* Selection checkbox in edit mode */}
-                  {isEditMode && (
-                    <div className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                      isSelected ? 'bg-cosmic-orange border-cosmic-orange' : 'border-white/30 bg-transparent'
-                    }`}>
-                      {isSelected && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Project icon */}
-                  <div className="flex-shrink-0 w-10 h-10 bg-white/5 rounded-glass flex items-center justify-center">
-                    <svg className="w-5 h-5 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleSelectProject(project.id)
+                    }}
+                    className={`flex-shrink-0 w-10 h-10 rounded-glass border-2 flex items-center justify-center transition-all ${
+                      isSelected
+                        ? 'bg-cosmic-orange border-cosmic-orange text-black'
+                        : 'bg-white/5 border-transparent text-cosmic-orange hover:border-white/30'
+                    }`}
+                    aria-label={isSelected ? `Deselect ${project.name}` : `Select ${project.name}`}
+                  >
+                    {isSelected ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    )}
+                  </button>
                   
                   {/* Project info */}
                   <div className="flex-1 min-w-0">
@@ -510,7 +518,7 @@ export default function DashboardPage() {
                   </div>
                   
                   {/* Arrow */}
-                  {!isEditMode && (
+                  {!isSelected && (
                     <svg className="w-5 h-5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>

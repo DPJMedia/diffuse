@@ -309,6 +309,8 @@ export default function RecordingsPage() {
   // Save view preference to localStorage
   const toggleViewMode = () => {
     const newMode = viewMode === 'grid' ? 'list' : 'grid'
+    setIsEditMode(false)
+    setSelectedRecordingIds(new Set())
     setViewMode(newMode)
     localStorage.setItem('recordingsViewMode', newMode)
   }
@@ -1632,8 +1634,11 @@ export default function RecordingsPage() {
   }
 
   if (!user) {
-    return <GridPageSkeleton />
+    return <GridPageSkeleton viewMode={viewMode} />
   }
+
+  const isListSelectionActive = viewMode === 'list' && selectedRecordingIds.size > 0
+  const showBulkActions = isEditMode || isListSelectionActive
 
   // Dynamic button based on recording state
   const RecordingButton = ({ className = '' }: { className?: string }) => {
@@ -1692,7 +1697,7 @@ export default function RecordingsPage() {
       <div className="flex items-center justify-between mb-8">
         <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Recordings</h1>
         <div className="hidden md:flex items-center gap-3">
-          {isEditMode ? (
+          {showBulkActions ? (
             <>
               <button
                 onClick={handleBulkDeleteRecordings}
@@ -1718,15 +1723,17 @@ export default function RecordingsPage() {
             <>
               {recordings.length > 0 && (
                 <>
-                  <button
-                    onClick={() => setIsEditMode(true)}
-                    className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
-                    title="Edit"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
+                  {viewMode === 'grid' && (
+                    <button
+                      onClick={() => setIsEditMode(true)}
+                      className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                      title="Edit"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                  )}
                   <button
                     onClick={toggleViewMode}
                     className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
@@ -1762,7 +1769,7 @@ export default function RecordingsPage() {
 
       {/* Recordings Grid */}
       {loading ? (
-        <GridPageSkeleton showHeader={false} />
+        <GridPageSkeleton showHeader={false} viewMode={viewMode} />
       ) : recordings.length === 0 && !isRecording && !pendingBlob ? (
         <EmptyState
           icon={
@@ -1800,7 +1807,7 @@ export default function RecordingsPage() {
       ) : (
         <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4' : 'flex flex-col gap-3'}>
           {/* Mobile Buttons - stacked at top of grid */}
-          {!isEditMode ? (
+          {!showBulkActions ? (
             <div className="md:hidden col-span-1 flex flex-col gap-2">
               <button
                 onClick={() => uploadInputRef.current?.click()}
@@ -1848,41 +1855,49 @@ export default function RecordingsPage() {
                 <div
                   key={rec.id}
                   onClick={() => {
-                    if (isEditMode && !isCurrentUpload) {
-                      toggleSelectRecording(rec.id)
-                    } else if (!isCurrentUpload) {
+                    if (!isCurrentUpload) {
                       openRecording(rec)
                     }
                   }}
                   className={`glass-container p-4 transition-colors flex items-center gap-4 ${
                     isCurrentUpload
                       ? 'cursor-wait'
-                      : isEditMode
-                      ? isSelected
-                        ? 'cursor-pointer bg-cosmic-orange/10 border-cosmic-orange/50 hover:bg-cosmic-orange/15'
-                        : 'cursor-pointer hover:bg-white/5'
+                      : isSelected
+                      ? 'cursor-pointer bg-cosmic-orange/10 border-cosmic-orange/50 hover:bg-cosmic-orange/15'
                       : 'cursor-pointer hover:bg-white/10'
                   }`}
                 >
-                  {/* Selection checkbox in edit mode */}
-                  {isEditMode && !isCurrentUpload && (
-                    <div className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                      isSelected ? 'bg-cosmic-orange border-cosmic-orange' : 'border-white/30 bg-transparent'
-                    }`}>
-                      {isSelected && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  {isCurrentUpload ? (
+                    <div className="flex-shrink-0 w-10 h-10 bg-white/5 rounded-glass border-2 border-white/10 flex items-center justify-center text-cosmic-orange">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleSelectRecording(rec.id)
+                      }}
+                      className={`flex-shrink-0 w-10 h-10 rounded-glass border-2 flex items-center justify-center transition-all ${
+                        isSelected
+                          ? 'bg-cosmic-orange border-cosmic-orange text-black'
+                          : 'bg-white/5 border-transparent text-cosmic-orange hover:border-white/30'
+                      }`}
+                      aria-label={isSelected ? `Deselect ${rec.title}` : `Select ${rec.title}`}
+                    >
+                      {isSelected ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                         </svg>
                       )}
-                    </div>
+                    </button>
                   )}
-                  
-                  {/* Recording icon */}
-                  <div className="flex-shrink-0 w-10 h-10 bg-white/5 rounded-glass flex items-center justify-center">
-                    <svg className="w-5 h-5 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                  </div>
                   
                   {/* Recording info */}
                   <div className="flex-1 min-w-0">
@@ -1929,7 +1944,7 @@ export default function RecordingsPage() {
                   </div>
                   
                   {/* Arrow */}
-                  {!isEditMode && !isCurrentUpload && (
+                  {!isSelected && !isCurrentUpload && (
                     <svg className="w-5 h-5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
