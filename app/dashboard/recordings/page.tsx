@@ -219,6 +219,38 @@ function formatTranscriptionWithStyledMinuteMarkers(transcription: string | null
   })
 }
 
+function renderWithSearchHighlights(
+  text: string,
+  query: string,
+  matchIndexOffset: number,
+  currentMatch: number
+): React.ReactNode {
+  if (!query.trim()) return text
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(escaped, 'gi')
+  const nodes: React.ReactNode[] = []
+  let lastIndex = 0
+  let count = 0
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index))
+    const globalIdx = matchIndexOffset + count
+    nodes.push(
+      <mark
+        key={`match-${globalIdx}`}
+        data-search-match={globalIdx}
+        className={`rounded px-0.5 ${globalIdx === currentMatch ? 'bg-cosmic-orange text-black' : 'bg-cosmic-orange/30 text-secondary-white'}`}
+      >
+        {match[0]}
+      </mark>
+    )
+    count++
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex))
+  return nodes.length > 0 ? nodes : text
+}
+
 export default function RecordingsPage() {
   const router = useRouter()
   const { user, currentWorkspace } = useAuth()
@@ -261,6 +293,19 @@ export default function RecordingsPage() {
   const [uploadBytesTotal, setUploadBytesTotal] = useState(0)
   const processingPercentTimerRef = useRef<NodeJS.Timeout | null>(null)
   
+  // Bulk edit mode state
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [selectedRecordingIds, setSelectedRecordingIds] = useState<Set<string>>(new Set())
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+
+  // Transcript search state
+  const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('')
+  const [transcriptSearchCurrentMatch, setTranscriptSearchCurrentMatch] = useState(0)
+  const [transcriptSearchMatchCount, setTranscriptSearchMatchCount] = useState(0)
+  const [transcriptSearchMatchOffsets, setTranscriptSearchMatchOffsets] = useState<number[]>([])
+  const [showTranscriptSearch, setShowTranscriptSearch] = useState(false)
+  const transcriptSearchInputRef = useRef<HTMLInputElement>(null)
+
   // Failed recording state
   const [failedRecordingId, setFailedRecordingId] = useState<string | null>(null)
   const [failedErrorMessage, setFailedErrorMessage] = useState('')
@@ -828,7 +873,7 @@ export default function RecordingsPage() {
   function getClearClipSegmentsForSpeaker(speaker: string): Array<{ start: number; end: number }> {
     const speakerUtterances = utterances
       .filter((u) => u.speaker === speaker)
-      .sort((a, b) => a.start - b.start)
+      .sort((a, b) => (b.end - b.start) - (a.end - a.start))
     if (!speakerUtterances.length) return []
 
     const clear = speakerUtterances.filter((u) => {
@@ -1286,6 +1331,60 @@ export default function RecordingsPage() {
     ? originalUtterances
     : (selectedRecording?.original_utterances ?? selectedRecording?.utterances ?? [])
   const LINES_BEFORE_SCROLL = 2
+
+  // Recompute search match offsets and count whenever query or utterances change
+  useEffect(() => {
+    if (!transcriptSearchQuery.trim()) {
+      setTranscriptSearchMatchOffsets([])
+      setTranscriptSearchMatchCount(0)
+      setTranscriptSearchCurrentMatch(0)
+      return
+    }
+    const escaped = transcriptSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(escaped, 'gi')
+    const utterancesToSearch = isEditingUtterances && editedUtterances ? editedUtterances : displayUtterances
+    if (utterancesToSearch.length > 0) {
+      const offsets: number[] = []
+      let total = 0
+      for (const u of utterancesToSearch) {
+        offsets.push(total)
+        const matches = u.text.match(regex)
+        total += matches ? matches.length : 0
+      }
+      setTranscriptSearchMatchOffsets(offsets)
+      setTranscriptSearchMatchCount(total)
+    } else if (selectedRecording?.transcription) {
+      const matches = selectedRecording.transcription.match(regex)
+      setTranscriptSearchMatchCount(matches ? matches.length : 0)
+      setTranscriptSearchMatchOffsets([])
+    }
+    setTranscriptSearchCurrentMatch(0)
+  }, [transcriptSearchQuery, displayUtterances, editedUtterances, isEditingUtterances, selectedRecording])
+
+  // Keyboard shortcut: Cmd/Ctrl+F opens transcript search when modal is open
+  useEffect(() => {
+    if (!selectedRecording) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault()
+        setShowTranscriptSearch(true)
+        setTimeout(() => transcriptSearchInputRef.current?.focus(), 50)
+      }
+      if (e.key === 'Escape' && showTranscriptSearch) {
+        setShowTranscriptSearch(false)
+        setTranscriptSearchQuery('')
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedRecording, showTranscriptSearch])
+
+  // Scroll to current match when it changes
+  useEffect(() => {
+    if (!transcriptSearchQuery.trim() || transcriptSearchMatchCount === 0) return
+    const el = document.querySelector(`[data-search-match="${transcriptSearchCurrentMatch}"]`)
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [transcriptSearchCurrentMatch, transcriptSearchQuery, transcriptSearchMatchCount])
   useEffect(() => {
     if (isUserScrollingTranscript) return
     if (isEditingUtterances || editedTranscription !== null) return
@@ -1482,6 +1581,41 @@ export default function RecordingsPage() {
     }
   }
 
+  const toggleSelectRecording = (id: string) => {
+    setSelectedRecordingIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const exitBulkEditMode = () => {
+    setIsEditMode(false)
+    setSelectedRecordingIds(new Set())
+  }
+
+  const handleBulkDeleteRecordings = async () => {
+    if (selectedRecordingIds.size === 0) return
+    if (!confirm(`Delete ${selectedRecordingIds.size} recording${selectedRecordingIds.size !== 1 ? 's' : ''}? This cannot be undone.`)) return
+
+    setIsBulkDeleting(true)
+    try {
+      const toDelete = recordings.filter((r) => selectedRecordingIds.has(r.id))
+      for (const rec of toDelete) {
+        await supabase.storage.from('recordings').remove([rec.file_path])
+        await supabase.from('diffuse_recordings').delete().eq('id', rec.id)
+      }
+      exitBulkEditMode()
+      fetchRecordings()
+    } catch (error) {
+      console.error('Error bulk deleting recordings:', error)
+      alert('Failed to delete some recordings')
+    } finally {
+      setIsBulkDeleting(false)
+    }
+  }
+
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -1547,17 +1681,54 @@ export default function RecordingsPage() {
       <div className="flex items-center justify-between mb-8">
         <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Recordings</h1>
         <div className="hidden md:flex items-center gap-3">
-          <button
-            onClick={() => uploadInputRef.current?.click()}
-            disabled={uploading}
-            className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            {uploading ? 'Uploading...' : 'Upload Recording'}
-          </button>
-          <RecordingButton />
+          {isEditMode ? (
+            <>
+              <button
+                onClick={handleBulkDeleteRecordings}
+                disabled={selectedRecordingIds.size === 0 || isBulkDeleting}
+                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {isBulkDeleting ? 'Deleting...' : `Delete${selectedRecordingIds.size > 0 ? ` (${selectedRecordingIds.size})` : ''}`}
+              </button>
+              <button
+                onClick={exitBulkEditMode}
+                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-medium-gray hover:bg-white/10 transition-all duration-300"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {recordings.length > 0 && (
+                <button
+                  onClick={() => setIsEditMode(true)}
+                  className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                  title="Edit"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={() => uploadInputRef.current?.click()}
+                disabled={uploading}
+                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                {uploading ? 'Uploading...' : 'Upload Recording'}
+              </button>
+              <RecordingButton />
+            </>
+          )}
         </div>
       </div>
 
@@ -1603,29 +1774,80 @@ export default function RecordingsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
           {/* Mobile Buttons - stacked at top of grid */}
-          <div className="md:hidden col-span-1 flex flex-col gap-2">
-            <button
-              onClick={() => uploadInputRef.current?.click()}
-              disabled={uploading}
-              className="w-full px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Upload
-            </button>
-            <RecordingButton className="w-full" />
-          </div>
+          {!isEditMode ? (
+            <div className="md:hidden col-span-1 flex flex-col gap-2">
+              <button
+                onClick={() => uploadInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-50"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Upload
+              </button>
+              <RecordingButton className="w-full" />
+            </div>
+          ) : (
+            <div className="md:hidden col-span-1 flex gap-2">
+              <button
+                onClick={handleBulkDeleteRecordings}
+                disabled={selectedRecordingIds.size === 0 || isBulkDeleting}
+                className="flex-1 px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {isBulkDeleting ? 'Deleting...' : `Delete${selectedRecordingIds.size > 0 ? ` (${selectedRecordingIds.size})` : ''}`}
+              </button>
+              <button
+                onClick={exitBulkEditMode}
+                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-medium-gray hover:bg-white/10 transition-all duration-300"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Cancel
+              </button>
+            </div>
+          )}
           {recordings.map((rec) => {
             const isCurrentUpload = rec.id === uploadRecordingId
             const showUploadProgress = isCurrentUpload && uploadBytesTotal > 0
+            const isSelected = selectedRecordingIds.has(rec.id)
             return (
               <div
                 key={rec.id}
-                onClick={() => !isCurrentUpload && openRecording(rec)}
-                className={`glass-container p-6 transition-colors ${isCurrentUpload ? 'cursor-wait' : 'cursor-pointer hover:bg-white/10'}`}
+                onClick={() => {
+                  if (isEditMode && !isCurrentUpload) {
+                    toggleSelectRecording(rec.id)
+                  } else if (!isCurrentUpload) {
+                    openRecording(rec)
+                  }
+                }}
+                className={`glass-container p-6 transition-colors relative ${
+                  isCurrentUpload
+                    ? 'cursor-wait'
+                    : isEditMode
+                    ? isSelected
+                      ? 'cursor-pointer bg-cosmic-orange/10 border-cosmic-orange/50 hover:bg-cosmic-orange/15'
+                      : 'cursor-pointer hover:bg-white/5'
+                    : 'cursor-pointer hover:bg-white/10'
+                }`}
               >
-                <h3 className="text-heading-md text-secondary-white font-medium mb-4 line-clamp-2">
+                {/* Selection checkbox in edit mode */}
+                {isEditMode && !isCurrentUpload && (
+                  <div className={`absolute top-4 right-4 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                    isSelected ? 'bg-cosmic-orange border-cosmic-orange' : 'border-white/30 bg-transparent'
+                  }`}>
+                    {isSelected && (
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                )}
+                <h3 className={`text-heading-md text-secondary-white font-medium mb-4 line-clamp-2 ${isEditMode && !isCurrentUpload ? 'pr-8' : ''}`}>
                   {rec.title}
                 </h3>
                 
@@ -1698,7 +1920,7 @@ export default function RecordingsPage() {
           }}
         >
           <div
-            className="glass-container p-4 sm:p-8 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
+            className="glass-container p-4 sm:p-8 max-w-2xl w-full max-h-[80vh] flex flex-col overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header with close and delete buttons */}
@@ -1762,6 +1984,44 @@ export default function RecordingsPage() {
                 )}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Download button */}
+                <button
+                  onClick={async () => {
+                    try {
+                      let url = audioUrl
+                      if (!url) {
+                        const res = await fetch('/api/recordings/signed-url', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ filePath: selectedRecording.file_path }),
+                        })
+                        const data = await res.json()
+                        url = data.signedUrl
+                      }
+                      if (!url) return
+                      const ext = selectedRecording.file_path.split('.').pop() || 'mp3'
+                      const fileName = `${selectedRecording.title.replace(/[^a-z0-9_\-. ]/gi, '_')}.${ext}`
+                      const blob = await fetch(url).then((r) => r.blob())
+                      const blobUrl = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = blobUrl
+                      a.download = fileName
+                      document.body.appendChild(a)
+                      a.click()
+                      document.body.removeChild(a)
+                      URL.revokeObjectURL(blobUrl)
+                    } catch (err) {
+                      console.error('Download failed:', err)
+                      alert('Failed to download recording')
+                    }
+                  }}
+                  className="text-medium-gray hover:text-secondary-white transition-colors p-1"
+                  title="Download recording"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </button>
                 {/* Delete button */}
                 <button
                   onClick={() => {
@@ -1779,6 +2039,21 @@ export default function RecordingsPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>
+                {/* Search button (only shown for transcribed recordings) */}
+                {selectedRecording.status === 'transcribed' && selectedRecording.transcription && !isEditingUtterances && editedTranscription === null && (
+                  <button
+                    onClick={() => {
+                      setShowTranscriptSearch(true)
+                      setTimeout(() => transcriptSearchInputRef.current?.focus(), 50)
+                    }}
+                    className="text-medium-gray hover:text-secondary-white transition-colors p-1"
+                    title="Search transcript (⌘F)"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </button>
+                )}
                 {/* Close button */}
                 <button
                   onClick={() => {
@@ -1788,6 +2063,8 @@ export default function RecordingsPage() {
                     setPendingTranscription(null)
                     setEditedTranscription(null)
                     setFrozenHighlightIndex(null)
+                    setShowTranscriptSearch(false)
+                    setTranscriptSearchQuery('')
                   }}
                   className="text-medium-gray hover:text-secondary-white transition-colors p-1"
                   title="Close"
@@ -1842,7 +2119,7 @@ export default function RecordingsPage() {
               )}
             </div>
 
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 flex flex-col min-h-0 overflow-visible">
               <div className="flex items-center justify-between mb-3 flex-shrink-0">
                 <h3 className="text-body-sm text-medium-gray">
                   {transcribePhase === 'identifying_speakers' ? 'Diarization' : 'Transcription'}
@@ -1999,7 +2276,86 @@ placeholder="First Last"
                 </div>
               ) : selectedRecording.status === 'transcribed' && selectedRecording.transcription ? (
                 <div className="flex flex-col flex-1 min-h-0">
-                  {/* Same layout in view/edit: transcript box stays the same size */} 
+                  {/* Same layout in view/edit: transcript box stays the same size */}
+
+                  {/* Transcript Search Bar */}
+                  {!isEditingUtterances && editedTranscription === null && (
+                    <div className={`flex items-center gap-2 mb-3 transition-all ${showTranscriptSearch ? 'opacity-100' : 'opacity-0 pointer-events-none h-0 mb-0 overflow-hidden'}`}>
+                      <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-glass focus-within:border-cosmic-orange/50 transition-colors">
+                        <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <input
+                          ref={transcriptSearchInputRef}
+                          type="text"
+                          value={transcriptSearchQuery}
+                          onChange={(e) => setTranscriptSearchQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              if (transcriptSearchMatchCount > 0) {
+                                setTranscriptSearchCurrentMatch((prev) => (prev + 1) % transcriptSearchMatchCount)
+                              }
+                            }
+                            if (e.key === 'Escape') {
+                              setShowTranscriptSearch(false)
+                              setTranscriptSearchQuery('')
+                            }
+                          }}
+                          placeholder="Search transcript..."
+                          className="flex-1 bg-transparent text-secondary-white text-body-sm focus:outline-none placeholder:text-medium-gray/50 min-w-0"
+                        />
+                        {transcriptSearchQuery && (
+                          <span className="text-caption text-medium-gray flex-shrink-0 whitespace-nowrap">
+                            {transcriptSearchMatchCount === 0
+                              ? 'No matches'
+                              : `${transcriptSearchCurrentMatch + 1} / ${transcriptSearchMatchCount}`}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (transcriptSearchMatchCount > 0) {
+                            setTranscriptSearchCurrentMatch((prev) => (prev - 1 + transcriptSearchMatchCount) % transcriptSearchMatchCount)
+                          }
+                        }}
+                        disabled={transcriptSearchMatchCount === 0}
+                        className="p-2 text-medium-gray hover:text-secondary-white transition-colors disabled:opacity-40"
+                        title="Previous match"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (transcriptSearchMatchCount > 0) {
+                            setTranscriptSearchCurrentMatch((prev) => (prev + 1) % transcriptSearchMatchCount)
+                          }
+                        }}
+                        disabled={transcriptSearchMatchCount === 0}
+                        className="p-2 text-medium-gray hover:text-secondary-white transition-colors disabled:opacity-40"
+                        title="Next match"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowTranscriptSearch(false)
+                          setTranscriptSearchQuery('')
+                        }}
+                        className="p-2 text-medium-gray hover:text-secondary-white transition-colors"
+                        title="Close search"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+
                   <div
                     ref={transcriptScrollRef}
                     onScroll={() => {
@@ -2100,6 +2456,8 @@ placeholder="First Last"
                                 ) : selectedRecording.original_transcription &&
                                   selectedRecording.transcription !== selectedRecording.original_transcription ? (
                                   <InlineDiff original={originalText} current={currentText} />
+                                ) : transcriptSearchQuery.trim() ? (
+                                  renderWithSearchHighlights(currentText, transcriptSearchQuery, transcriptSearchMatchOffsets[i] ?? 0, transcriptSearchCurrentMatch)
                                 ) : (
                                   currentText
                                 )}
@@ -2115,6 +2473,10 @@ placeholder="First Last"
                           onChange={(e) => setEditedTranscription(e.target.value)}
                           className="w-full h-full min-h-[150px] bg-transparent text-secondary-white text-body-md focus:outline-none resize-none leading-relaxed"
                         />
+                      ) : transcriptSearchQuery.trim() ? (
+                        <p className="text-body-md text-secondary-white leading-relaxed whitespace-pre-wrap">
+                          {renderWithSearchHighlights(selectedRecording.transcription ?? '', transcriptSearchQuery, 0, transcriptSearchCurrentMatch)}
+                        </p>
                       ) : (
                         <p className="text-body-md text-secondary-white leading-relaxed whitespace-pre-wrap">
                           {formatTranscriptionWithStyledMinuteMarkers(selectedRecording.transcription)}
@@ -2162,7 +2524,7 @@ placeholder="First Last"
                         <button
                           onClick={handleCreateProjectAndArticle}
                           disabled={generatingProject}
-                          className={`flex-1 w-full sm:w-auto px-4 py-3 flex items-center justify-center gap-2 text-body-sm rounded-glass transition-colors ${
+                          className={`flex-1 w-full sm:w-auto px-4 py-3 flex items-center justify-center gap-2 text-body-sm rounded-glass ${
                             generatingProject
                               ? 'btn-primary opacity-50 cursor-not-allowed'
                               : 'btn-primary'

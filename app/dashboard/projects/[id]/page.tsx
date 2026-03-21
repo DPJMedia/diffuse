@@ -66,6 +66,8 @@ export default function ProjectDetailPage() {
   const [showProjectSettings, setShowProjectSettings] = useState(false)
   const [deletingAllInputs, setDeletingAllInputs] = useState(false)
   const [deletingAllOutputs, setDeletingAllOutputs] = useState(false)
+  const [showDeleteAllInputsConfirm, setShowDeleteAllInputsConfirm] = useState(false)
+  const [showDeleteAllOutputsConfirm, setShowDeleteAllOutputsConfirm] = useState(false)
   const [deletingProject, setDeletingProject] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -648,9 +650,8 @@ export default function ProjectDetailPage() {
   }
 
   const handleDeleteAllInputs = async () => {
-    if (!confirm('Are you sure you want to delete ALL inputs? This action cannot be undone.')) return
-    
     setDeletingAllInputs(true)
+    setShowDeleteAllInputsConfirm(false)
     try {
       const { error } = await supabase
         .from('diffuse_project_inputs')
@@ -670,9 +671,8 @@ export default function ProjectDetailPage() {
   }
 
   const handleDeleteAllOutputs = async () => {
-    if (!confirm('Are you sure you want to delete ALL outputs? This action cannot be undone.')) return
-    
     setDeletingAllOutputs(true)
+    setShowDeleteAllOutputsConfirm(false)
     try {
       const { error } = await supabase
         .from('diffuse_project_outputs')
@@ -1286,15 +1286,35 @@ export default function ProjectDetailPage() {
                 setEditProjectDescription(project?.description || '')
                 setShowProjectSettings(true)
               }}
-              className="btn-secondary px-4 py-2 flex items-center justify-center gap-2 text-body-sm w-full md:w-auto"
+              className="px-4 py-2 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors w-full md:w-auto"
               title="Project Settings"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              Settings
             </button>
+
+            {/* Quick Delete All Inputs Button */}
+            {(inputs.length > 0 || trashedInputs.length > 0) && (
+              <button
+                onClick={() => setShowDeleteAllInputsConfirm(true)}
+                disabled={deletingAllInputs}
+                className="px-4 py-2 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors w-full md:w-auto disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Delete All Inputs"
+              >
+                {deletingAllInputs ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                )}
+              </button>
+            )}
 
             {/* Add Input Dropdown */}
             <div ref={addInputDropdownRef} className="relative">
@@ -1568,6 +1588,26 @@ export default function ProjectDetailPage() {
           {/* Generate Dropdown - Same position as Inputs buttons */}
           {canEdit && inputs.length > 0 && (
             <div className="flex justify-end gap-3 mb-4 flex-wrap">
+              {/* Quick Delete All Outputs Button */}
+              {(outputs.length > 0 || trashedOutputs.length > 0) && (
+                <button
+                  onClick={() => setShowDeleteAllOutputsConfirm(true)}
+                  disabled={deletingAllOutputs}
+                  className="px-4 py-2 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Delete All Outputs"
+                >
+                  {deletingAllOutputs ? (
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  )}
+                </button>
+              )}
               {/* Secondary: Quick → type-only modal (Article/Ad) */}
               <button
                 onClick={() => setShowQuickGenerateModal(true)}
@@ -2268,6 +2308,60 @@ export default function ProjectDetailPage() {
                 </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete All Inputs Confirmation Modal */}
+      {showDeleteAllInputsConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllInputsConfirm(false)}>
+          <div className="glass-container p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-heading-md text-secondary-white font-medium mb-2">Delete All Inputs</h2>
+            <p className="text-body-sm text-medium-gray mb-6">
+              Are you sure you want to delete all inputs? This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteAllInputsConfirm(false)}
+                className="btn-secondary flex-1 py-3"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAllInputs}
+                disabled={deletingAllInputs}
+                className="btn-primary flex-1 py-3 disabled:opacity-50"
+              >
+                {deletingAllInputs ? 'Deleting...' : 'Delete All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete All Outputs Confirmation Modal */}
+      {showDeleteAllOutputsConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllOutputsConfirm(false)}>
+          <div className="glass-container p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-heading-md text-secondary-white font-medium mb-2">Delete All Outputs</h2>
+            <p className="text-body-sm text-medium-gray mb-6">
+              Are you sure you want to delete all outputs? This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteAllOutputsConfirm(false)}
+                className="btn-secondary flex-1 py-3"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAllOutputs}
+                disabled={deletingAllOutputs}
+                className="btn-primary flex-1 py-3 disabled:opacity-50"
+              >
+                {deletingAllOutputs ? 'Deleting...' : 'Delete All'}
+              </button>
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { checkRateLimit } from '@/lib/security/rate-limit'
 import { NextRequest } from 'next/server'
+import type { UserRole } from '@/types/database'
 
 /**
  * Validate redirect URL to prevent open redirect attacks
@@ -27,6 +28,13 @@ function getSafeRedirectUrl(path: string): string {
   return `${siteUrl}${path}`
 }
 
+function normalizeInviteRole(input: unknown): UserRole {
+  if (typeof input !== 'string') return 'viewer'
+  const role = input.toLowerCase()
+  if (role === 'admin' || role === 'editor' || role === 'viewer') return role
+  return 'viewer'
+}
+
 export async function GET(request: NextRequest) {
   // Rate limiting
   const rateLimitResponse = await checkRateLimit(request, 'public')
@@ -36,6 +44,10 @@ export async function GET(request: NextRequest) {
 
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
+  const inviteCodeRaw = requestUrl.searchParams.get('invite_code')
+  const inviteRoleRaw = requestUrl.searchParams.get('role')
+  const inviteCode = inviteCodeRaw ? inviteCodeRaw.trim().toUpperCase() : null
+  const inviteRole = normalizeInviteRole(inviteRoleRaw)
   
   // Validate code parameter (should be a valid auth code)
   if (code && code.length > 1000) {
@@ -48,7 +60,38 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      // Safe redirect to dashboard
+      // If this sign-in was triggered by an invite email, auto-join the workspace.
+      if (inviteCode && /^[A-Z0-9]{4,32}$/.test(inviteCode)) {
+        const { data: authData, error: authError } = await supabase.auth.getUser()
+        if (!authError && authData?.user) {
+          const { data: workspace, error: workspaceError } = await supabase
+            .from('diffuse_workspaces')
+            .select('id')
+            .eq('invite_code', inviteCode)
+            .maybeSingle()
+
+          if (!workspaceError && workspace?.id) {
+            const { error: insertError } = await supabase
+              .from('diffuse_workspace_members')
+              .insert({
+                workspace_id: workspace.id,
+                user_id: authData.user.id,
+                role: inviteRole,
+              })
+
+            // If the user is already a member, ignore the duplicate constraint error.
+            if (insertError && insertError.code !== '23505') {
+              return NextResponse.redirect(getSafeRedirectUrl('/login?error=invite_join_failed'), { status: 302 })
+            }
+
+            return NextResponse.redirect(getSafeRedirectUrl(`/dashboard/organization/${workspace.id}`), { status: 302 })
+          }
+
+          return NextResponse.redirect(getSafeRedirectUrl('/login?error=invite_invalid'), { status: 302 })
+        }
+      }
+
+      // Default: Safe redirect to dashboard
       return NextResponse.redirect(getSafeRedirectUrl('/dashboard'), { status: 302 })
     }
   }

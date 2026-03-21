@@ -44,3 +44,6 @@ next-env.d.ts
 
 # OS
 Thumbs.db
+
+# Supabase CLI local cache
+supabase/.temp/

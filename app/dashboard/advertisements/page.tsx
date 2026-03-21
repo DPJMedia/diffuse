@@ -31,6 +31,9 @@ export default function AdvertisementsPage() {
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free')
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isDeleting, setIsDeleting] = useState(false)
   const supabase = createClient()
 
   const subscriptionLimits: Record<SubscriptionTier, number> = {
@@ -44,20 +47,16 @@ export default function AdvertisementsPage() {
 
     setLoading(true)
     try {
-      // Build base query - get all projects, then filter for advertisements
+      // Only fetch advertisements created by this user — shared ones appear under Organizations
       const { data: allProjects, error } = await supabase
         .from('diffuse_projects')
         .select('*')
+        .eq('created_by', user.id)
         .order('created_at', { ascending: false })
       
       if (error) throw error
       
-      // Filter for user's projects (created by them or in their workspace)
-      let filteredProjects = (allProjects || []).filter(p => {
-        const isCreator = p.created_by === user.id
-        const isInWorkspace = currentWorkspace && p.workspace_id === currentWorkspace.id
-        return isCreator || isInWorkspace
-      })
+      const filteredProjects = allProjects || []
       
       // Projects + advertisements count toward the same limit
       setTotalCountForLimit(filteredProjects.length)
@@ -158,7 +157,7 @@ export default function AdvertisementsPage() {
     } finally {
       setLoading(false)
     }
-  }, [user, currentWorkspace, supabase])
+  }, [user, supabase])
 
   const fetchUserProfile = useCallback(async () => {
     if (!user) return
@@ -188,7 +187,7 @@ export default function AdvertisementsPage() {
       fetchAdvertisements()
       fetchUserProfile()
     }
-  }, [user, currentWorkspace, fetchAdvertisements, fetchUserProfile])
+  }, [user, fetchAdvertisements, fetchUserProfile])
 
   // Supabase Realtime subscriptions for instant updates
   useEffect(() => {
@@ -250,6 +249,42 @@ export default function AdvertisementsPage() {
     }
   }, [user, supabase, fetchAdvertisements])
 
+  const toggleSelectAd = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const exitEditMode = () => {
+    setIsEditMode(false)
+    setSelectedIds(new Set())
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Delete ${selectedIds.size} advertisement${selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.`)) return
+
+    setIsDeleting(true)
+    try {
+      const ids = Array.from(selectedIds)
+      for (const id of ids) {
+        await supabase.from('diffuse_project_inputs').delete().eq('project_id', id)
+        await supabase.from('diffuse_project_outputs').delete().eq('project_id', id)
+        await supabase.from('diffuse_projects').delete().eq('id', id)
+      }
+      exitEditMode()
+      fetchAdvertisements()
+    } catch (error) {
+      console.error('Error bulk deleting advertisements:', error)
+      alert('Failed to delete some advertisements')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   if (authLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -295,8 +330,47 @@ export default function AdvertisementsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Advertisements</h1>
-        {/* Desktop button - hidden on mobile */}
-        <CreateAdButton className="hidden md:flex" />
+        {/* Desktop buttons - hidden on mobile */}
+        <div className="hidden md:flex items-center gap-3">
+          {isEditMode ? (
+            <>
+              <button
+                onClick={handleBulkDelete}
+                disabled={selectedIds.size === 0 || isDeleting}
+                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {isDeleting ? 'Deleting...' : `Delete${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+              </button>
+              <button
+                onClick={exitEditMode}
+                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-medium-gray hover:bg-white/10 transition-all duration-300"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {advertisements.length > 0 && (
+                <button
+                  onClick={() => setIsEditMode(true)}
+                  className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                  title="Edit"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+              )}
+              <CreateAdButton className="flex" />
+            </>
+          )}
+        </div>
       </div>
 
       {/* Advertisements Grid */}
@@ -326,77 +400,122 @@ export default function AdvertisementsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-          {/* Mobile button - full width at top of grid, hidden on desktop */}
-          <CreateAdButton className="md:hidden col-span-1" />
-          {advertisements.map((ad) => (
-            <div
-              key={ad.id}
-              onClick={() => router.push(`/dashboard/projects/${ad.id}`)}
-              className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
-            >
-              {/* Name */}
-              <h3 className="text-heading-md text-secondary-white font-medium mb-4">
-                {ad.name}
-              </h3>
-              
-              {/* Details */}
-              <div className="space-y-2">
-                {/* Inputs & Outputs */}
-                <div className="flex items-center gap-2">
-                  <span 
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      router.push(`/dashboard/projects/${ad.id}?tab=inputs`)
-                    }}
-                    className="text-caption text-accent-purple uppercase tracking-wider hover:text-accent-purple/70 cursor-pointer transition-colors"
-                  >
-                    {ad.input_count} INPUT{ad.input_count !== 1 ? 'S' : ''}
-                  </span>
-                  <span className="text-caption text-medium-gray">•</span>
-                  <span 
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      router.push(`/dashboard/projects/${ad.id}?tab=outputs`)
-                    }}
-                    className="text-caption text-cosmic-orange uppercase tracking-wider hover:text-orange-300 cursor-pointer transition-colors"
-                  >
-                    {ad.output_count} OUTPUT{ad.output_count !== 1 ? 'S' : ''}
-                  </span>
-                </div>
+          {/* Mobile buttons - full width at top of grid, hidden on desktop */}
+          {!isEditMode ? (
+            <CreateAdButton className="md:hidden col-span-1" />
+          ) : (
+            <div className="md:hidden col-span-1 flex gap-2">
+              <button
+                onClick={handleBulkDelete}
+                disabled={selectedIds.size === 0 || isDeleting}
+                className="flex-1 px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {isDeleting ? 'Deleting...' : `Delete${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+              </button>
+              <button
+                onClick={exitEditMode}
+                className="px-4 py-2 flex items-center justify-center gap-2 text-body-sm rounded-glass-sm border border-white/20 text-medium-gray hover:bg-white/10 transition-all duration-300"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Cancel
+              </button>
+            </div>
+          )}
+          {advertisements.map((ad) => {
+            const isSelected = selectedIds.has(ad.id)
+            return (
+              <div
+                key={ad.id}
+                onClick={() => isEditMode ? toggleSelectAd(ad.id) : router.push(`/dashboard/projects/${ad.id}`)}
+                className={`glass-container p-6 transition-colors cursor-pointer relative ${
+                  isEditMode
+                    ? isSelected
+                      ? 'bg-cosmic-orange/10 border-cosmic-orange/50 hover:bg-cosmic-orange/15'
+                      : 'hover:bg-white/5'
+                    : 'hover:bg-white/10'
+                }`}
+              >
+                {/* Selection checkbox in edit mode */}
+                {isEditMode && (
+                  <div className={`absolute top-4 right-4 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                    isSelected ? 'bg-cosmic-orange border-cosmic-orange' : 'border-white/30 bg-transparent'
+                  }`}>
+                    {isSelected && (
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                )}
+                {/* Name */}
+                <h3 className={`text-heading-md text-secondary-white font-medium mb-4 ${isEditMode ? 'pr-8' : ''}`}>
+                  {ad.name}
+                </h3>
                 
-                {/* Created By & Date */}
-                <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider">
-                  <span>CREATED BY: {ad.creator_name}</span>
-                  <span>•</span>
-                  <span>{new Date(ad.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}</span>
-                </div>
-                
-                {/* Access */}
-                <div className="text-caption text-medium-gray uppercase tracking-wider">
-                  {ad.orgs && ad.orgs.length > 0 ? (
-                    <span className="flex items-center gap-1 flex-wrap">
-                      {ad.orgs.map((org, index) => (
-                        <span key={org.id} className="inline-flex items-center">
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              router.push(`/dashboard/organization/${org.id}`)
-                            }}
-                            className="text-medium-gray hover:text-gray-300 cursor-pointer transition-colors"
-                          >
-                            {org.name}
-                          </span>
-                          {index < ad.orgs!.length - 1 && <span className="text-medium-gray">,&nbsp;</span>}
-                        </span>
-                      ))}
+                {/* Details */}
+                <div className="space-y-2">
+                  {/* Inputs & Outputs */}
+                  <div className="flex items-center gap-2">
+                    <span 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (!isEditMode) router.push(`/dashboard/projects/${ad.id}?tab=inputs`)
+                      }}
+                      className={`text-caption text-accent-purple uppercase tracking-wider transition-colors ${!isEditMode ? 'hover:text-accent-purple/70 cursor-pointer' : ''}`}
+                    >
+                      {ad.input_count} INPUT{ad.input_count !== 1 ? 'S' : ''}
                     </span>
-                  ) : (
-                    <span>PRIVATE</span>
-                  )}
+                    <span className="text-caption text-medium-gray">•</span>
+                    <span 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (!isEditMode) router.push(`/dashboard/projects/${ad.id}?tab=outputs`)
+                      }}
+                      className={`text-caption text-cosmic-orange uppercase tracking-wider transition-colors ${!isEditMode ? 'hover:text-orange-300 cursor-pointer' : ''}`}
+                    >
+                      {ad.output_count} OUTPUT{ad.output_count !== 1 ? 'S' : ''}
+                    </span>
+                  </div>
+                  
+                  {/* Created By & Date */}
+                  <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider">
+                    <span>CREATED BY: {ad.creator_name}</span>
+                    <span>•</span>
+                    <span>{new Date(ad.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}</span>
+                  </div>
+                  
+                  {/* Access */}
+                  <div className="text-caption text-medium-gray uppercase tracking-wider">
+                    {ad.orgs && ad.orgs.length > 0 ? (
+                      <span className="flex items-center gap-1 flex-wrap">
+                        {ad.orgs.map((org, index) => (
+                          <span key={org.id} className="inline-flex items-center">
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (!isEditMode) router.push(`/dashboard/organization/${org.id}`)
+                              }}
+                              className={`text-medium-gray transition-colors ${!isEditMode ? 'hover:text-gray-300 cursor-pointer' : ''}`}
+                            >
+                              {org.name}
+                            </span>
+                            {index < ad.orgs!.length - 1 && <span className="text-medium-gray">,&nbsp;</span>}
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span>PRIVATE</span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

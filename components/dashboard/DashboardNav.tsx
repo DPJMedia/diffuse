@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
+import InviteMemberModal from './InviteMemberModal'
 
 // Context for mobile menu state
 const MobileMenuContext = createContext<{
@@ -55,9 +56,10 @@ export default function DashboardNav() {
   const { user, userProfile, signOut, workspaces } = useAuth()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
-  const [recentExpanded, setRecentExpanded] = useState(true)
+  const [recentExpanded, setRecentExpanded] = useState(false)
   const [subscriptionTier, setSubscriptionTier] = useState<string>('Free')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showInviteUserModal, setShowInviteUserModal] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
 
@@ -117,7 +119,7 @@ export default function DashboardNav() {
         .select('project_id, project_name, viewed_at')
         .eq('user_id', user.id)
         .order('viewed_at', { ascending: false })
-        .limit(10)
+        .limit(8)
       
       if (error) throw error
       if (!data || data.length === 0) {
@@ -332,7 +334,7 @@ export default function DashboardNav() {
       {/* Navigation Sidebar */}
       <nav 
         data-walkthrough="sidebar"
-        className={`fixed top-0 left-0 bottom-0 w-64 bg-white/5 backdrop-blur-glass border-r border-white/10 flex flex-col z-40 transition-transform duration-300 ease-in-out ${
+        className={`fixed top-0 left-0 bottom-0 w-64 md:w-[218px] bg-white/5 backdrop-blur-glass border-r border-white/10 flex flex-col z-40 transition-transform duration-300 ease-in-out ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
@@ -391,7 +393,7 @@ export default function DashboardNav() {
             }`}
           >
             <div className="space-y-1">
-              {recentProjects.map((project, index) => {
+              {recentProjects.slice(0, 8).map((project, index) => {
                 const isActive = pathname === `/dashboard/projects/${project.id}`
                 const isAd = project.projectType === 'advertisement'
                 
@@ -489,6 +491,31 @@ export default function DashboardNav() {
               </svg>
               Plans
             </Link>
+            {user && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUserMenu(false)
+                  setShowInviteUserModal(true)
+                }}
+                className="flex items-center gap-3 w-full px-4 py-3 text-left text-body-sm text-secondary-white hover:bg-white/10 transition-colors border-b border-white/10"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                  />
+                </svg>
+                Invite user
+              </button>
+            )}
             <button
               onClick={handleSignOut}
               className="flex items-center gap-3 w-full px-4 py-3 text-left text-body-sm text-red-400/80 hover:bg-red-500/10 transition-colors"
@@ -503,6 +530,12 @@ export default function DashboardNav() {
         </div>
       </div>
     </nav>
+    {showInviteUserModal && user && (
+      <InviteMemberModal
+        onClose={() => setShowInviteUserModal(false)}
+        onSuccess={() => {}}
+      />
+    )}
     </>
   )
 }
