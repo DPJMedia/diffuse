@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
-import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
+import { OrganizationDetailSkeleton } from '@/components/dashboard/Skeletons'
 import EmptyState from '@/components/dashboard/EmptyState'
 import CreateProjectModal from '@/components/dashboard/CreateProjectModal'
 import type { DiffuseWorkspace, DiffuseProject, OrganizationPlan } from '@/types/database'
@@ -446,11 +446,7 @@ export default function OrganizationDetailPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
+    return <OrganizationDetailSkeleton />
   }
 
   if (!workspace) {

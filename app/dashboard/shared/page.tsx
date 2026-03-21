@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
-import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
+import { GridPageSkeleton } from '@/components/dashboard/Skeletons'
 import EmptyState from '@/components/dashboard/EmptyState'
 import type { DiffuseProject } from '@/types/database'
 
@@ -25,7 +25,21 @@ export default function SharedWithMePage() {
   const { user, workspaces, loading: authLoading } = useAuth()
   const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([])
   const [loading, setLoading] = useState(true)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const supabase = createClient()
+
+  // Load view preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('sharedViewMode')
+    if (saved === 'list' || saved === 'grid') setViewMode(saved)
+  }, [])
+
+  // Save view preference to localStorage
+  const toggleViewMode = () => {
+    const newMode = viewMode === 'grid' ? 'list' : 'grid'
+    setViewMode(newMode)
+    localStorage.setItem('sharedViewMode', newMode)
+  }
 
   const fetchSharedProjects = useCallback(async () => {
     if (!user || workspaces.length === 0) {
@@ -109,11 +123,7 @@ export default function SharedWithMePage() {
   }, [user, workspaces, fetchSharedProjects])
 
   if (authLoading || !user) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
+    return <GridPageSkeleton />
   }
 
   const ViewOrgsButton = ({ className = '' }: { className?: string }) => (
@@ -134,14 +144,31 @@ export default function SharedWithMePage() {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-display-sm text-secondary-white">Shared With Me</h1>
         {/* Desktop button - hidden on mobile */}
-        <ViewOrgsButton className="hidden md:flex" />
+        <div className="hidden md:flex items-center gap-3">
+          {sharedProjects.length > 0 && (
+            <button
+              onClick={toggleViewMode}
+              className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+              title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+            >
+              {viewMode === 'grid' ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+              )}
+            </button>
+          )}
+          <ViewOrgsButton className="flex" />
+        </div>
       </div>
 
       {/* Shared Projects Grid */}
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <LoadingSpinner size="lg" />
-        </div>
+        <GridPageSkeleton showHeader={false} />
       ) : workspaces.length === 0 ? (
         <EmptyState
           icon={
@@ -173,17 +200,62 @@ export default function SharedWithMePage() {
           description="No projects have been shared with your organizations yet."
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+        <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4' : 'flex flex-col gap-3'}>
           {/* Mobile button - full width at top of grid, hidden on desktop */}
           <ViewOrgsButton className="md:hidden col-span-1" />
-          {sharedProjects.map((project) => (
+          {sharedProjects.map((project) => {
+            
+            if (viewMode === 'list') {
+              // List view: compact horizontal layout
+              return (
+                <div
+                  key={project.id}
+                  onClick={() => router.push(`/dashboard/projects/${project.id}`)}
+                  className="glass-container p-4 hover:bg-white/10 transition-colors cursor-pointer flex items-center gap-4"
+                >
+                  {/* Project icon */}
+                  <div className="flex-shrink-0 w-10 h-10 bg-white/5 rounded-glass flex items-center justify-center">
+                    <svg className="w-5 h-5 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                  </div>
+                  
+                  {/* Project info */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-body-md text-secondary-white font-medium truncate mb-1">
+                      {project.name}
+                    </h3>
+                    <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider flex-wrap">
+                      <span className="text-accent-purple">{project.input_count} INPUT{project.input_count !== 1 ? 'S' : ''}</span>
+                      <span>•</span>
+                      <span className="text-cosmic-orange">{project.output_count} OUTPUT{project.output_count !== 1 ? 'S' : ''}</span>
+                      <span>•</span>
+                      <span>BY: {project.author_name}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Status badge */}
+                  <div className="flex-shrink-0 text-caption text-medium-gray uppercase tracking-wider px-2 py-1 bg-white/5 rounded">
+                    {project.orgs && project.orgs.length > 0 ? 'SHARED' : 'PRIVATE'}
+                  </div>
+                  
+                  {/* Arrow */}
+                  <svg className="w-5 h-5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              )
+            }
+            
+            // Grid view: original card layout
+            return (
             <div
               key={project.id}
               onClick={() => router.push(`/dashboard/projects/${project.id}`)}
               className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
             >
               {/* Project Name */}
-              <h3 className="text-heading-md text-secondary-white font-medium mb-4">
+              <h3 className="text-body-md text-secondary-white font-medium mb-4">
                 {project.name}
               </h3>
               
@@ -244,7 +316,8 @@ export default function SharedWithMePage() {
                 </div>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

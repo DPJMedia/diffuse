@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
 import CreateProjectModal from '@/components/dashboard/CreateProjectModal'
 import EmptyState from '@/components/dashboard/EmptyState'
-import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
+import { GridPageSkeleton } from '@/components/dashboard/Skeletons'
 import type { DiffuseProject } from '@/types/database'
 
 type SubscriptionTier = 'free' | 'pro' | 'pro_max'
@@ -34,7 +34,21 @@ export default function AdvertisementsPage() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isDeleting, setIsDeleting] = useState(false)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const supabase = createClient()
+
+  // Load view preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('advertisementsViewMode')
+    if (saved === 'list' || saved === 'grid') setViewMode(saved)
+  }, [])
+
+  // Save view preference to localStorage
+  const toggleViewMode = () => {
+    const newMode = viewMode === 'grid' ? 'list' : 'grid'
+    setViewMode(newMode)
+    localStorage.setItem('advertisementsViewMode', newMode)
+  }
 
   const subscriptionLimits: Record<SubscriptionTier, number> = {
     free: 3,
@@ -286,11 +300,7 @@ export default function AdvertisementsPage() {
   }
 
   if (authLoading || !user) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
+    return <GridPageSkeleton />
   }
 
   const projectLimit = subscriptionLimits[subscriptionTier]
@@ -357,15 +367,32 @@ export default function AdvertisementsPage() {
           ) : (
             <>
               {advertisements.length > 0 && (
-                <button
-                  onClick={() => setIsEditMode(true)}
-                  className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
-                  title="Edit"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </button>
+                <>
+                  <button
+                    onClick={() => setIsEditMode(true)}
+                    className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                    title="Edit"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={toggleViewMode}
+                    className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                    title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+                  >
+                    {viewMode === 'grid' ? (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                      </svg>
+                    )}
+                  </button>
+                </>
               )}
               <CreateAdButton className="flex" />
             </>
@@ -375,9 +402,7 @@ export default function AdvertisementsPage() {
 
       {/* Advertisements Grid */}
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <LoadingSpinner size="lg" />
-        </div>
+        <GridPageSkeleton showHeader={false} />
       ) : advertisements.length === 0 ? (
         <EmptyState
           icon={
@@ -399,7 +424,7 @@ export default function AdvertisementsPage() {
           description="Create your first advertisement to generate sponsored content that looks like a news article."
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+        <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4' : 'flex flex-col gap-3'}>
           {/* Mobile buttons - full width at top of grid, hidden on desktop */}
           {!isEditMode ? (
             <CreateAdButton className="md:hidden col-span-1" />
@@ -428,6 +453,71 @@ export default function AdvertisementsPage() {
           )}
           {advertisements.map((ad) => {
             const isSelected = selectedIds.has(ad.id)
+            
+            if (viewMode === 'list') {
+              // List view: compact horizontal layout
+              return (
+                <div
+                  key={ad.id}
+                  onClick={() => isEditMode ? toggleSelectAd(ad.id) : router.push(`/dashboard/projects/${ad.id}`)}
+                  className={`glass-container p-4 transition-colors cursor-pointer flex items-center gap-4 ${
+                    isEditMode
+                      ? isSelected
+                        ? 'bg-cosmic-orange/10 border-cosmic-orange/50 hover:bg-cosmic-orange/15'
+                        : 'hover:bg-white/5'
+                      : 'hover:bg-white/10'
+                  }`}
+                >
+                  {/* Selection checkbox in edit mode */}
+                  {isEditMode && (
+                    <div className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                      isSelected ? 'bg-cosmic-orange border-cosmic-orange' : 'border-white/30 bg-transparent'
+                    }`}>
+                      {isSelected && (
+                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Ad icon */}
+                  <div className="flex-shrink-0 w-10 h-10 bg-white/5 rounded-glass flex items-center justify-center">
+                    <svg className="w-5 h-5 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                    </svg>
+                  </div>
+                  
+                  {/* Ad info */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-body-md text-secondary-white font-medium truncate mb-1">
+                      {ad.name}
+                    </h3>
+                    <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider flex-wrap">
+                      <span className="text-accent-purple">{ad.input_count} INPUT{ad.input_count !== 1 ? 'S' : ''}</span>
+                      <span>•</span>
+                      <span className="text-cosmic-orange">{ad.output_count} OUTPUT{ad.output_count !== 1 ? 'S' : ''}</span>
+                      <span>•</span>
+                      <span>{new Date(ad.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Status badge */}
+                  <div className="flex-shrink-0 text-caption text-medium-gray uppercase tracking-wider px-2 py-1 bg-white/5 rounded">
+                    {ad.orgs && ad.orgs.length > 0 ? 'PUBLIC' : 'PRIVATE'}
+                  </div>
+                  
+                  {/* Arrow */}
+                  {!isEditMode && (
+                    <svg className="w-5 h-5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </div>
+              )
+            }
+            
+            // Grid view: original card layout
             return (
               <div
                 key={ad.id}
@@ -453,7 +543,7 @@ export default function AdvertisementsPage() {
                   </div>
                 )}
                 {/* Name */}
-                <h3 className={`text-heading-md text-secondary-white font-medium mb-4 ${isEditMode ? 'pr-8' : ''}`}>
+                <h3 className={`text-body-md text-secondary-white font-medium mb-4 ${isEditMode ? 'pr-8' : ''}`}>
                   {ad.name}
                 </h3>
                 

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRelativeTime, formatDuration } from '@/lib/utils/format'
-import LoadingSpinner from './LoadingSpinner'
+import { SelectRecordingModalSkeleton } from './Skeletons'
 import { ModalShell, ModalHeader, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
 import { MODAL_ICONS } from './modalIcons'
 
@@ -159,9 +159,7 @@ export default function SelectRecordingModal({
       <ModalBody>
         <ModalScrollRegion>
           {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <LoadingSpinner size="lg" />
-            </div>
+            <SelectRecordingModalSkeleton />
           ) : recordings.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <MicrophoneIcon className="w-16 h-16 text-medium-gray mb-4" />

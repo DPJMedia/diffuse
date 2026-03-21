@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatDuration, sanitizeStorageFilename } from '@/lib/utils/format'
 import { useAuth } from '@/contexts/AuthContext'
-import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
+import { ProjectDetailSkeleton } from '@/components/dashboard/Skeletons'
 import EmptyState from '@/components/dashboard/EmptyState'
 import InputDetailModal from '@/components/dashboard/InputDetailModal'
 import OutputDetailModal from '@/components/dashboard/OutputDetailModal'
@@ -1163,11 +1163,7 @@ export default function ProjectDetailPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
+    return <ProjectDetailSkeleton />
   }
 
   if (!project) {

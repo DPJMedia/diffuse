@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
 import { formatRelativeTime, formatDuration } from '@/lib/utils/format'
+import { GridPageSkeleton } from '@/components/dashboard/Skeletons'
 import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 import EmptyState from '@/components/dashboard/EmptyState'
 import AudioPlayer from '@/components/dashboard/AudioPlayer'
@@ -297,6 +298,20 @@ export default function RecordingsPage() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [selectedRecordingIds, setSelectedRecordingIds] = useState<Set<string>>(new Set())
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+
+  // Load view preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('recordingsViewMode')
+    if (saved === 'list' || saved === 'grid') setViewMode(saved)
+  }, [])
+
+  // Save view preference to localStorage
+  const toggleViewMode = () => {
+    const newMode = viewMode === 'grid' ? 'list' : 'grid'
+    setViewMode(newMode)
+    localStorage.setItem('recordingsViewMode', newMode)
+  }
 
   // Transcript search state
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('')
@@ -1617,11 +1632,7 @@ export default function RecordingsPage() {
   }
 
   if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
+    return <GridPageSkeleton />
   }
 
   // Dynamic button based on recording state
@@ -1706,15 +1717,32 @@ export default function RecordingsPage() {
           ) : (
             <>
               {recordings.length > 0 && (
-                <button
-                  onClick={() => setIsEditMode(true)}
-                  className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
-                  title="Edit"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </button>
+                <>
+                  <button
+                    onClick={() => setIsEditMode(true)}
+                    className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                    title="Edit"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={toggleViewMode}
+                    className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
+                    title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+                  >
+                    {viewMode === 'grid' ? (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                      </svg>
+                    )}
+                  </button>
+                </>
               )}
               <button
                 onClick={() => uploadInputRef.current?.click()}
@@ -1734,9 +1762,7 @@ export default function RecordingsPage() {
 
       {/* Recordings Grid */}
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <LoadingSpinner size="lg" />
-        </div>
+        <GridPageSkeleton showHeader={false} />
       ) : recordings.length === 0 && !isRecording && !pendingBlob ? (
         <EmptyState
           icon={
@@ -1772,7 +1798,7 @@ export default function RecordingsPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+        <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4' : 'flex flex-col gap-3'}>
           {/* Mobile Buttons - stacked at top of grid */}
           {!isEditMode ? (
             <div className="md:hidden col-span-1 flex flex-col gap-2">
@@ -1815,6 +1841,104 @@ export default function RecordingsPage() {
             const isCurrentUpload = rec.id === uploadRecordingId
             const showUploadProgress = isCurrentUpload && uploadBytesTotal > 0
             const isSelected = selectedRecordingIds.has(rec.id)
+            
+            if (viewMode === 'list') {
+              // List view: compact horizontal layout
+              return (
+                <div
+                  key={rec.id}
+                  onClick={() => {
+                    if (isEditMode && !isCurrentUpload) {
+                      toggleSelectRecording(rec.id)
+                    } else if (!isCurrentUpload) {
+                      openRecording(rec)
+                    }
+                  }}
+                  className={`glass-container p-4 transition-colors flex items-center gap-4 ${
+                    isCurrentUpload
+                      ? 'cursor-wait'
+                      : isEditMode
+                      ? isSelected
+                        ? 'cursor-pointer bg-cosmic-orange/10 border-cosmic-orange/50 hover:bg-cosmic-orange/15'
+                        : 'cursor-pointer hover:bg-white/5'
+                      : 'cursor-pointer hover:bg-white/10'
+                  }`}
+                >
+                  {/* Selection checkbox in edit mode */}
+                  {isEditMode && !isCurrentUpload && (
+                    <div className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                      isSelected ? 'bg-cosmic-orange border-cosmic-orange' : 'border-white/30 bg-transparent'
+                    }`}>
+                      {isSelected && (
+                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Recording icon */}
+                  <div className="flex-shrink-0 w-10 h-10 bg-white/5 rounded-glass flex items-center justify-center">
+                    <svg className="w-5 h-5 text-cosmic-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                  </div>
+                  
+                  {/* Recording info */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-body-md text-secondary-white font-medium truncate mb-1">
+                      {rec.title}
+                    </h3>
+                    <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider flex-wrap">
+                      {showUploadProgress ? (
+                        <>
+                          <span className="text-accent-purple">{processingPercent}%</span>
+                          {uploadBytesTotal > 0 && (
+                            <>
+                              <span>•</span>
+                              <span className="text-cosmic-orange">
+                                {((uploadBytesLoaded || 0) / 1024 / 1024).toFixed(1)} MB / {(uploadBytesTotal / 1024 / 1024).toFixed(1)} MB
+                              </span>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-accent-purple">{formatDuration(rec.duration)}</span>
+                          <span>•</span>
+                          <span>{new Date(rec.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Status badge */}
+                  <div className="flex-shrink-0 text-caption uppercase tracking-wider px-2 py-1 bg-white/5 rounded">
+                    {rec.status === 'transcribed' ? (
+                      <span className="text-cosmic-orange">TRANSCRIBED</span>
+                    ) : rec.status === 'generating' ? (
+                      <span className="text-cosmic-orange flex items-center gap-1.5">
+                        <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        GENERATING
+                      </span>
+                    ) : (
+                      <span className="text-medium-gray">RECORDED</span>
+                    )}
+                  </div>
+                  
+                  {/* Arrow */}
+                  {!isEditMode && !isCurrentUpload && (
+                    <svg className="w-5 h-5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </div>
+              )
+            }
+            
+            // Grid view: original card layout
             return (
               <div
                 key={rec.id}
@@ -1847,7 +1971,7 @@ export default function RecordingsPage() {
                     )}
                   </div>
                 )}
-                <h3 className={`text-heading-md text-secondary-white font-medium mb-4 line-clamp-2 ${isEditMode && !isCurrentUpload ? 'pr-8' : ''}`}>
+                <h3 className={`text-body-md text-secondary-white font-medium mb-4 line-clamp-2 ${isEditMode && !isCurrentUpload ? 'pr-8' : ''}`}>
                   {rec.title}
                 </h3>
                 

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
-import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
+import { SubscriptionPageSkeleton } from '@/components/dashboard/Skeletons'
 import UpgradeCodeModal from '@/components/dashboard/UpgradeCodeModal'
 
 type SubscriptionTier = 'free' | 'pro' | 'pro_max'
@@ -241,11 +241,7 @@ export default function SubscriptionPage() {
   }
 
   if (loading || !profile) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
+    return <SubscriptionPageSkeleton />
   }
 
   // Ensure we have a valid subscription tier, default to 'free'

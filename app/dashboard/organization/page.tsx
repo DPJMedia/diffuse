@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
-import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
+import { GridPageSkeleton } from '@/components/dashboard/Skeletons'
 import EmptyState from '@/components/dashboard/EmptyState'
 import UpgradeCodeModal from '@/components/dashboard/UpgradeCodeModal'
 import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
@@ -247,11 +247,7 @@ export default function OrganizationPage() {
   }
 
   if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
+    return <GridPageSkeleton />
   }
 
   const JoinButton = ({ className = '' }: { className?: string }) => (

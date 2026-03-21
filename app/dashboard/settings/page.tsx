@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWalkthrough } from '@/contexts/WalkthroughContext'
 import { createClient } from '@/lib/supabase/client'
-import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
+import { SettingsPageSkeleton } from '@/components/dashboard/Skeletons'
 
 type SubscriptionTier = 'free' | 'pro' | 'pro_max'
 
@@ -158,11 +158,7 @@ export default function SettingsPage() {
   }
 
   if (loading || !profile) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
+    return <SettingsPageSkeleton />
   }
 
   return (
