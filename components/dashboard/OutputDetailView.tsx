@@ -1387,7 +1387,7 @@ export default function OutputDetailView({
                       </svg>
                     ) : (
                       <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        <path d="M5 13l4 4L19 7" />
                       </svg>
                     )}
                     <span className="text-body-sm text-secondary-white">{saving ? 'Saving…' : 'Save Changes'}</span>
