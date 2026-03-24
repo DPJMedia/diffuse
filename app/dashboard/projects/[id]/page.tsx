@@ -9,7 +9,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { ProjectDetailSkeleton } from '@/components/dashboard/Skeletons'
 import EmptyState from '@/components/dashboard/EmptyState'
 import InputDetailModal from '@/components/dashboard/InputDetailModal'
-import OutputDetailModal from '@/components/dashboard/OutputDetailModal'
 import SelectRecordingModal from '@/components/dashboard/SelectRecordingModal'
 import WebScrapingModal from '@/components/dashboard/WebScrapingModal'
 import GenerateOptionsModal, { WORKFLOW_PREFERENCES_KEY, type WorkflowPreferences } from '@/components/dashboard/GenerateOptionsModal'
@@ -18,11 +17,8 @@ import { addRecentProject } from '@/components/dashboard/DashboardNav'
 import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
 import { ConfirmModal } from '@/components/dashboard/ConfirmModal'
 import type { DiffuseProject, DiffuseProjectInput, DiffuseProjectOutput, ProjectVisibility, UserRole, InputType, OutputType } from '@/types/database'
+import { getRoleLevel } from '@/lib/projects/projectRoles'
 // tus-js-client will be dynamically imported when needed
-
-// Role hierarchy for permissions
-const roleHierarchy = ['viewer', 'editor', 'admin', 'owner'] as const
-const getRoleLevel = (role: string) => roleHierarchy.indexOf(role as typeof roleHierarchy[number])
 
 export default function ProjectDetailPage() {
   const params = useParams()
@@ -41,13 +37,17 @@ export default function ProjectDetailPage() {
   const returnTo = searchParams.get('returnTo')
   const backHref = returnTo && returnTo.startsWith('/dashboard/') ? returnTo : '/dashboard'
 
+  const hrefToOutputDetail = (outputId: string) => {
+    const path = `/dashboard/projects/${projectId}/outputs/${outputId}`
+    return returnTo ? `${path}?returnTo=${encodeURIComponent(returnTo)}` : path
+  }
+
   const [project, setProject] = useState<DiffuseProject | null>(null)
   const [inputs, setInputs] = useState<DiffuseProjectInput[]>([])
   const [outputs, setOutputs] = useState<DiffuseProjectOutput[]>([])
   const [activeTab, setActiveTab] = useState<'inputs' | 'outputs' | 'visibility' | 'trash'>(initialTab)
   const [loading, setLoading] = useState(true)
   const [selectedInput, setSelectedInput] = useState<DiffuseProjectInput | null>(null)
-  const [selectedOutput, setSelectedOutput] = useState<DiffuseProjectOutput | null>(null)
   const [showRecordingModal, setShowRecordingModal] = useState(false)
   const [showWebScrapingModal, setShowWebScrapingModal] = useState(false)
   const [showTextInputModal, setShowTextInputModal] = useState(false)
@@ -349,11 +349,6 @@ export default function ProjectDetailPage() {
 
       if (outputsError) throw outputsError
       setOutputs(outputsData || [])
-      setSelectedOutput(prev => {
-        if (!prev) return null
-        const found = (outputsData || []).find((o: DiffuseProjectOutput) => o.id === prev.id)
-        return found ?? prev
-      })
     } catch (error) {
       console.error('Error fetching project data:', error)
     } finally {
@@ -589,25 +584,6 @@ export default function ProjectDetailPage() {
     } catch (error) {
       console.error('Error deleting input:', error)
       alert('Failed to delete input')
-      throw error
-    }
-  }
-
-  const handleDeleteOutput = async (outputId: string) => {
-    if (!confirm('Are you sure you want to delete this output? This cannot be undone.')) return
-    
-    try {
-      const { error } = await supabase
-        .from('diffuse_project_outputs')
-        .delete()
-        .eq('id', outputId)
-
-      if (error) throw error
-
-      fetchProjectData()
-    } catch (error) {
-      console.error('Error deleting output:', error)
-      alert('Failed to delete output')
       throw error
     }
   }
@@ -1176,7 +1152,7 @@ export default function ProjectDetailPage() {
                   return (
                     <div
                       key={output.id}
-                      onClick={() => setSelectedOutput(output)}
+                      onClick={() => router.push(hrefToOutputDetail(output.id))}
                       className="glass-container p-5 hover:bg-white/10 transition-colors cursor-pointer"
                     >
                       <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${outputColor} mb-2`}>
@@ -1241,7 +1217,7 @@ export default function ProjectDetailPage() {
                             </svg>
                           </button>
                           {isExpanded && (
-                            <div onClick={() => setSelectedOutput(output)} className="pb-3 px-1 cursor-pointer group/expanded">
+                            <div onClick={() => router.push(hrefToOutputDetail(output.id))} className="pb-3 px-1 cursor-pointer group/expanded">
                               <div className="group-hover/expanded:bg-white/5 transition-colors rounded p-2 -m-2">
                                 {info.subtitle && <p className={`text-caption uppercase tracking-wider mb-1 ${outputColor}`}>{info.subtitle.toUpperCase()}</p>}
                                 {info.excerpt && <p className="text-body-sm text-medium-gray mb-2 line-clamp-3">{info.excerpt}</p>}
@@ -1446,8 +1422,9 @@ export default function ProjectDetailPage() {
                   <div className="grid grid-cols-3 gap-2 px-4 pb-3">
                     {outputs.filter(o => o.cover_photo_path).map((output) => (
                       <button
+                        type="button"
                         key={output.id}
-                        onClick={() => setSelectedOutput(output)}
+                        onClick={() => router.push(hrefToOutputDetail(output.id))}
                         className="aspect-square rounded-glass overflow-hidden hover:opacity-80 transition-opacity relative group"
                       >
                         <Image
@@ -1640,22 +1617,6 @@ export default function ProjectDetailPage() {
           onUpdate={fetchProjectData}
           canEdit={canEdit}
           canDelete={canDelete}
-        />
-      )}
-      {selectedOutput && (
-        <OutputDetailModal
-          output={selectedOutput}
-          onClose={() => setSelectedOutput(null)}
-          onUpdate={fetchProjectData}
-          onReeditComplete={(updated) => {
-            setSelectedOutput(updated)
-            fetchProjectData()
-          }}
-          onDelete={handleDeleteOutput}
-          canEdit={canEdit}
-          canDelete={canDelete}
-          fallbackCoverPhotoPath={inputs.find(i => i.type === 'cover_photo')?.file_path ?? null}
-          projectType={project?.project_type === 'advertisement' ? 'advertisement' : project?.project_type === 'project' ? 'article' : undefined}
         />
       )}
       {showRecordingModal && (

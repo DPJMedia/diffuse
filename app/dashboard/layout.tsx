@@ -1,11 +1,11 @@
 'use client'
 
-import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { WalkthroughProvider } from '@/contexts/WalkthroughContext'
 import DashboardNav, { useSidebar, SidebarProvider } from '@/components/dashboard/DashboardNav'
 import Walkthrough from '@/components/dashboard/Walkthrough'
+import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar()
@@ -21,7 +21,13 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         isCollapsed ? 'ml-0 md:ml-[72px]' : 'ml-0 md:ml-[218px]'
       }`}>
         <div className="w-full">
-          <Suspense fallback={null}>
+          <Suspense
+            fallback={
+              <div className="flex min-h-[40vh] items-center justify-center">
+                <LoadingSpinner size="lg" />
+              </div>
+            }
+          >
             {children}
           </Suspense>
         </div>
