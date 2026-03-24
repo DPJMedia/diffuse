@@ -34,13 +34,13 @@
     @apply bg-gradient-to-r from-cosmic-orange to-rich-orange bg-clip-text text-transparent;
   }
   
-  /* Button Styles */
+  /* Primary: flat cosmic-orange — same #ff9628 as dashboard output count text (text-cosmic-orange). Hover: brightness only, no scale. */
   .btn-primary {
-    @apply px-8 py-4 bg-gradient-to-r from-cosmic-orange to-rich-orange text-white font-medium rounded-glass-sm transition-all duration-300 hover:shadow-lg hover:shadow-cosmic-orange/30 hover:scale-105 active:scale-95;
+    @apply inline-flex items-center justify-center px-8 py-4 bg-cosmic-orange text-white font-medium rounded-glass-sm transition-all duration-300 hover:brightness-[1.12] disabled:opacity-50 disabled:hover:brightness-100 disabled:cursor-not-allowed;
   }
-  
+
   .btn-secondary {
-    @apply px-8 py-4 glass-container-hover text-secondary-white font-medium transition-all duration-300 hover:scale-105 active:scale-95;
+    @apply inline-flex items-center justify-center px-8 py-4 bg-dark-gray border border-secondary-white/25 text-secondary-white font-medium rounded-glass-sm transition-all duration-300 hover:brightness-[1.12] disabled:opacity-50 disabled:hover:brightness-100 disabled:cursor-not-allowed;
   }
   
   /* Section Spacing */

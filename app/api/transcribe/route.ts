@@ -65,6 +65,232 @@ function buildTranscriptWithMinuteMarkers(
   return result.trim()
 }
 
+/** Common false positives from entity detection on phrases like "my name is …" */
+const INVALID_PERSON_NAME_TEXT = new Set([
+  'name',
+  'names',
+  'my',
+  'me',
+  'i',
+  'hi',
+  'hello',
+  'hey',
+  'sir',
+  'ma\'am',
+  'mr',
+  'mrs',
+  'ms',
+  'dr',
+])
+
+/** AssemblyAI Entity objects do not include a confidence field — only type/text/times. */
+const MIN_NAME_SCORE = 2
+
+function isPlausiblePersonName(text: string): boolean {
+  const t = text.trim()
+  if (t.length < 2) return false
+  if (INVALID_PERSON_NAME_TEXT.has(t.toLowerCase())) return false
+  // Reject single generic tokens that are not real names
+  if (/^(the|a|an|and|or|but)$/i.test(t)) return false
+  return true
+}
+
+/**
+ * Reject strings that look like addresses, conversational fragments, or mis-tags
+ * (e.g. "on Summer street and", "like husband") — often wrongly returned as person_name.
+ */
+function looksLikeNonPersonLabel(text: string): boolean {
+  const t = text.trim()
+  const lower = t.toLowerCase()
+  if (t.length > 80) return true
+  if (/^(on|at|in|like|with|for|to)\s+/i.test(t)) return true
+  if (/\b(street|avenue|road|boulevard|blvd|drive|lane|highway|hwy|\bst\b|\bdr\b)\b/i.test(t)) return true
+  if (/\b(and|or)\s*$/i.test(t.trim())) return true
+  if (/\b(girlfriend|boyfriend|husband|wife|neighbor|owner|landlord)\b/i.test(lower)) return true
+  if (/\b(i just|i'm on|i am on|we lose|we didn't|pipe burst|degrees)\b/i.test(lower)) return true
+  return false
+}
+
+function scoreNameCandidate(text: string, source: 'entity' | 'intro' | 'explicit'): number {
+  let s = 0
+  const t = text.trim()
+  if (!isPlausiblePersonName(t) || looksLikeNonPersonLabel(t)) return -100
+  if (source === 'entity') s += 1
+  if (source === 'intro') s += 4
+  if (source === 'explicit') s += 5
+  // Light preference for two-word names (typical First Last)
+  const words = t.split(/\s+/).filter(Boolean)
+  if (words.length >= 2 && words.length <= 4) s += 1
+  return s
+}
+
+/** Find which utterance owns this time range (entity midpoint must fall inside utterance). */
+function findUtteranceForEntity(
+  utterances: Array<{ speaker: string; text: string; start: number; end: number }>,
+  entityStart: number,
+  entityEnd: number
+) {
+  const mid = (entityStart + entityEnd) / 2
+  const byMid = utterances.find((u) => mid >= u.start && mid <= u.end)
+  if (byMid) return byMid
+  // Fallback: any overlap with the entity span (handles boundary quirks)
+  return utterances.find((u) => entityStart < u.end && entityEnd > u.start)
+}
+
+/**
+ * Pull a likely self-introduced name from the first thing a speaker says.
+ * Complements entity detection when it tags only "name" or misses the full name.
+ */
+function extractNameFromUtteranceText(text: string): string | null {
+  const cleaned = text.replace(/\s+/g, ' ').trim()
+  if (!cleaned) return null
+
+  // 1–4 words; avoids swallowing "… and I'm …" after the name
+  const NAME = String.raw`[A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,3}`
+
+  const patterns: RegExp[] = [
+    new RegExp(String.raw`\bmy name is\s+(${NAME})\b`, 'i'),
+    new RegExp(String.raw`\bmy name's\s+(${NAME})\b`, 'i'),
+    new RegExp(String.raw`\bi am\s+(${NAME})\b`, 'i'),
+    new RegExp(String.raw`\bi'm\s+(${NAME})\b`, 'i'),
+    new RegExp(String.raw`\bthis is\s+(${NAME})\b`, 'i'),
+    new RegExp(String.raw`\bcall me\s+(${NAME})\b`, 'i'),
+  ]
+
+  for (const re of patterns) {
+    const m = cleaned.match(re)
+    if (m?.[1] && isPlausiblePersonName(m[1]) && !looksLikeNonPersonLabel(m[1])) return m[1].trim()
+  }
+  return null
+}
+
+/**
+ * Names often appear mid-utterance after setup ("… pipe burst … Stephen Watson. Sorry. Steve Watson.")
+ * AssemblyAI may tag an early fragment as person_name; scan the full text for explicit/corrected names.
+ */
+function extractNameFromFullSpeakerText(text: string): string | null {
+  const cleaned = text.replace(/\s+/g, ' ').trim()
+  if (!cleaned) return null
+
+  // "Sorry. Steve Watson" / "Sorry, Steve Watson"
+  const sorryAfter = cleaned.match(
+    /\b(?:sorry|I'm sorry)\s*[.,]?\s+([A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,2})\b/i
+  )
+  if (sorryAfter?.[1] && isPlausiblePersonName(sorryAfter[1]) && !looksLikeNonPersonLabel(sorryAfter[1])) {
+    return sorryAfter[1].trim()
+  }
+
+  // "Stephen Watson. Sorry" — name before apology/correction
+  const beforeSorry = cleaned.match(
+    /\b([A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,2})\s*[.,]\s*(?:sorry|I'm sorry)\b/i
+  )
+  if (beforeSorry?.[1] && isPlausiblePersonName(beforeSorry[1]) && !looksLikeNonPersonLabel(beforeSorry[1])) {
+    return beforeSorry[1].trim()
+  }
+
+  // Two-word capitalized names (First Last) — prefer last plausible match (often correction)
+  const matches = [...cleaned.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g)]
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const cand = matches[i][1].trim()
+    if (isPlausiblePersonName(cand) && !looksLikeNonPersonLabel(cand)) return cand
+  }
+
+  return null
+}
+
+/** Extract person names from entities and map them to speakers based on timestamps */
+function extractSpeakerNamesFromEntities(
+  entities: Array<{ entity_type: string; text: string; start: number; end: number }> | undefined,
+  utterances: Array<{ speaker: string; text: string; start: number; end: number }> | undefined
+): Record<string, Array<{ text: string; score: number }>> {
+  const speakerNames: Record<string, Array<{ text: string; score: number }>> = {}
+  if (!entities || !utterances || utterances.length === 0) return speakerNames
+
+  const personNames = entities.filter((e) => (e.entity_type || '').toLowerCase() === 'person_name')
+  if (personNames.length === 0) return speakerNames
+
+  for (const person of personNames) {
+    const raw = person.text.trim()
+    if (!isPlausiblePersonName(raw) || looksLikeNonPersonLabel(raw)) continue
+
+    const utterance = findUtteranceForEntity(utterances, person.start, person.end)
+    if (!utterance) continue
+    const sp = utterance.speaker
+    if (!speakerNames[sp]) speakerNames[sp] = []
+    const sc = scoreNameCandidate(raw, 'entity')
+    if (sc >= MIN_NAME_SCORE) speakerNames[sp].push({ text: raw, score: sc })
+  }
+
+  return speakerNames
+}
+
+function extractSpeakerNamesFromUtteranceHeuristics(
+  utterances: Array<{ speaker: string; text: string; start: number; end: number }> | undefined
+): Record<string, Array<{ text: string; score: number }>> {
+  const out: Record<string, Array<{ text: string; score: number }>> = {}
+  if (!utterances || utterances.length === 0) return out
+
+  const perSpeaker: Record<string, string[]> = {}
+  for (const u of utterances) {
+    if (!perSpeaker[u.speaker]) perSpeaker[u.speaker] = []
+    if (perSpeaker[u.speaker].length < 5) perSpeaker[u.speaker].push(u.text)
+  }
+
+  for (const [speaker, texts] of Object.entries(perSpeaker)) {
+    const combined = texts.join(' ')
+    const candidates: Array<{ text: string; score: number }> = []
+
+    for (const t of texts) {
+      const intro = extractNameFromUtteranceText(t)
+      if (intro) {
+        const sc = scoreNameCandidate(intro, 'intro')
+        if (sc >= MIN_NAME_SCORE) candidates.push({ text: intro, score: sc })
+      }
+    }
+
+    const full = extractNameFromFullSpeakerText(combined)
+    if (full) {
+      const sc = scoreNameCandidate(full, 'explicit')
+      if (sc >= MIN_NAME_SCORE) candidates.push({ text: full, score: sc })
+    }
+
+    if (candidates.length) {
+      candidates.sort((a, b) => b.score - a.score)
+      out[speaker] = candidates
+    }
+  }
+  return out
+}
+
+/** Merge entity-based and heuristic names; pick highest-scoring candidate per speaker */
+function buildDetectedSpeakerNames(
+  entities: Array<{ entity_type: string; text: string; start: number; end: number }> | undefined,
+  utterances: Array<{ speaker: string; text: string; start: number; end: number }> | undefined
+): Record<string, string> | undefined {
+  if (!utterances || utterances.length === 0) return undefined
+
+  const fromEntities = extractSpeakerNamesFromEntities(entities, utterances)
+  const fromHeuristics = extractSpeakerNamesFromUtteranceHeuristics(utterances)
+
+  const speakers = new Set([...Object.keys(fromEntities), ...Object.keys(fromHeuristics)])
+  const merged: Record<string, string> = {}
+
+  for (const sp of speakers) {
+    const all: Array<{ text: string; score: number }> = [
+      ...(fromEntities[sp] || []),
+      ...(fromHeuristics[sp] || []),
+    ]
+    if (all.length === 0) continue
+    all.sort((a, b) => b.score - a.score)
+    const best = all[0]
+    if (best && best.score >= MIN_NAME_SCORE && isPlausiblePersonName(best.text)) {
+      merged[sp] = best.text
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined
+}
+
 /** Generate a short title from transcription using Open Router (Claude 3.5 Haiku). Returns null if key missing or request fails. */
 async function generateTitleWithOpenRouter(transcriptionText: string): Promise<string | null> {
   const apiKey = process.env.OPENROUTER
@@ -205,6 +431,7 @@ export async function POST(request: NextRequest) {
     const transcript = await assemblyai.transcripts.transcribe({
       audio: audioUrl,
       speaker_labels: true,
+      entity_detection: true, // Enable entity detection to extract person names
     })
     console.log('AssemblyAI processing complete')
 
@@ -226,6 +453,9 @@ export async function POST(request: NextRequest) {
     // Build transcription text and utterances (for speaker diarization / "Who is this?" flow)
     let transcriptionText: string | null = null
     let utterances: Array<{ speaker: string; text: string; start: number; end: number }> | undefined
+    /** Entities must come from the same transcript object as utterances (timestamps align). */
+    let entitiesForNames: Array<{ entity_type: string; text: string; start: number; end: number }> | undefined =
+      transcript.entities as typeof entitiesForNames
 
     console.log('AssemblyAI response - status:', transcript.status)
     console.log('AssemblyAI response - has utterances:', !!transcript.utterances)
@@ -250,6 +480,7 @@ export async function POST(request: NextRequest) {
         audio: audioUrl,
         speaker_labels: true,
         speakers_expected: 4, // Hint: look for at least 4 speakers
+        entity_detection: true, // Enable entity detection to extract person names
       })
       
       console.log('Retry complete - utterances:', retryTranscript.utterances?.length ?? 0)
@@ -269,6 +500,7 @@ export async function POST(request: NextRequest) {
           start: u.start ?? 0,
           end: u.end ?? 0,
         }))
+        entitiesForNames = retryTranscript.entities as typeof entitiesForNames
       } else {
         console.log('❌ Retry also failed - falling back to plain transcript')
         transcriptionText = transcript.text ?? null
@@ -300,6 +532,12 @@ export async function POST(request: NextRequest) {
       transcriptionText = transcript.text ?? null
     }
 
+    // Extract speaker names from entities + self-intro heuristics (entities must match utterance timestamps)
+    const detectedSpeakerNames = buildDetectedSpeakerNames(entitiesForNames, utterances)
+    if (detectedSpeakerNames) {
+      console.log('Detected speaker names from entities:', detectedSpeakerNames)
+    }
+
     // Generate title: prefer Open Router (Claude 3.5 Haiku), fallback to excerpt from transcription
     const openRouterTitle = transcriptionText
       ? await generateTitleWithOpenRouter(transcriptionText)
@@ -324,6 +562,7 @@ export async function POST(request: NextRequest) {
           status: 'transcribed',
           utterances: utterances ?? null,
           original_utterances: utterances ?? null,
+          detected_speaker_names: detectedSpeakerNames ?? null,
         })
         .eq('id', recordingId)
         .select()
@@ -345,6 +584,7 @@ export async function POST(request: NextRequest) {
       utterances: utterances ?? undefined,
       suggestedTitle: suggestedTitle,
       finalTitle: finalTitle,
+      detectedSpeakerNames: detectedSpeakerNames ?? undefined,
     })
 
     // Add rate limit headers

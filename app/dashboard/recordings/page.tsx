@@ -1553,70 +1553,8 @@ export default function RecordingsPage() {
   }
 
   const openRecording = async (rec: Recording) => {
-    setPendingTranscription(null)
-    setEditingTitle(false)
-    setEditedTitle('')
-    setTranscribePhase('idle')
-    setUtterances([])
-    setOriginalUtterances([])
-    setSpeakerList([])
-    setSpeakerMap({})
-    setCurrentSpeakerIndex(0)
-    setCurrentClipSegment(0)
-    setSpeakerName('')
-    setSpeakerPosition('')
-    setCurrentPlaybackTimeMs(null)
-    setIsUserScrollingTranscript(false)
-    lastScrolledToIndexRef.current = -1
-
-    const { data, error } = await supabase
-      .from('diffuse_recordings')
-      .select('*')
-      .eq('id', rec.id)
-      .single()
-
-    if (error || !data) {
-      console.error('Error fetching recording:', error)
-      setSelectedRecording(rec)
-      return
-    }
-
-    setSelectedRecording(data)
-    const loadedUtterances = Array.isArray(data.utterances) ? data.utterances : []
-    setUtterances(loadedUtterances)
-    const loadedOriginalUtterances = Array.isArray(data.original_utterances)
-      ? data.original_utterances
-      : loadedUtterances
-    setOriginalUtterances(loadedOriginalUtterances)
-
-    const existingMap: Record<string, { name: string; position?: string }> =
-      data.speaker_map && typeof data.speaker_map === 'object' ? data.speaker_map : {}
-    setSpeakerMap(existingMap)
-
-    // If we have diarization utterances but speaker names aren't filled yet, resume "Who is this?" flow.
-    if (loadedUtterances.length > 0) {
-      const uniqueSpeakers: string[] = []
-      for (const u of loadedUtterances) {
-        if (!uniqueSpeakers.includes(u.speaker)) uniqueSpeakers.push(u.speaker)
-      }
-      uniqueSpeakers.sort((a, b) => a.localeCompare(b))
-
-      const firstMissingIndex = uniqueSpeakers.findIndex((s) => !existingMap?.[s]?.name)
-      if (firstMissingIndex !== -1) {
-        pauseCurrentSpeakerClip()
-        setSpeakerList(uniqueSpeakers)
-        setCurrentSpeakerIndex(firstMissingIndex)
-        setCurrentClipSegment(0)
-        const s = uniqueSpeakers[firstMissingIndex]
-        const existing = existingMap[s]
-        setSpeakerName(existing?.name && existing.name.startsWith('Speaker ') ? '' : (existing?.name || ''))
-        setSpeakerPosition(existing?.position || '')
-        setClipError(false)
-        setTranscribePhase('identifying_speakers')
-      } else {
-        setSpeakerList(uniqueSpeakers)
-      }
-    }
+    // Navigate to the recording detail page
+    router.push(`/dashboard/recordings/${rec.id}`)
   }
 
   const startSpeakerWalkthrough = () => {
@@ -1733,6 +1671,9 @@ export default function RecordingsPage() {
   const openRecordingModal = () => {
     setShowRecordingModal(true)
   }
+  const goToNewRecordingPage = () => {
+    router.push('/dashboard/recordings/new')
+  }
 
   // Dynamic button based on recording state
   const RecordingButton = ({
@@ -1776,7 +1717,7 @@ export default function RecordingsPage() {
         menuClassName={menuClassName}
         uploading={uploading}
         onUpload={openUploadPicker}
-        onStartRecording={openRecordingModal}
+        onStartRecording={goToNewRecordingPage}
       />
     )
   }
@@ -1793,7 +1734,7 @@ export default function RecordingsPage() {
       />
       
       <div className="flex items-center justify-between mb-8">
-        <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Recordings</h1>
+        <h1 data-walkthrough="page-title" className="text-heading-lg text-secondary-white">Recordings</h1>
         <div className="hidden md:flex items-center gap-3">
           {showBulkActions ? (
             <>
@@ -1820,19 +1761,7 @@ export default function RecordingsPage() {
           ) : (
             <>
               <div className="flex w-[92px] items-center justify-end gap-3">
-                {viewMode === 'grid' && recordings.length > 0 ? (
-                  <button
-                    onClick={() => setIsEditMode(true)}
-                    className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
-                    title="Edit"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-                ) : (
-                  <div className="h-10 w-10 flex-shrink-0" />
-                )}
+                <div className="h-10 w-10 flex-shrink-0" />
                 <button
                   onClick={toggleViewMode}
                   className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
@@ -1960,10 +1889,10 @@ export default function RecordingsPage() {
                   
                   {/* Recording info */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-body-md text-secondary-white font-medium truncate mb-1">
+                    <h3 className="text-body-md text-secondary-white font-semibold truncate mb-1">
                       {rec.title}
                     </h3>
-                    <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider flex-wrap">
+                    <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider flex-wrap min-w-0">
                       {showUploadProgress ? (
                         <>
                           <span className="text-accent-purple">{processingPercent}%</span>
@@ -1978,28 +1907,27 @@ export default function RecordingsPage() {
                         </>
                       ) : (
                         <>
-                          <span className="text-accent-purple">{formatDuration(rec.duration)}</span>
-                          <span>•</span>
-                          <span>{new Date(rec.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}</span>
+                          <span className="text-accent-purple flex-shrink-0">{formatDuration(rec.duration)}</span>
+                          <span className="flex-shrink-0">•</span>
+                          {rec.status === 'transcribed' ? (
+                            <span className="text-cosmic-orange flex-shrink-0">TRANSCRIBED</span>
+                          ) : rec.status === 'generating' ? (
+                            <span className="text-cosmic-orange flex items-center gap-1.5 flex-shrink-0">
+                              <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              GENERATING
+                            </span>
+                          ) : (
+                            <span className="text-medium-gray flex-shrink-0">RECORDED</span>
+                          )}
+                          <span className="flex-shrink-0">•</span>
+                          <span className="flex-shrink-0">
+                            {new Date(rec.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+                          </span>
                         </>
                       )}
                     </div>
-                  </div>
-                  
-                  {/* Status badge */}
-                  <div className="flex-shrink-0 text-caption uppercase tracking-wider px-2 py-1 bg-white/5 rounded">
-                    {rec.status === 'transcribed' ? (
-                      <span className="text-cosmic-orange">TRANSCRIBED</span>
-                    ) : rec.status === 'generating' ? (
-                      <span className="text-cosmic-orange flex items-center gap-1.5">
-                        <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        GENERATING
-                      </span>
-                    ) : (
-                      <span className="text-medium-gray">RECORDED</span>
-                    )}
                   </div>
                   
                   {/* Arrow */}
@@ -2045,12 +1973,12 @@ export default function RecordingsPage() {
                     )}
                   </div>
                 )}
-                <h3 className={`text-body-md text-secondary-white font-medium mb-4 line-clamp-2 ${isEditMode && !isCurrentUpload ? 'pr-8' : ''}`}>
+                <h3 className={`text-body-md text-secondary-white font-semibold mb-4 line-clamp-2 ${isEditMode && !isCurrentUpload ? 'pr-8' : ''}`}>
                   {rec.title}
                 </h3>
                 
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-caption uppercase tracking-wider">
+                  <div className="flex items-center gap-2 text-caption uppercase tracking-wider flex-wrap">
                     {showUploadProgress ? (
                       <>
                         <span className="text-accent-purple">{processingPercent}%</span>
@@ -2065,8 +1993,8 @@ export default function RecordingsPage() {
                       </>
                     ) : (
                       <>
-                        <span className="text-accent-purple">{formatDuration(rec.duration)}</span>
-                        <span className="text-medium-gray">•</span>
+                        <span className="text-accent-purple flex-shrink-0">{formatDuration(rec.duration)}</span>
+                        <span className="text-medium-gray flex-shrink-0">•</span>
                         {rec.status === 'transcribed' ? (
                           <span className="text-cosmic-orange">TRANSCRIBED</span>
                         ) : rec.status === 'generating' ? (
@@ -2141,13 +2069,7 @@ export default function RecordingsPage() {
                       className="w-full text-heading-lg bg-white/5 border border-white/10 rounded-glass px-4 py-2 text-secondary-white focus:outline-none focus:border-cosmic-orange transition-colors"
                       autoFocus
                     />
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <button
-                        onClick={() => updateRecordingTitle(editedTitle)}
-                        className="btn-primary px-4 py-2 text-body-sm w-full sm:w-auto"
-                      >
-                        Save
-                      </button>
+                    <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
                       <button
                         onClick={() => {
                           setEditingTitle(false)
@@ -2156,6 +2078,12 @@ export default function RecordingsPage() {
                         className="btn-secondary px-4 py-2 text-body-sm w-full sm:w-auto"
                       >
                         Cancel
+                      </button>
+                      <button
+                        onClick={() => updateRecordingTitle(editedTitle)}
+                        className="btn-primary px-4 py-2 text-body-sm w-full sm:w-auto"
+                      >
+                        Save
                       </button>
                     </div>
                   </div>

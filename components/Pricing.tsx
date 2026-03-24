@@ -153,10 +153,8 @@ export default function Pricing() {
                   <div className="mt-auto">
                     <a
                       href={plan.name === 'Usage-Based' ? 'mailto:support@diffuse.ai?subject=Usage-based%20plan%20inquiry' : '/login'}
-                      className={`block w-full py-3 text-center font-medium rounded-glass transition-all ${
-                        plan.highlight
-                          ? 'bg-cosmic-orange hover:bg-rich-orange text-black'
-                          : 'bg-white/10 hover:bg-white/20 text-secondary-white'
+                      className={`block w-full py-3 text-center text-body-md font-medium ${
+                        plan.highlight ? 'btn-primary' : 'btn-secondary'
                       }`}
                     >
                       {plan.cta}

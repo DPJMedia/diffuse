@@ -96,6 +96,7 @@ export interface DiffuseRecording {
   transcription: string | null
   original_transcription?: string | null
   speaker_map?: Record<string, { name: string; position?: string }> | null
+  detected_speaker_names?: Record<string, string> | null // Auto-detected names from AssemblyAI entity detection
   utterances?: RecordingUtterance[] | null
   original_utterances?: RecordingUtterance[] | null
   status: RecordingStatus

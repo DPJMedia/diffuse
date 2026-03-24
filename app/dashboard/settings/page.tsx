@@ -166,7 +166,7 @@ export default function SettingsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Settings</h1>
+          <h1 data-walkthrough="page-title" className="text-heading-lg text-secondary-white">Settings</h1>
           <p className="text-body-md text-medium-gray mt-1">
             Manage your account and preferences
           </p>
@@ -190,7 +190,7 @@ export default function SettingsPage() {
         {/* Organizations */}
         {workspaces.length > 0 && (
         <div className="glass-container p-6 mb-6">
-          <h2 className="text-heading-lg text-secondary-white mb-4">Organizations</h2>
+          <h2 className="text-heading-md text-secondary-white mb-4">Organizations</h2>
           <div className="divide-y divide-white/10">
             {workspaces.map(({ workspace, role }) => {
               // Check if user is owner (owners can't leave)
@@ -230,7 +230,7 @@ export default function SettingsPage() {
 
       {/* Profile Settings */}
       <div className="glass-container p-6 mb-6">
-        <h2 className="text-heading-lg text-secondary-white mb-6">Profile</h2>
+        <h2 className="text-heading-md text-secondary-white mb-6">Profile</h2>
         <div className="space-y-4">
           <div>
             <label className="block text-caption text-medium-gray mb-1">Email</label>
@@ -247,7 +247,7 @@ export default function SettingsPage() {
 
       {/* Help & Support */}
       <div className="glass-container p-6 mb-6">
-        <h2 className="text-heading-lg text-secondary-white mb-4">Help & Support</h2>
+        <h2 className="text-heading-md text-secondary-white mb-4">Help & Support</h2>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="text-body-md text-secondary-white mb-1">Platform Walkthrough</p>

@@ -52,12 +52,12 @@ export default function Navbar() {
         <div className="border-b border-white/10 bg-black/50">
           <div className="container-padding">
             <div className="max-w-7xl mx-auto flex items-center justify-between py-4">
-              {/* Logo */}
+              {/* Logo — matches dashboard sidebar capitalization */}
               <Link
-                href="/"
+                href={user ? '/dashboard' : '/login'}
                 className="text-lg sm:text-xl md:text-2xl font-bold hover:text-cosmic-orange transition-colors"
               >
-                diffuse<span className="text-cosmic-orange">.ai</span>
+                Diffuse<span className="text-cosmic-orange">.AI</span>
               </Link>
 
               {/* Desktop Navigation */}

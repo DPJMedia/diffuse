@@ -64,7 +64,7 @@ export default function WalkthroughProjectPage() {
             </svg>
           </button>
           <div className="flex-1">
-            <h1 className="text-display-sm text-secondary-white">City Council Meeting - Jan 2026</h1>
+            <h1 className="text-heading-lg text-secondary-white">City Council Meeting - Jan 2026</h1>
             <p className="text-body-lg text-medium-gray mt-1">Example project for walkthrough</p>
           </div>
         </div>
@@ -266,7 +266,7 @@ export default function WalkthroughProjectPage() {
               </p>
             </div>
           </div>
-          <button className="btn-primary px-6 py-3 text-xs font-medium">Save Visibility Settings</button>
+          <button type="button" className="btn-primary px-6 py-3 text-body-md">Save Visibility Settings</button>
         </div>
       )}
     </div>

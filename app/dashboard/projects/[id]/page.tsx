@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import Image from 'next/image'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatDuration, sanitizeStorageFilename } from '@/lib/utils/format'
@@ -15,6 +16,7 @@ import GenerateOptionsModal, { WORKFLOW_PREFERENCES_KEY, type WorkflowPreference
 import QuickGenerateModal from '@/components/dashboard/QuickGenerateModal'
 import { addRecentProject } from '@/components/dashboard/DashboardNav'
 import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
+import { ConfirmModal } from '@/components/dashboard/ConfirmModal'
 import type { DiffuseProject, DiffuseProjectInput, DiffuseProjectOutput, ProjectVisibility, UserRole, InputType, OutputType } from '@/types/database'
 // tus-js-client will be dynamically imported when needed
 
@@ -41,9 +43,7 @@ export default function ProjectDetailPage() {
 
   const [project, setProject] = useState<DiffuseProject | null>(null)
   const [inputs, setInputs] = useState<DiffuseProjectInput[]>([])
-  const [trashedInputs, setTrashedInputs] = useState<DiffuseProjectInput[]>([])
   const [outputs, setOutputs] = useState<DiffuseProjectOutput[]>([])
-  const [trashedOutputs, setTrashedOutputs] = useState<DiffuseProjectOutput[]>([])
   const [activeTab, setActiveTab] = useState<'inputs' | 'outputs' | 'visibility' | 'trash'>(initialTab)
   const [loading, setLoading] = useState(true)
   const [selectedInput, setSelectedInput] = useState<DiffuseProjectInput | null>(null)
@@ -64,13 +64,6 @@ export default function ProjectDetailPage() {
   const [generatingArticle, setGeneratingArticle] = useState(false)
   const [generateSource, setGenerateSource] = useState<'quick' | 'refine' | null>(null)
   const [showProjectSettings, setShowProjectSettings] = useState(false)
-  const [deletingAllInputs, setDeletingAllInputs] = useState(false)
-  const [deletingAllOutputs, setDeletingAllOutputs] = useState(false)
-  const [showDeleteAllInputsConfirm, setShowDeleteAllInputsConfirm] = useState(false)
-  const [showDeleteAllOutputsConfirm, setShowDeleteAllOutputsConfirm] = useState(false)
-  const [deletingProject, setDeletingProject] = useState(false)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showAddInputDropdown, setShowAddInputDropdown] = useState(false)
   const [showQuickGenerateModal, setShowQuickGenerateModal] = useState(false)
   const [showGenerateOptionsModal, setShowGenerateOptionsModal] = useState(false)
@@ -80,10 +73,35 @@ export default function ProjectDetailPage() {
   const audioInputRef = useRef<HTMLInputElement>(null)
   const documentInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
-  const coverPhotoInputRef = useRef<HTMLInputElement>(null)
   const addInputDropdownRef = useRef<HTMLDivElement>(null)
+  const threeDotsRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
+  const [showThreeDotsMenu, setShowThreeDotsMenu] = useState(false)
+  const [expandedOutputId, setExpandedOutputId] = useState<string | null>(null)
+  const [visibilitySectionOpen, setVisibilitySectionOpen] = useState(false)
+  const [settingsSectionOpen, setSettingsSectionOpen] = useState(false)
+  const [imagesSectionOpen, setImagesSectionOpen] = useState(true)
+  const [loadingDots, setLoadingDots] = useState('.')
+  const [showDeleteInputsConfirm, setShowDeleteInputsConfirm] = useState(false)
+  const [showDeleteOutputsConfirm, setShowDeleteOutputsConfirm] = useState(false)
+  const [showDeleteProjectConfirm, setShowDeleteProjectConfirm] = useState(false)
   useBodyScrollLock(showTextInputModal || showProjectSettings)
+
+  // Animate loading dots
+  useEffect(() => {
+    if (!generatingArticle) {
+      setLoadingDots('.')
+      return
+    }
+    const interval = setInterval(() => {
+      setLoadingDots(prev => {
+        if (prev === '.') return '..'
+        if (prev === '..') return '...'
+        return '.'
+      })
+    }, 500)
+    return () => clearInterval(interval)
+  }, [generatingArticle])
 
   // Close Add Input dropdown when clicking outside (same behavior as modals)
   useEffect(() => {
@@ -96,6 +114,18 @@ export default function ProjectDetailPage() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showAddInputDropdown])
+
+  // Close three-dots menu when clicking outside
+  useEffect(() => {
+    if (!showThreeDotsMenu) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (threeDotsRef.current && !threeDotsRef.current.contains(e.target as Node)) {
+        setShowThreeDotsMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showThreeDotsMenu])
 
   // Permission helpers
   const isProjectOwner = project?.created_by === user?.id
@@ -309,18 +339,6 @@ export default function ProjectDetailPage() {
         return found ?? prev
       })
 
-      // Fetch trashed inputs
-      const { data: trashedData, error: trashedError } = await supabase
-        .from('diffuse_project_inputs')
-        .select('*')
-        .eq('project_id', projectId)
-        .not('deleted_at', 'is', null)
-        .order('deleted_at', { ascending: false })
-
-      if (!trashedError) {
-        setTrashedInputs(trashedData || [])
-      }
-
       // Fetch active outputs (not deleted)
       const { data: outputsData, error: outputsError } = await supabase
         .from('diffuse_project_outputs')
@@ -336,18 +354,6 @@ export default function ProjectDetailPage() {
         const found = (outputsData || []).find((o: DiffuseProjectOutput) => o.id === prev.id)
         return found ?? prev
       })
-
-      // Fetch trashed outputs
-      const { data: trashedOutputsData, error: trashedOutputsError } = await supabase
-        .from('diffuse_project_outputs')
-        .select('*')
-        .eq('project_id', projectId)
-        .not('deleted_at', 'is', null)
-        .order('deleted_at', { ascending: false })
-
-      if (!trashedOutputsError) {
-        setTrashedOutputs(trashedOutputsData || [])
-      }
     } catch (error) {
       console.error('Error fetching project data:', error)
     } finally {
@@ -528,10 +534,12 @@ export default function ProjectDetailPage() {
 
   const handleDeleteInput = async (inputId: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    if (!confirm('Are you sure you want to delete this input? This cannot be undone.')) return
+    
     try {
       const { error } = await supabase
         .from('diffuse_project_inputs')
-        .update({ deleted_at: new Date().toISOString() })
+        .delete()
         .eq('id', inputId)
 
       if (error) throw error
@@ -539,55 +547,6 @@ export default function ProjectDetailPage() {
     } catch (error) {
       console.error('Error deleting input:', error)
       alert('Failed to delete input')
-    }
-  }
-
-  const handleRestoreInput = async (inputId: string) => {
-    try {
-      const { error } = await supabase
-        .from('diffuse_project_inputs')
-        .update({ deleted_at: null })
-        .eq('id', inputId)
-
-      if (error) throw error
-      fetchProjectData()
-    } catch (error) {
-      console.error('Error restoring input:', error)
-      alert('Failed to restore input')
-    }
-  }
-
-  const handlePermanentDeleteInput = async (inputId: string) => {
-    if (!confirm('Are you sure you want to permanently delete this input? This cannot be undone.')) return
-    
-    try {
-      const { error } = await supabase
-        .from('diffuse_project_inputs')
-        .delete()
-        .eq('id', inputId)
-
-      if (error) throw error
-      fetchProjectData()
-    } catch (error) {
-      console.error('Error permanently deleting input:', error)
-      alert('Failed to delete input')
-    }
-  }
-
-  const handlePermanentDeleteOutput = async (outputId: string) => {
-    if (!confirm('Are you sure you want to permanently delete this output? This cannot be undone.')) return
-    
-    try {
-      const { error } = await supabase
-        .from('diffuse_project_outputs')
-        .delete()
-        .eq('id', outputId)
-
-      if (error) throw error
-      fetchProjectData()
-    } catch (error) {
-      console.error('Error permanently deleting output:', error)
-      alert('Failed to delete output')
     }
   }
 
@@ -617,10 +576,12 @@ export default function ProjectDetailPage() {
   }
 
   const handleDeleteInputFromModal = async (inputId: string) => {
+    if (!confirm('Are you sure you want to delete this input? This cannot be undone.')) return
+    
     try {
       const { error } = await supabase
         .from('diffuse_project_inputs')
-        .update({ deleted_at: new Date().toISOString() })
+        .delete()
         .eq('id', inputId)
 
       if (error) throw error
@@ -633,10 +594,12 @@ export default function ProjectDetailPage() {
   }
 
   const handleDeleteOutput = async (outputId: string) => {
+    if (!confirm('Are you sure you want to delete this output? This cannot be undone.')) return
+    
     try {
       const { error } = await supabase
         .from('diffuse_project_outputs')
-        .update({ deleted_at: new Date().toISOString() })
+        .delete()
         .eq('id', outputId)
 
       if (error) throw error
@@ -650,8 +613,6 @@ export default function ProjectDetailPage() {
   }
 
   const handleDeleteAllInputs = async () => {
-    setDeletingAllInputs(true)
-    setShowDeleteAllInputsConfirm(false)
     try {
       const { error } = await supabase
         .from('diffuse_project_inputs')
@@ -659,20 +620,14 @@ export default function ProjectDetailPage() {
         .eq('project_id', projectId)
 
       if (error) throw error
-
       fetchProjectData()
-      setShowProjectSettings(false)
     } catch (error) {
       console.error('Error deleting all inputs:', error)
       alert('Failed to delete inputs')
-    } finally {
-      setDeletingAllInputs(false)
     }
   }
 
   const handleDeleteAllOutputs = async () => {
-    setDeletingAllOutputs(true)
-    setShowDeleteAllOutputsConfirm(false)
     try {
       const { error } = await supabase
         .from('diffuse_project_outputs')
@@ -680,21 +635,14 @@ export default function ProjectDetailPage() {
         .eq('project_id', projectId)
 
       if (error) throw error
-
       fetchProjectData()
-      setShowProjectSettings(false)
     } catch (error) {
       console.error('Error deleting all outputs:', error)
       alert('Failed to delete outputs')
-    } finally {
-      setDeletingAllOutputs(false)
     }
   }
 
   const handleDeleteProject = async () => {
-    if (deleteConfirmText !== 'DELETE') return
-    
-    setDeletingProject(true)
     try {
       // Delete inputs first
       const { error: inputsError } = await supabase
@@ -702,10 +650,7 @@ export default function ProjectDetailPage() {
         .delete()
         .eq('project_id', projectId)
 
-      if (inputsError) {
-        console.error('Error deleting inputs:', inputsError)
-        throw new Error(`Failed to delete inputs: ${inputsError.message}`)
-      }
+      if (inputsError) throw inputsError
 
       // Delete outputs
       const { error: outputsError } = await supabase
@@ -713,10 +658,7 @@ export default function ProjectDetailPage() {
         .delete()
         .eq('project_id', projectId)
 
-      if (outputsError) {
-        console.error('Error deleting outputs:', outputsError)
-        throw new Error(`Failed to delete outputs: ${outputsError.message}`)
-      }
+      if (outputsError) throw outputsError
 
       // Delete the project
       const { error: projectError } = await supabase
@@ -724,32 +666,12 @@ export default function ProjectDetailPage() {
         .delete()
         .eq('id', projectId)
 
-      if (projectError) {
-        console.error('Error deleting project:', projectError)
-        throw new Error(`Failed to delete project: ${projectError.message}`)
-      }
+      if (projectError) throw projectError
 
       router.push('/dashboard')
     } catch (error: any) {
       console.error('Error deleting project:', error)
-      alert(error.message || 'Failed to delete project. Check console for details.')
-      setDeletingProject(false)
-    }
-  }
-
-
-  const handleRestoreOutput = async (outputId: string) => {
-    try {
-      const { error } = await supabase
-        .from('diffuse_project_outputs')
-        .update({ deleted_at: null })
-        .eq('id', outputId)
-
-      if (error) throw error
-      fetchProjectData()
-    } catch (error) {
-      console.error('Error restoring output:', error)
-      alert('Failed to restore output')
+      alert('Failed to delete project')
     }
   }
 
@@ -795,7 +717,7 @@ export default function ProjectDetailPage() {
     },
     source: 'quick' | 'refine' = 'refine'
   ) => {
-    if (inputs.length === 0) {
+    if (nonImageInputsCount === 0) {
       alert('Please add at least one input before generating')
       return
     }
@@ -828,8 +750,6 @@ export default function ProjectDetailPage() {
 
       // Refresh data to show new output
       fetchProjectData()
-      // Switch to outputs tab to show the result
-      setActiveTab('outputs')
     } catch (error) {
       console.error('Error generating:', error)
       alert(error instanceof Error ? error.message : 'Failed to generate')
@@ -1158,7 +1078,6 @@ export default function ProjectDetailPage() {
       if (audioInputRef.current) audioInputRef.current.value = ''
       if (documentInputRef.current) documentInputRef.current.value = ''
       if (imageInputRef.current) imageInputRef.current.value = ''
-      if (coverPhotoInputRef.current) coverPhotoInputRef.current.value = ''
     }
   }
 
@@ -1186,453 +1105,188 @@ export default function ProjectDetailPage() {
     failed: 'bg-red-500/20 text-red-400 border-red-500/30',
   }
 
+  const generatingIsAd = project?.project_type === 'advertisement'
+  const generatingOutputColor = generatingIsAd ? 'text-amber-400' : 'text-teal-400'
+  const generatingOutputLabel = generatingIsAd ? 'ADVERTISEMENT' : 'ARTICLE'
+  
+  // Filter out image-type inputs for counts
+  const nonImageInputs = inputs.filter(i => i.type !== 'cover_photo' && i.type !== 'image')
+  const nonImageInputsCount = nonImageInputs.length
+
   return (
     <div>
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <button
-            onClick={() => router.push(backHref)}
-            className="text-medium-gray hover:text-secondary-white transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div className="flex-1">
-            <h1 className="text-display-sm text-secondary-white">{project.name}</h1>
-            {project.description && (
-              <p className="text-body-lg text-medium-gray mt-1 line-clamp-2">{project.description}</p>
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div className="mb-6">
+        <button
+          onClick={() => router.push(backHref)}
+          className="inline-flex items-center gap-1.5 text-medium-gray hover:text-secondary-white transition-colors text-body-sm mb-3"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          All Projects
+        </button>
+                <h1 className="text-heading-lg text-secondary-white font-medium leading-tight">
+                  {project.name}
+                </h1>
+                {project.description && (
+                  <p className="text-body-sm text-medium-gray mt-1">
+                    {project.description}
+                  </p>
+                )}
+      </div>
+
+      {/* ── Two-column layout ──────────────────────────────── */}
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+
+        {/* ── Left: Output column ───────────────────────── */}
+        <div className="flex-1 min-w-0">
+
+          {/* Output display area */}
+          <div>
+            {/* Generating placeholder card — shown as first item */}
+            {generatingArticle && (
+              <div className="glass-container p-5 mb-4">
+                <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${generatingOutputColor} mb-2`}>
+                  <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">
+                    <svg fill="none" viewBox="0 0 24 24" className="animate-spin">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </span>
+                  <span>{generatingOutputLabel}</span>
+                </div>
+                <h3 className="text-body-md text-secondary-white font-semibold">Generating output{loadingDots}</h3>
+              </div>
+            )}
+
+            {outputs.length === 0 && !generatingArticle ? (
+              <div className="py-12 flex items-center justify-center">
+                <p className="text-body-md text-medium-gray text-center">No output generated yet.</p>
+              </div>
+            ) : (
+              <>
+                {/* First output — primary card */}
+                {outputs.length > 0 && (() => {
+                  const output = outputs[0]
+                  const info = getOutputInfo(output)
+                  const isAd = output.output_type === 'ad'
+                  const outputLabel = isAd ? 'ADVERTISEMENT' : 'ARTICLE'
+                  const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
+                  return (
+                    <div
+                      key={output.id}
+                      onClick={() => setSelectedOutput(output)}
+                      className="glass-container p-5 hover:bg-white/10 transition-colors cursor-pointer"
+                    >
+                      <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${outputColor} mb-2`}>
+                        <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">
+                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </span>
+                        <span>{outputLabel}</span>
+                        {output.workflow_status && output.workflow_status !== 'completed' && (
+                          <span className={`ml-auto px-2 py-0.5 rounded text-caption border ${workflowStatusColors[output.workflow_status as keyof typeof workflowStatusColors] || ''}`}>
+                            {output.workflow_status.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-body-md text-secondary-white font-semibold mb-1 line-clamp-2">{info.title}</h3>
+                      {info.subtitle && (
+                        <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${outputColor}`}>{info.subtitle.toUpperCase()}</p>
+                      )}
+                      {info.excerpt && (
+                        <p className="text-body-sm text-medium-gray mb-3 line-clamp-3">{info.excerpt}</p>
+                      )}
+                      <div className="text-caption uppercase tracking-wider">
+                        <span className={outputColor}>{info.author.toUpperCase()}</span>
+                        <span className="text-medium-gray"> • </span>
+                        <span className="text-medium-gray">
+                          {new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Past outputs accordion */}
+                {outputs.length > 1 && (
+                  <div className="mt-4 border-t border-white/10 pt-3">
+                    <p className="text-caption text-medium-gray uppercase tracking-wider mb-1">Past Outputs</p>
+                    {outputs.slice(1).map((output) => {
+                      const info = getOutputInfo(output)
+                      const isAd = output.output_type === 'ad'
+                      const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
+                      const isExpanded = expandedOutputId === output.id
+                      return (
+                        <div key={output.id} className="border-b border-white/10 last:border-b-0">
+                          <button
+                            onClick={() => setExpandedOutputId(isExpanded ? null : output.id)}
+                            className="w-full flex items-center justify-between py-2.5 text-left hover:bg-white/5 transition-colors rounded px-1"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5 ${outputColor}`}>
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </span>
+                              <span className="text-body-sm text-secondary-white truncate">{info.title}</span>
+                              <span className="text-caption text-medium-gray flex-shrink-0">
+                                {new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+                              </span>
+                            </div>
+                            <svg className={`w-3.5 h-3.5 text-medium-gray flex-shrink-0 ml-2 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {isExpanded && (
+                            <div onClick={() => setSelectedOutput(output)} className="pb-3 px-1 cursor-pointer group/expanded">
+                              <div className="group-hover/expanded:bg-white/5 transition-colors rounded p-2 -m-2">
+                                {info.subtitle && <p className={`text-caption uppercase tracking-wider mb-1 ${outputColor}`}>{info.subtitle.toUpperCase()}</p>}
+                                {info.excerpt && <p className="text-body-sm text-medium-gray mb-2 line-clamp-3">{info.excerpt}</p>}
+                                <div className="text-caption uppercase tracking-wider">
+                                  <span className={outputColor}>{info.author.toUpperCase()}</span>
+                                  <span className="text-medium-gray"> • </span>
+                                  <span className="text-medium-gray">{new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-4 mb-8 border-b border-white/10">
-        <button
-          onClick={() => setActiveTab('inputs')}
-          className={`pb-3 px-4 text-body-md font-medium transition-colors relative ${
-            activeTab === 'inputs'
-              ? 'text-cosmic-orange'
-              : 'text-secondary-white hover:text-white'
-          }`}
-        >
-          Inputs<span className="hidden md:inline"> ({inputs.length})</span>
-          {activeTab === 'inputs' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-cosmic-orange" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('outputs')}
-          className={`pb-3 px-4 text-body-md font-medium transition-colors relative ${
-            activeTab === 'outputs'
-              ? 'text-cosmic-orange'
-              : 'text-secondary-white hover:text-white'
-          }`}
-        >
-          Outputs<span className="hidden md:inline"> ({outputs.length})</span>
-          {activeTab === 'outputs' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-cosmic-orange" />
-          )}
-        </button>
-        {/* Visibility tab - only visible to project owner */}
-        {isProjectOwner && (
-        <button
-          onClick={() => setActiveTab('visibility')}
-          className={`pb-3 px-4 text-body-md font-medium transition-colors relative ${
-            activeTab === 'visibility'
-              ? 'text-cosmic-orange'
-              : 'text-secondary-white hover:text-white'
-          }`}
-        >
-          Visibility<span className="hidden md:inline"> ({visibility === 'public' ? selectedOrgs.length : 0})</span>
-          {activeTab === 'visibility' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-cosmic-orange" />
-          )}
-        </button>
-        )}
-        {(trashedInputs.length > 0 || trashedOutputs.length > 0) && (
-          <button
-            onClick={() => setActiveTab('trash')}
-            className={`pb-3 px-4 text-body-md font-medium transition-colors relative ${
-              activeTab === 'trash'
-                ? 'text-cosmic-orange'
-                : 'text-secondary-white hover:text-white'
-            }`}
-          >
-            Trash<span className="hidden md:inline"> ({trashedInputs.length + trashedOutputs.length})</span>
-            {activeTab === 'trash' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-cosmic-orange" />
-            )}
-          </button>
-        )}
-      </div>
+        {/* ── Right sidebar — single container ──────────── */}
+        <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 glass-container overflow-hidden">
 
-      {/* Inputs Tab */}
-      {activeTab === 'inputs' && (
-        <div>
-          {/* Add Input Controls - Only visible to editors and above */}
+          {/* Quick + Generate buttons — top of sidebar */}
           {canEdit && (
-          <div className="flex flex-col md:flex-row md:justify-end gap-3 mb-4">
-            {/* Settings Button */}
-            <button
-              onClick={() => {
-                setEditProjectName(project?.name || '')
-                setEditProjectDescription(project?.description || '')
-                setShowProjectSettings(true)
-              }}
-              className="px-4 py-2 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors w-full md:w-auto"
-              title="Project Settings"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-
-            {/* Quick Delete All Inputs Button */}
-            {(inputs.length > 0 || trashedInputs.length > 0) && (
+            <div className="flex border-b border-white/10">
               <button
-                onClick={() => setShowDeleteAllInputsConfirm(true)}
-                disabled={deletingAllInputs}
-                className="px-4 py-2 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors w-full md:w-auto disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Delete All Inputs"
+                onClick={() => setShowQuickGenerateModal(true)}
+                disabled={generatingArticle || nonImageInputsCount === 0}
+                className="btn-secondary flex-1 py-3 gap-1.5 text-body-sm rounded-none border-r border-secondary-white/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                title={nonImageInputsCount === 0 ? 'Add inputs first' : 'Quick generate'}
               >
-                {deletingAllInputs ? (
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                {generatingArticle && generateSource === 'quick' ? (
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 )}
+                Quick
               </button>
-            )}
-
-            {/* Add Input Dropdown */}
-            <div ref={addInputDropdownRef} className="relative">
-              <button
-                onClick={() => setShowAddInputDropdown(!showAddInputDropdown)}
-                disabled={uploadingFile}
-                className="btn-primary px-4 py-2 flex items-center justify-center gap-2 text-body-sm w-full md:w-auto disabled:opacity-50"
-              >
-                {uploadingFile ? (
-                  <>
-                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    {uploadProgress || 'Processing...'}
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Add Input
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </>
-                )}
-              </button>
-
-              {/* Dropdown Menu */}
-              {showAddInputDropdown && (
-                <div className="absolute right-0 mt-2 w-56 glass-container py-2 z-50">
-                  {/* Recording */}
-                  <button
-                    onClick={() => {
-                      setShowAddInputDropdown(false)
-                      setShowRecordingModal(true)
-                    }}
-                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                    <div>
-                      <p className="text-body-sm text-secondary-white">Recording</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">FROM YOUR RECORDINGS</p>
-                    </div>
-                  </button>
-
-                  {/* Text Input */}
-                  <button
-                    onClick={() => {
-                      setShowAddInputDropdown(false)
-                      setShowTextInputModal(true)
-                    }}
-                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <div>
-                      <p className="text-body-sm text-secondary-white">Text</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">TYPE OR PASTE TEXT</p>
-                    </div>
-                  </button>
-
-                  {/* Web Scraping */}
-                  <button
-                    onClick={() => {
-                      setShowAddInputDropdown(false)
-                      setShowWebScrapingModal(true)
-                    }}
-                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                    </svg>
-                    <div>
-                      <p className="text-body-sm text-secondary-white">Web Scraping</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">INSERT URL</p>
-                    </div>
-                  </button>
-
-                  {/* Audio File */}
-                  <button
-                    onClick={() => {
-                      setShowAddInputDropdown(false)
-                      audioInputRef.current?.click()
-                    }}
-                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                    </svg>
-                    <div>
-                      <p className="text-body-sm text-secondary-white">Audio File</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">MP3, WAV, M4A</p>
-                    </div>
-                  </button>
-
-                  {/* Document */}
-                  <button
-                    onClick={() => {
-                      setShowAddInputDropdown(false)
-                      documentInputRef.current?.click()
-                    }}
-                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                    <div>
-                      <p className="text-body-sm text-secondary-white">Document</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">PDF, DOCX, TXT</p>
-                    </div>
-                  </button>
-
-                  {/* Cover Photo */}
-                  <button
-                    onClick={() => {
-                      setShowAddInputDropdown(false)
-                      coverPhotoInputRef.current?.click()
-                    }}
-                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/10 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-lime-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <div>
-                      <p className="text-body-sm text-secondary-white">Cover Photo</p>
-                      <p className="text-caption text-medium-gray uppercase tracking-wider">MAIN ARTICLE PHOTO</p>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Hidden File Inputs */}
-            <input
-              ref={audioInputRef}
-              type="file"
-              accept=".mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/mp4,audio/x-m4a"
-              multiple
-              className="hidden"
-              onChange={(e) => handleFileUpload(e.target.files, 'audio')}
-            />
-            <input
-              ref={documentInputRef}
-              type="file"
-              accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-              multiple
-              className="hidden"
-              onChange={(e) => handleFileUpload(e.target.files, 'document')}
-            />
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-              multiple
-              className="hidden"
-              onChange={(e) => handleFileUpload(e.target.files, 'image')}
-            />
-            <input
-              ref={coverPhotoInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-              className="hidden"
-              onChange={(e) => handleFileUpload(e.target.files, 'cover_photo')}
-            />
-          </div>
-          )}
-
-          {inputs.length === 0 ? (
-            <EmptyState
-              icon={
-                <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                  />
-                </svg>
-              }
-              title="No Inputs Yet"
-              description="Add recordings, text, documents, or images as inputs to generate your article."
-            />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-              {inputs.map((input) => {
-                const isFromRecording = input.metadata?.source === 'recording'
-                const isFromUpload = input.metadata?.source === 'upload'
-                const typeInfo = getInputTypeInfo(input)
-                const defaultTitle = isFromRecording ? 'Recording' : input.type === 'cover_photo' ? 'Cover Photo' : input.type === 'image' ? 'Image' : input.type === 'document' ? 'Document' : input.type === 'audio' ? 'Audio' : input.type === 'web_scrape' ? 'Web Page' : 'Text Input'
-                
-                return (
-                  <div
-                    key={input.id}
-                    onClick={() => setSelectedInput(input)}
-                    className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
-                  >
-                    {/* Top left: icon + type label (no box) */}
-                    <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${typeInfo.color}`}>
-                      <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">{typeInfo.icon}</span>
-                      <span>
-                        {typeInfo.label}
-                        {isFromRecording && input.metadata?.recording_duration && (
-                          <>
-                            <span className="text-medium-gray"> • </span>
-                            <span>{formatDuration(input.metadata.recording_duration)}</span>
-                          </>
-                        )}
-                        {isFromUpload && input.file_size && (
-                          <>
-                            <span className="text-medium-gray"> • </span>
-                            <span className="text-medium-gray">{(input.file_size / 1024).toFixed(0)} KB</span>
-                          </>
-                        )}
-                      </span>
-                    </div>
-                    
-                    {/* Title */}
-                    <h3 className="text-heading-md text-secondary-white font-medium mt-2 mb-1 line-clamp-2">
-                      {input.file_name || defaultTitle}
-                    </h3>
-                    
-                    {/* Subtitle: transcription, caption, or placeholder (match outputs: caption, uppercase, tracking-wider) */}
-                    {input.type === 'web_scrape' && input.metadata?.url ? (
-                      <p className={`text-caption mb-2 line-clamp-2 uppercase tracking-wider break-all ${typeInfo.color}`} title={input.metadata.url as string}>
-                        {((input.metadata.url as string).length > 100 ? `${(input.metadata.url as string).slice(0, 100)}…` : (input.metadata.url as string)).toUpperCase()}
-                      </p>
-                    ) : input.content ? (
-                      <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
-                        {(input.type === 'web_scrape' && input.content.length > 80 ? input.content.slice(0, 80) + '…' : input.content).toUpperCase()}
-                      </p>
-                    ) : input.type === 'image' && input.metadata?.photo_caption ? (
-                      <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
-                        {(input.metadata.photo_caption as string).toUpperCase()}
-                      </p>
-                    ) : input.type === 'image' && input.metadata?.source === 'workflow_generated' ? (
-                      <p className="text-caption text-yellow-400 uppercase tracking-wider mb-2">
-                        IMAGE GENERATED WITH DIFFUSE.AI
-                      </p>
-                    ) : input.type === 'image' ? (
-                      <p className="text-caption text-medium-gray uppercase tracking-wider mb-2 italic">
-                        IMAGE WILL BE PROCESSED BY THE WORKFLOW
-                      </p>
-                    ) : input.type === 'cover_photo' ? (
-                      <p className="text-caption text-medium-gray uppercase tracking-wider mb-2 italic">
-                        {project?.project_type === 'advertisement'
-                          ? 'COVER PHOTO WILL APPEAR AT THE TOP OF YOUR PUBLISHED ADVERTISEMENT.'
-                          : 'COVER PHOTO WILL APPEAR AS THE MAIN PHOTO IN YOUR PUBLISHED ARTICLE.'}
-                      </p>
-                    ) : null}
-                    
-                    {/* Date */}
-                    <div className="text-caption text-medium-gray uppercase tracking-wider">
-                      {new Date(input.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Outputs Tab */}
-      {activeTab === 'outputs' && (
-        <div>
-          {/* Generate Dropdown - Same position as Inputs buttons */}
-          {canEdit && inputs.length > 0 && (
-            <div className="flex justify-end gap-3 mb-4 flex-wrap">
-              {/* Quick Delete All Outputs Button */}
-              {(outputs.length > 0 || trashedOutputs.length > 0) && (
-                <button
-                  onClick={() => setShowDeleteAllOutputsConfirm(true)}
-                  disabled={deletingAllOutputs}
-                  className="px-4 py-2 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Delete All Outputs"
-                >
-                  {deletingAllOutputs ? (
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  )}
-                </button>
-              )}
-              {/* Secondary: Quick → type-only modal (Article/Ad) */}
-              <button
-                onClick={() => setShowQuickGenerateModal(true)}
-                disabled={generatingArticle}
-                className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
-                  generatingArticle && generateSource === 'quick'
-                    ? 'btn-secondary opacity-50 cursor-not-allowed'
-                    : 'btn-secondary'
-                }`}
-              >
-                {generatingArticle && generateSource === 'quick' ? (
-                  <>
-                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    Quick
-                  </>
-                )}
-              </button>
-
-              {/* Primary: Generate → refinements quiz (tone, length, audience, comments) */}
               <button
                 onClick={async () => {
                   let prefs: WorkflowPreferences = {}
@@ -1652,380 +1306,329 @@ export default function ProjectDetailPage() {
                   setGenerateOptionsInitialValues(prefs)
                   setShowGenerateOptionsModal(true)
                 }}
-                disabled={generatingArticle}
-                className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
-                  generatingArticle && generateSource === 'refine'
-                    ? 'btn-primary opacity-50 cursor-not-allowed'
-                    : 'btn-primary'
-                }`}
+                disabled={generatingArticle || nonImageInputsCount === 0}
+                className="btn-primary flex-1 py-3 gap-1.5 text-body-sm rounded-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                title={nonImageInputsCount === 0 ? 'Add inputs first' : 'Generate output'}
               >
                 {generatingArticle && generateSource === 'refine' ? (
-                  <>
-                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Generating...
-                  </>
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
                 ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                    </svg>
-                    Generate
-                  </>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                  </svg>
                 )}
+                Generate
               </button>
             </div>
           )}
 
-          {outputs.length === 0 ? (
-            <EmptyState
-              icon={
-                <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-              }
-              title="No Outputs Yet"
-              description={inputs.length === 0 
-                ? "Add inputs before generating your article." 
-                : "Click Generate above to create an article from your inputs."
-              }
-            />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-              {outputs.map((output) => {
-                const info = getOutputInfo(output)
-                const isAd = output.output_type === 'ad'
-                const outputLabel = isAd ? 'ADVERTISEMENT' : 'ARTICLE'
-                const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
-                return (
-                  <div
-                    key={output.id}
-                    onClick={() => setSelectedOutput(output)}
-                    className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
+          {/* Inputs section */}
+          <div className="border-b border-white/10">
+            <div className="flex items-center justify-between px-4 py-3">
+              <p className="text-body-sm text-secondary-white font-medium">
+                Inputs <span className="text-body-sm text-medium-gray">({nonImageInputsCount})</span>
+              </p>
+              {canEdit && (
+                <div ref={addInputDropdownRef} className="relative flex items-center justify-center w-6">
+                  <button
+                    onClick={() => setShowAddInputDropdown(!showAddInputDropdown)}
+                    disabled={uploadingFile}
+                    className="text-caption text-medium-gray hover:text-secondary-white transition-colors disabled:opacity-50"
+                    title="Add input"
                   >
-                    {/* Top left: icon + type label (teal = article, amber = advertisement) */}
-                    <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${outputColor}`}>
-                      <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </span>
-                      <span>{outputLabel}</span>
-                    </div>
-                    
-                    {/* Title */}
-                    <h3 className="text-heading-md text-secondary-white font-medium mt-2 mb-1 line-clamp-2">
-                      {info.title}
-                    </h3>
-                    
-                    {/* Subtitle */}
-                    {info.subtitle && (
-                      <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${outputColor}`}>
-                        {info.subtitle.toUpperCase()}
-                      </p>
+                    {uploadingFile ? (
+                      <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                     )}
-                    
-                    {/* Date */}
-                    <div className="text-caption uppercase tracking-wider">
-                      <span className={outputColor}>{info.author.toUpperCase()}</span>
-                      <span className="text-medium-gray"> • </span>
-                      <span className="text-medium-gray">
-                        {new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
-                      </span>
+                  </button>
+                  {showAddInputDropdown && (
+                    <div className="absolute top-full right-0 mt-1.5 w-44 glass-container bg-dark-gray/95 backdrop-blur-glass py-1 z-50">
+                      <button onClick={() => { setShowAddInputDropdown(false); setShowRecordingModal(true) }} className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-white/10 transition-colors">
+                        <svg className="w-4 h-4 text-rose-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                        <span className="text-body-sm text-secondary-white">Recording</span>
+                      </button>
+                      <button onClick={() => { setShowAddInputDropdown(false); setShowTextInputModal(true) }} className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-white/10 transition-colors">
+                        <svg className="w-4 h-4 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        <span className="text-body-sm text-secondary-white">Text</span>
+                      </button>
+                      <button onClick={() => { setShowAddInputDropdown(false); setShowWebScrapingModal(true) }} className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-white/10 transition-colors">
+                        <svg className="w-4 h-4 text-sky-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
+                        <span className="text-body-sm text-secondary-white">Web Scraping</span>
+                      </button>
+                      <button onClick={() => { setShowAddInputDropdown(false); audioInputRef.current?.click() }} className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-white/10 transition-colors">
+                        <svg className="w-4 h-4 text-fuchsia-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+                        <span className="text-body-sm text-secondary-white">Audio File</span>
+                      </button>
+                      <button onClick={() => { setShowAddInputDropdown(false); documentInputRef.current?.click() }} className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-white/10 transition-colors">
+                        <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                        <span className="text-body-sm text-secondary-white">Document</span>
+                      </button>
                     </div>
-                  </div>
-                )
-              })}
+                  )}
+                  <input ref={audioInputRef} type="file" accept=".mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/mp4,audio/x-m4a" multiple className="hidden" onChange={(e) => handleFileUpload(e.target.files, 'audio')} />
+                  <input ref={documentInputRef} type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" multiple className="hidden" onChange={(e) => handleFileUpload(e.target.files, 'document')} />
+                  <input ref={imageInputRef} type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple className="hidden" onChange={(e) => handleFileUpload(e.target.files, 'image')} />
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Visibility Tab - Same layout as Inputs/Outputs: top buttons + grid of cards */}
-      {activeTab === 'visibility' && (
-        <div>
-          {/* Private / Public - Same position and style as Outputs Quick / Generate */}
-          <div className="flex justify-end gap-3 mb-4 flex-wrap">
-            {/* Private - deselects all; orange when selected, gray when not */}
-            <button
-              onClick={() => {
-                setVisibility('private')
-                setSelectedOrgs([])
-              }}
-              className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
-                visibility === 'private' ? 'btn-primary' : 'btn-secondary'
-              }`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              Private
-            </button>
-
-            {/* Orange: Public - selects all */}
-            <button
-              onClick={() => {
-                setVisibility('public')
-                setSelectedOrgs(workspaces.map(({ workspace }) => workspace.id))
-              }}
-              className={`px-4 py-2 flex items-center gap-2 text-body-sm rounded-glass transition-colors ${
-                visibility === 'public' ? 'btn-primary' : 'btn-secondary'
-              }`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              Public
-            </button>
+            {uploadingFile && uploadProgress && (
+              <p className="text-caption text-medium-gray px-4 pb-2">{uploadProgress}</p>
+            )}
+            {nonImageInputs.length === 0 ? (
+              <p className="text-caption text-medium-gray px-4 pb-3">Add recordings, documents, or other references for this project</p>
+            ) : (
+              <div className="space-y-0.5 px-4 pb-3">
+                {nonImageInputs.map((input) => {
+                  const isFromRecording = input.metadata?.source === 'recording'
+                  const isFromUpload = input.metadata?.source === 'upload'
+                  const typeInfo = getInputTypeInfo(input)
+                  const defaultTitle = isFromRecording ? 'Recording' : input.type === 'document' ? 'Document' : input.type === 'audio' ? 'Audio' : input.type === 'web_scrape' ? 'Web Page' : 'Text Input'
+                  let metaText = ''
+                  if (isFromRecording && input.metadata?.recording_duration) {
+                    metaText = formatDuration(input.metadata.recording_duration)
+                  } else if (isFromUpload && input.file_size) {
+                    metaText = `${(input.file_size / 1024).toFixed(0)} KB`
+                  }
+                  return (
+                    <div key={input.id} className="relative group">
+                      <button
+                        onClick={() => setSelectedInput(input)}
+                        className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left"
+                      >
+                        <span className={`flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5 ${typeInfo.color}`}>{typeInfo.icon}</span>
+                        <span className="text-body-sm text-secondary-white truncate flex-1">
+                          {input.file_name || defaultTitle}
+                          {metaText && <span className="text-caption text-medium-gray ml-1">· {metaText}</span>}
+                        </span>
+                      </button>
+                      {canEdit && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteInput(input.id, e)
+                          }} 
+                          className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-medium-gray hover:text-red-400 transition-all p-1"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Organization list - Same grid as Inputs/Outputs */}
-          {workspaces.length === 0 ? (
-            <EmptyState
-              icon={
-                <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                  />
+          {/* Images section */}
+          <div className="border-b border-white/10">
+            <button
+              onClick={() => setImagesSectionOpen(!imagesSectionOpen)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors"
+            >
+              <p className="text-body-sm text-secondary-white font-medium">
+                Images <span className="text-body-sm text-medium-gray">({outputs.filter(o => o.cover_photo_path).length})</span>
+              </p>
+              <div className="flex items-center justify-center w-6">
+                <svg className={`w-3.5 h-3.5 text-medium-gray transition-transform ${imagesSectionOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
-              }
-              title="No Organizations"
-              description="Join an organization to share this project with others."
-            />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 mb-6">
-              {workspaces.map(({ workspace }) => {
-                const isSelected = selectedOrgs.includes(workspace.id)
-                return (
-                  <div
-                    key={workspace.id}
-                    onClick={() => {
-                      if (visibility === 'private') {
-                        setVisibility('public')
-                        setSelectedOrgs([workspace.id])
-                      } else if (isSelected) {
-                        const newOrgs = selectedOrgs.filter(id => id !== workspace.id)
-                        setSelectedOrgs(newOrgs)
-                        if (newOrgs.length === 0) {
-                          setVisibility('private')
-                        }
-                      } else {
-                        setSelectedOrgs([...selectedOrgs, workspace.id])
-                      }
-                    }}
-                    className={`glass-container p-6 transition-colors cursor-pointer ${
-                      isSelected && visibility === 'public'
-                        ? 'bg-cosmic-orange/20 border-cosmic-orange/30 hover:bg-cosmic-orange/25'
-                        : 'hover:bg-white/10'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-lg bg-white/5 text-cosmic-orange">
-                        {isSelected && visibility === 'public' ? (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </div>
+            </button>
+            {imagesSectionOpen && (
+              <>
+                {outputs.filter(o => o.cover_photo_path).length === 0 ? (
+                  <p className="text-caption text-medium-gray px-4 pb-3">Generated images will appear here</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 px-4 pb-3">
+                    {outputs.filter(o => o.cover_photo_path).map((output) => (
+                      <button
+                        key={output.id}
+                        onClick={() => setSelectedOutput(output)}
+                        className="aspect-square rounded-glass overflow-hidden hover:opacity-80 transition-opacity relative group"
+                      >
+                        <Image
+                          src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/project-files/${output.cover_photo_path}`}
+                          alt="Generated cover"
+                          fill
+                          sizes="(max-width: 1024px) 33vw, 200px"
+                          className="object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                          </svg>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-heading-md text-secondary-white font-medium mb-1 break-words">
-                          {workspace.name}
-                        </h3>
-                        <p className="text-caption text-medium-gray uppercase tracking-wider">
-                          {isSelected && visibility === 'public' ? 'SHARED' : 'ORGANIZATION'}
-                        </p>
-                      </div>
-                    </div>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                )
-              })}
-            </div>
-          )}
+                )}
+              </>
+            )}
+          </div>
 
-          {/* Save Button */}
-          <button
-            onClick={handleSaveVisibility}
-            disabled={savingVisibility}
-            className="btn-primary px-6 py-3 text-xs font-medium disabled:opacity-50"
-          >
-            {savingVisibility ? 'Saving...' : 'Save Visibility Settings'}
-          </button>
-        </div>
-      )}
+          {/* Visibility section */}
+          {isProjectOwner && (
+            <div className="border-b border-white/10">
+              <button
+                onClick={() => setVisibilitySectionOpen(!visibilitySectionOpen)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors"
+              >
+                <p className="text-body-sm text-secondary-white font-medium">
+                  Visibility <span className="text-body-sm text-medium-gray">({visibility === 'private' ? 'Private' : 'Public'})</span>
+                </p>
+                <div className="flex items-center justify-center w-6">
+                  <svg className={`w-3.5 h-3.5 text-medium-gray transition-transform ${visibilitySectionOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </button>
 
-      {/* Trash Tab */}
-      {activeTab === 'trash' && (
-        <div className="space-y-8">
-          {/* Trashed Inputs */}
-          {trashedInputs.length > 0 && (
-            <div>
-              <h3 className="text-body-md text-medium-gray uppercase tracking-wider mb-4">
-                Trashed Inputs ({trashedInputs.length})
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-                {trashedInputs.map((input) => {
-                  const isFromRecording = input.metadata?.source === 'recording'
-                  const typeInfo = getInputTypeInfo(input)
-                  
-                  return (
-                    <div
-                      key={input.id}
-                      className="glass-container p-6 opacity-60"
-                    >
-                      {/* Top left: icon + type label */}
-                      <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${typeInfo.color}`}>
-                        <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">{typeInfo.icon}</span>
-                        <span>
-                          {typeInfo.label}
-                          {isFromRecording && input.metadata?.recording_duration && (
-                            <>
-                              <span className="text-medium-gray"> • </span>
-                              <span>{formatDuration(input.metadata.recording_duration)}</span>
-                            </>
-                          )}
-                        </span>
-                      </div>
-                      
-                      {/* Title */}
-                      <h3 className="text-heading-md text-secondary-white font-medium mt-2 mb-1 line-clamp-2">
-                        {input.file_name || (isFromRecording ? 'Recording' : input.type === 'cover_photo' ? 'Cover Photo' : 'Text Input')}
-                      </h3>
-                      
-                      {/* Subtitle / content preview (match outputs styling) */}
-                      {input.content && (
-                        <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${typeInfo.color}`}>
-                          {input.content.toUpperCase()}
-                        </p>
-                      )}
-                      
-                      {/* Date (match outputs: label in type color, date in gray) */}
-                      <div className="text-caption uppercase tracking-wider">
-                        <span className={typeInfo.color}>DELETED</span>
-                        <span className="text-medium-gray"> • </span>
-                        <span className="text-medium-gray">
-                          {new Date(input.deleted_at || input.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
-                        </span>
-                      </div>
-                      
-                      {/* Action Buttons - Only for editors and above */}
-                      {canEdit && (
-                        <div className="flex gap-2 mt-4">
-                          <button
-                            onClick={() => handleRestoreInput(input.id)}
-                            className="btn-secondary flex-1 py-2 text-body-sm"
+              {visibilitySectionOpen && (
+                <div className="px-4 pb-3 space-y-0.5">
+                  <button
+                    onClick={async () => {
+                      setVisibility('private')
+                      setSelectedOrgs([])
+                      await handleSaveVisibility()
+                    }}
+                    className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-white/10 transition-colors text-left"
+                  >
+                    <span className="text-body-sm text-secondary-white">Private</span>
+                    {visibility === 'private' && (
+                      <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setVisibility('public')
+                      setSelectedOrgs(workspaces.map(({ workspace }) => workspace.id))
+                      await handleSaveVisibility()
+                    }}
+                    className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-white/10 transition-colors text-left"
+                  >
+                    <span className="text-body-sm text-secondary-white">Public</span>
+                    {visibility === 'public' && (
+                      <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                  {workspaces.length === 0 ? (
+                    <p className="text-caption text-medium-gray pt-2">Join an organization to share this project.</p>
+                  ) : (
+                    <div className="space-y-0.5 pt-2">
+                      <p className="text-caption text-medium-gray px-2 pb-1">ORGANIZATIONS</p>
+                      {workspaces.map(({ workspace }) => {
+                        const isSelected = selectedOrgs.includes(workspace.id) && visibility === 'public'
+                        return (
+                          <div
+                            key={workspace.id}
+                            onClick={async () => {
+                              if (visibility === 'private') { 
+                                setVisibility('public')
+                                setSelectedOrgs([workspace.id])
+                                await handleSaveVisibility()
+                              }
+                              else if (isSelected) { 
+                                const n = selectedOrgs.filter(id => id !== workspace.id)
+                                setSelectedOrgs(n)
+                                if (n.length === 0) setVisibility('private')
+                                await handleSaveVisibility()
+                              }
+                              else {
+                                setSelectedOrgs([...selectedOrgs, workspace.id])
+                                await handleSaveVisibility()
+                              }
+                            }}
+                            className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-white/10 transition-colors cursor-pointer"
                           >
-                            Restore
-                          </button>
-                          <button
-                            onClick={() => handlePermanentDeleteInput(input.id)}
-                            className="flex-1 py-2 text-body-sm bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 rounded-glass transition-colors"
-                          >
-                            Delete Forever
-                          </button>
-                        </div>
-                      )}
+                            <span className="text-body-sm text-secondary-white truncate">{workspace.name}</span>
+                            {isSelected && (
+                              <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
-                  )
-                })}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Trashed Outputs */}
-          {trashedOutputs.length > 0 && (
-            <div>
-              <h3 className="text-body-md text-medium-gray uppercase tracking-wider mb-4">
-                Trashed Outputs ({trashedOutputs.length})
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-                {trashedOutputs.map((output) => {
-                  const info = getOutputInfo(output)
-                  const isAd = output.output_type === 'ad'
-                  const outputLabel = isAd ? 'ADVERTISEMENT' : 'ARTICLE'
-                  const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
-                  return (
-                    <div
-                      key={output.id}
-                      className="glass-container p-6 opacity-60"
-                    >
-                      {/* Top left: icon + type label (teal = article, amber = advertisement) */}
-                      <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${outputColor}`}>
-                        <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">
-                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                        </span>
-                        <span>{outputLabel}</span>
-                      </div>
-                      
-                      {/* Title */}
-                      <h3 className="text-heading-md text-secondary-white font-medium mt-2 mb-1 line-clamp-2">
-                        {info.title}
-                      </h3>
-                      
-                      {/* Subtitle */}
-                      {info.subtitle && (
-                        <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${outputColor}`}>
-                          {info.subtitle.toUpperCase()}
-                        </p>
-                      )}
-                      
-                      {/* Date */}
-                      <div className="text-caption uppercase tracking-wider">
-                        <span className={outputColor}>{info.author.toUpperCase()}</span>
-                        <span className="text-medium-gray"> • </span>
-                        <span className="text-medium-gray">
-                          DELETED {new Date(output.deleted_at || output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
-                        </span>
-                      </div>
-                      
-                      {/* Action Buttons - Only for editors and above */}
-                      {canEdit && (
-                        <div className="flex flex-col sm:flex-row gap-2 mt-4">
-                          <button
-                            onClick={() => handleRestoreOutput(output.id)}
-                            className="btn-secondary flex-1 py-2 text-body-sm w-full sm:w-auto"
-                          >
-                            Restore
-                          </button>
-                          <button
-                            onClick={() => handlePermanentDeleteOutput(output.id)}
-                            className="flex-1 py-2 text-body-sm w-full sm:w-auto bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 rounded-glass transition-colors"
-                          >
-                            Delete Forever
-                          </button>
-                        </div>
-                      )}
+          {/* Settings section */}
+          <div>
+            <button
+              onClick={() => setSettingsSectionOpen(!settingsSectionOpen)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors"
+            >
+              <p className="text-body-sm text-secondary-white font-medium">Settings</p>
+              <div className="flex items-center justify-center w-6">
+                <svg className={`w-3.5 h-3.5 text-medium-gray transition-transform ${settingsSectionOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </button>
+
+            {settingsSectionOpen && (
+              <div className="px-4 pb-3 space-y-0.5">
+                {/* Edit details */}
+                {canEdit && (
+                  <button
+                    onClick={() => { setEditProjectName(project?.name || ''); setEditProjectDescription(project?.description || ''); setShowProjectSettings(true) }}
+                    className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-white/10 transition-colors text-left"
+                  >
+                    <span className="text-body-sm text-secondary-white">Edit details</span>
+                    <div className="flex items-center justify-center w-6">
+                      <svg className="w-3.5 h-3.5 text-medium-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </div>
-                  )
-                })}
+                  </button>
+                )}
+                {/* Delete All Inputs */}
+                <button
+                  onClick={() => setShowDeleteInputsConfirm(true)}
+                  disabled={nonImageInputsCount === 0}
+                  className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-white/10 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span className="text-body-sm text-secondary-white">Delete all inputs</span>
+                  <div className="flex items-center justify-center w-6">
+                    <span className="text-caption text-medium-gray">{nonImageInputsCount}</span>
+                  </div>
+                </button>
+                {/* Delete All Outputs */}
+                <button
+                  onClick={() => setShowDeleteOutputsConfirm(true)}
+                  disabled={outputs.length === 0}
+                  className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-white/10 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span className="text-body-sm text-secondary-white">Delete all outputs</span>
+                  <div className="flex items-center justify-center w-6">
+                    <span className="text-caption text-medium-gray">{outputs.length}</span>
+                  </div>
+                </button>
+                {/* Delete Project */}
+                {canDelete && (
+                  <button
+                    onClick={() => setShowDeleteProjectConfirm(true)}
+                    className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-red-500/10 transition-colors text-left"
+                  >
+                    <span className="text-body-sm text-red-400">Delete project</span>
+                  </button>
+                )}
               </div>
-            </div>
-          )}
-
-          {/* Empty state if both are empty (shouldn't happen but just in case) */}
-          {trashedInputs.length === 0 && trashedOutputs.length === 0 && (
-            <EmptyState
-              title="Trash is Empty"
-              description="Deleted inputs and outputs will appear here."
-            />
-          )}
+            )}
+          </div>
         </div>
-      )}
+      </div>
 
       {/* Modals */}
       {selectedInput && (
@@ -2179,8 +1782,6 @@ export default function ProjectDetailPage() {
               <button
                 onClick={() => {
                   setShowProjectSettings(false)
-                  setShowDeleteConfirm(false)
-                  setDeleteConfirmText('')
                 }}
                 className="text-medium-gray hover:text-secondary-white transition-colors"
               >
@@ -2235,133 +1836,44 @@ export default function ProjectDetailPage() {
                 }
               }}
               disabled={!editProjectName.trim()}
-              className="btn-primary w-full py-2 text-body-sm disabled:opacity-50 mb-5"
+              className="btn-primary w-full py-2 text-body-sm disabled:opacity-50"
             >
               Save Changes
             </button>
-
-            {/* Action Grid */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={handleDeleteAllInputs}
-                disabled={deletingAllInputs || (inputs.length === 0 && trashedInputs.length === 0)}
-                className="p-3 bg-white/5 hover:bg-yellow-500/10 border border-white/10 hover:border-yellow-500/30 rounded-glass transition-colors text-left disabled:opacity-50 disabled:hover:bg-white/5 disabled:hover:border-white/10"
-              >
-                <p className="text-body-sm text-secondary-white font-medium">Delete Inputs</p>
-                <p className="text-caption text-medium-gray">{inputs.length + trashedInputs.length} items</p>
-              </button>
-
-              <button
-                onClick={handleDeleteAllOutputs}
-                disabled={deletingAllOutputs || (outputs.length === 0 && trashedOutputs.length === 0)}
-                className="p-3 bg-white/5 hover:bg-yellow-500/10 border border-white/10 hover:border-yellow-500/30 rounded-glass transition-colors text-left disabled:opacity-50 disabled:hover:bg-white/5 disabled:hover:border-white/10"
-              >
-                <p className="text-body-sm text-secondary-white font-medium">Delete Outputs</p>
-                <p className="text-caption text-medium-gray">{outputs.length + trashedOutputs.length} items</p>
-              </button>
-
-              {canDelete && !showDeleteConfirm && (
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  disabled={deletingProject}
-                  className="col-span-2 p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 rounded-glass transition-colors text-left disabled:opacity-50"
-                >
-                  <p className="text-body-sm text-red-400 font-medium">Delete Project</p>
-                  <p className="text-caption text-medium-gray">Permanently remove everything</p>
-                </button>
-              )}
-
-              {canDelete && showDeleteConfirm && (
-                <div className="col-span-2 p-3 bg-red-500/10 border border-red-500/30 rounded-glass">
-                  <p className="text-body-sm text-red-400 font-medium mb-2">Type &quot;DELETE&quot; to confirm:</p>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      value={deleteConfirmText}
-                      onChange={(e) => setDeleteConfirmText(e.target.value.toUpperCase())}
-                      placeholder="DELETE"
-                      className="flex-1 min-w-0 px-3 py-2 bg-white/5 border border-red-500/30 rounded-glass text-secondary-white text-body-sm focus:outline-none focus:border-red-400 transition-colors"
-                      autoFocus
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleDeleteProject}
-                        disabled={deletingProject || deleteConfirmText !== 'DELETE'}
-                        className="flex-1 sm:flex-none px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-glass text-body-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {deletingProject ? 'Deleting...' : 'Delete'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowDeleteConfirm(false)
-                          setDeleteConfirmText('')
-                        }}
-                        className="flex-1 sm:flex-none px-3 py-2 text-medium-gray hover:text-secondary-white transition-colors"
-                      >
-                        Cancel
-                    </button>
-                  </div>
-                </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       )}
 
-      {/* Delete All Inputs Confirmation Modal */}
-      {showDeleteAllInputsConfirm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllInputsConfirm(false)}>
-          <div className="glass-container p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-heading-md text-secondary-white font-medium mb-2">Delete All Inputs</h2>
-            <p className="text-body-sm text-medium-gray mb-6">
-              Are you sure you want to delete all inputs? This cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteAllInputsConfirm(false)}
-                className="btn-secondary flex-1 py-3"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteAllInputs}
-                disabled={deletingAllInputs}
-                className="btn-primary flex-1 py-3 disabled:opacity-50"
-              >
-                {deletingAllInputs ? 'Deleting...' : 'Delete All'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Confirmation Modals */}
+      <ConfirmModal
+        isOpen={showDeleteInputsConfirm}
+        onClose={() => setShowDeleteInputsConfirm(false)}
+        onConfirm={handleDeleteAllInputs}
+        title="Delete All Inputs"
+        message={`Are you sure you want to delete all ${nonImageInputsCount} input${nonImageInputsCount === 1 ? '' : 's'}? This action cannot be undone.`}
+        confirmText="Delete All"
+        variant="danger"
+      />
 
-      {/* Delete All Outputs Confirmation Modal */}
-      {showDeleteAllOutputsConfirm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteAllOutputsConfirm(false)}>
-          <div className="glass-container p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-heading-md text-secondary-white font-medium mb-2">Delete All Outputs</h2>
-            <p className="text-body-sm text-medium-gray mb-6">
-              Are you sure you want to delete all outputs? This cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteAllOutputsConfirm(false)}
-                className="btn-secondary flex-1 py-3"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteAllOutputs}
-                disabled={deletingAllOutputs}
-                className="btn-primary flex-1 py-3 disabled:opacity-50"
-              >
-                {deletingAllOutputs ? 'Deleting...' : 'Delete All'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={showDeleteOutputsConfirm}
+        onClose={() => setShowDeleteOutputsConfirm(false)}
+        onConfirm={handleDeleteAllOutputs}
+        title="Delete All Outputs"
+        message={`Are you sure you want to delete all ${outputs.length} output${outputs.length === 1 ? '' : 's'}? This action cannot be undone.`}
+        confirmText="Delete All"
+        variant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={showDeleteProjectConfirm}
+        onClose={() => setShowDeleteProjectConfirm(false)}
+        onConfirm={handleDeleteProject}
+        title="Delete Project"
+        message="Are you sure you want to permanently delete this project and all its contents? This action cannot be undone."
+        confirmText="Delete Project"
+        variant="danger"
+      />
 
     </div>
   )

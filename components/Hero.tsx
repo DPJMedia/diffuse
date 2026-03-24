@@ -231,7 +231,7 @@ const WorkflowDemo = () => {
                     <h2 className="text-sm font-semibold text-secondary-white truncate">Launch Coverage</h2>
                   </div>
                   <div className="relative">
-                    <button className="px-3 py-1.5 bg-gradient-to-r from-cosmic-orange to-rich-orange text-white text-xs font-medium rounded-lg flex items-center gap-1.5">
+                    <button type="button" className="btn-primary px-3 py-1.5 text-xs font-medium rounded-lg gap-1.5">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                       Add Input
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
@@ -318,8 +318,9 @@ const WorkflowDemo = () => {
                   <div className="flex gap-2">
                     <button className="px-2.5 py-1.5 bg-white/10 border border-white/20 text-white text-xs rounded-lg">Quick</button>
                     <motion.button
+                      type="button"
                       animate={{ scale: generateClicked ? 0.97 : 1 }}
-                      className="px-2.5 py-1.5 bg-gradient-to-r from-cosmic-orange to-rich-orange text-white text-xs font-medium rounded-lg flex items-center gap-1.5"
+                      className="btn-primary px-2.5 py-1.5 text-xs font-medium rounded-lg gap-1.5"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
                       Generate
@@ -513,11 +514,11 @@ export default function Hero() {
           className="w-full max-w-6xl mx-auto mt-6"
         >
           <div className="flex gap-3">
-            <a href={user ? "/dashboard" : "/login"} className="btn-secondary text-center text-sm sm:text-base py-3 md:py-4 flex-1">
-              {user ? "Go to Dashboard" : "Start Free"}
-            </a>
             <a href="#how-it-works" className="btn-secondary text-center text-sm sm:text-base py-3 md:py-4 flex-1">
               See How It Works
+            </a>
+            <a href={user ? "/dashboard" : "/login"} className="btn-primary text-center text-sm sm:text-base py-3 md:py-4 flex-1">
+              {user ? "Go to Dashboard" : "Start Free"}
             </a>
           </div>
         </motion.div>

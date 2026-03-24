@@ -7,7 +7,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
 import { OrganizationDetailSkeleton } from '@/components/dashboard/Skeletons'
 import EmptyState from '@/components/dashboard/EmptyState'
-import CreateProjectModal from '@/components/dashboard/CreateProjectModal'
 import type { DiffuseWorkspace, DiffuseProject, OrganizationPlan } from '@/types/database'
 
 type SubscriptionTier = 'free' | 'pro' | 'pro_max'
@@ -63,7 +62,6 @@ export default function OrganizationDetailPage() {
   const [copiedCode, setCopiedCode] = useState(false)
   const [editingMemberRole, setEditingMemberRole] = useState<string | null>(null)
   const [savingRole, setSavingRole] = useState(false)
-  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false)
   const [deletingOrg, setDeletingOrg] = useState(false)
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free')
   const [projectCount, setProjectCount] = useState(0)
@@ -484,7 +482,7 @@ export default function OrganizationDetailPage() {
                 type="text"
                 value={editOrgName}
                 onChange={(e) => setEditOrgName(e.target.value)}
-                className="w-full text-display-sm bg-white/5 border border-white/10 rounded-glass px-4 py-2 text-secondary-white focus:outline-none focus:border-cosmic-orange"
+                className="w-full text-heading-lg bg-white/5 border border-white/10 rounded-glass px-4 py-2 text-secondary-white focus:outline-none focus:border-cosmic-orange"
               />
               <textarea
                 value={editOrgDescription}
@@ -493,19 +491,19 @@ export default function OrganizationDetailPage() {
                 rows={2}
                 className="w-full text-body-lg bg-white/5 border border-white/10 rounded-glass px-4 py-2 text-medium-gray focus:outline-none focus:border-cosmic-orange resize-none"
               />
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button onClick={handleSaveOrg} className="btn-primary px-4 py-2 text-body-sm w-full sm:w-auto">
-                  Save
-                </button>
+              <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
                 <button onClick={() => setEditingOrg(false)} className="btn-secondary px-4 py-2 text-body-sm w-full sm:w-auto">
                   Cancel
+                </button>
+                <button onClick={handleSaveOrg} className="btn-primary px-4 py-2 text-body-sm w-full sm:w-auto">
+                  Save
                 </button>
               </div>
             </div>
           ) : (
             <div className="group flex-1">
               <div className="flex items-center gap-3">
-                <h1 className="text-display-sm text-secondary-white">{workspace.name}</h1>
+                <h1 className="text-heading-lg text-secondary-white">{workspace.name}</h1>
                 {userRole === 'owner' && (
                   <button
                     onClick={handleEditOrg}
@@ -531,11 +529,11 @@ export default function OrganizationDetailPage() {
       <div className="grid grid-cols-3 gap-4 mb-8">
         <div className="glass-container p-4 text-center">
           <p className="text-body-sm text-medium-gray mb-1">Members</p>
-          <p className="text-heading-lg text-secondary-white">{members.length}</p>
+          <p className="text-heading-md text-secondary-white">{members.length}</p>
         </div>
         <div className="glass-container p-4 text-center">
           <p className="text-body-sm text-medium-gray mb-1">Projects</p>
-          <p className="text-heading-lg text-secondary-white">{projects.length}</p>
+          <p className="text-heading-md text-secondary-white">{projects.length}</p>
         </div>
         <div className="glass-container p-4 text-center">
           <p className="text-body-sm text-medium-gray mb-1">Invite Code</p>
@@ -546,19 +544,19 @@ export default function OrganizationDetailPage() {
                 setCopiedCode(true)
                 setTimeout(() => setCopiedCode(false), 2000)
               }}
-              className="text-heading-lg text-cosmic-orange hover:text-cosmic-orange/80 transition-colors"
+              className="text-heading-md text-cosmic-orange hover:text-cosmic-orange/80 transition-colors"
             >
               {copiedCode ? 'Copied!' : workspace.invite_code}
             </button>
           ) : (
-            <span className="text-heading-lg text-medium-gray">-</span>
+            <span className="text-heading-md text-medium-gray">-</span>
           )}
         </div>
       </div>
 
       {/* Projects */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-heading-lg text-secondary-white">Projects</h2>
+        <h2 className="text-heading-md text-secondary-white">Projects</h2>
         <button
           onClick={() => {
             const limit = subscriptionLimits[subscriptionTier]
@@ -566,7 +564,7 @@ export default function OrganizationDetailPage() {
               router.push('/dashboard/subscription')
               return
             }
-            setShowCreateProjectModal(true)
+            router.push(`/dashboard/organization/${orgId}/new`)
           }}
           className="btn-primary px-4 py-2 flex items-center gap-2 text-body-sm"
         >
@@ -607,7 +605,7 @@ export default function OrganizationDetailPage() {
               className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
             >
               {/* Project Name */}
-              <h3 className="text-heading-md text-secondary-white font-medium mb-4">
+              <h3 className="text-body-md text-secondary-white font-semibold mb-4">
                 {project.name}
               </h3>
               
@@ -653,7 +651,7 @@ export default function OrganizationDetailPage() {
       )}
 
       {/* Members */}
-      <h2 className="text-heading-lg text-secondary-white mb-4">Members</h2>
+      <h2 className="text-heading-md text-secondary-white mb-4">Members</h2>
       
       <div className="glass-container mb-12 relative z-10">
         <table className="w-full">
@@ -691,7 +689,7 @@ export default function OrganizationDetailPage() {
                   className="border-b border-white/10 last:border-b-0"
                 >
                   <td className="py-4 px-6">
-                    <p className="text-body-md text-secondary-white font-medium">
+                    <p className="text-body-sm text-secondary-white font-medium">
                       {member.name}
                       {isCurrentUser && <span className="text-medium-gray ml-2">(you)</span>}
                     </p>
@@ -796,7 +794,7 @@ export default function OrganizationDetailPage() {
       {/* Settings - Only visible to owner */}
       {userRole === 'owner' && (
         <div>
-          <h2 className="text-heading-lg text-secondary-white mb-4">Settings</h2>
+          <h2 className="text-heading-md text-secondary-white mb-4">Settings</h2>
           
           {/* Plan Selection */}
           <div className="glass-container p-6">
@@ -877,21 +875,6 @@ export default function OrganizationDetailPage() {
           </div>
         )}
       </div>
-
-      {/* Create Project Modal */}
-      {showCreateProjectModal && workspace && (
-        <CreateProjectModal
-          workspaceId={workspace.id}
-          projectType="project"
-          shareWithOrgId={workspace.id}
-          shareWithOrgName={workspace.name}
-          onClose={() => setShowCreateProjectModal(false)}
-          onSuccess={() => {
-            setShowCreateProjectModal(false)
-            fetchOrganizationData()
-          }}
-        />
-      )}
     </div>
   )
 }

@@ -254,7 +254,7 @@ export default function SubscriptionPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Plans</h1>
+          <h1 data-walkthrough="page-title" className="text-heading-lg text-secondary-white">Plans</h1>
           <p className="text-body-md text-medium-gray mt-1">
             View and change your plan tier
           </p>
@@ -276,7 +276,7 @@ export default function SubscriptionPage() {
 
       {/* Individual Plans */}
       <div className="mb-12">
-        <h2 className="text-heading-lg text-secondary-white mb-6">Individual Plans</h2>
+        <h2 className="text-body-sm text-secondary-white mb-6 font-semibold uppercase tracking-wider">Individual Plans</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 flex-wrap">
           {(Object.keys(subscriptionDetails) as SubscriptionTier[]).map((tier) => {
             const sub = subscriptionDetails[tier]
@@ -298,7 +298,7 @@ export default function SubscriptionPage() {
                   {isCurrentPlan ? (
                     <button
                       onClick={() => window.location.href = '/dashboard/projects'}
-                      className="w-full py-3 text-body-md font-medium rounded-glass bg-cosmic-orange text-black hover:bg-rich-orange transition-colors cursor-pointer"
+                      className="btn-primary w-full py-3 text-body-md cursor-pointer"
                     >
                       Active
                     </button>
@@ -325,7 +325,7 @@ export default function SubscriptionPage() {
             <div className="mt-auto">
               <a
                 href="mailto:support@diffuse.ai?subject=Usage-based%20plan%20inquiry"
-                className="btn-secondary w-full py-3 text-body-md text-center block hover:bg-white/10 transition-colors"
+                className="btn-secondary w-full py-3 text-body-md text-center"
               >
                 Contact for pricing
               </a>
@@ -336,7 +336,7 @@ export default function SubscriptionPage() {
 
       {/* Enterprise Plans */}
       <div>
-        <h2 className="text-heading-lg text-secondary-white mb-6">Enterprise Plans</h2>
+        <h2 className="text-body-sm text-secondary-white mb-6 font-semibold uppercase tracking-wider">Enterprise Plans</h2>
         {!currentWorkspace ? (
           <div className="glass-container p-6 border border-white/10 mb-6">
             <p className="text-body-md text-medium-gray text-center">
@@ -370,7 +370,7 @@ export default function SubscriptionPage() {
                   {isCurrentPlan ? (
                     <button
                       onClick={() => window.location.href = '/dashboard/organization'}
-                      className="w-full py-3 text-body-md font-medium rounded-glass bg-cosmic-orange text-black hover:bg-rich-orange transition-colors cursor-pointer"
+                      className="btn-primary w-full py-3 text-body-md cursor-pointer"
                     >
                       Active
                     </button>

@@ -84,7 +84,8 @@ export default function SharedWithMePage() {
             .from('diffuse_project_inputs')
             .select('*', { count: 'exact', head: true })
             .eq('project_id', project.id)
-            .is('deleted_at', null),
+            .is('deleted_at', null)
+            .not('type', 'in', '(cover_photo,image)'),
           supabase
             .from('diffuse_project_outputs')
             .select('*', { count: 'exact', head: true })
@@ -142,7 +143,7 @@ export default function SharedWithMePage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-display-sm text-secondary-white">Shared With Me</h1>
+        <h1 className="text-heading-lg text-secondary-white">Shared With Me</h1>
         {/* Desktop button - hidden on mobile */}
         <div className="hidden md:flex items-center gap-3">
           <div className="flex w-[92px] items-center justify-end gap-3">
@@ -205,7 +206,10 @@ export default function SharedWithMePage() {
           {/* Mobile button - full width at top of grid, hidden on desktop */}
           <ViewOrgsButton className="md:hidden col-span-1" />
           {sharedProjects.map((project) => {
-            
+            const workspaceIdSet = new Set(workspaces.map((w) => w.workspace.id))
+            const orgsSharedWithUser = (project.orgs || []).filter((o) => workspaceIdSet.has(o.id))
+            const orgNamesLabel = orgsSharedWithUser.map((o) => o.name).join(', ')
+
             if (viewMode === 'list') {
               // List view: compact horizontal layout
               return (
@@ -223,21 +227,23 @@ export default function SharedWithMePage() {
                   
                   {/* Project info */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-body-md text-secondary-white font-medium truncate mb-1">
+                    <h3 className="text-body-md text-secondary-white font-semibold truncate mb-1">
                       {project.name}
                     </h3>
-                    <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider flex-wrap">
-                      <span className="text-accent-purple">{project.input_count} INPUT{project.input_count !== 1 ? 'S' : ''}</span>
-                      <span>•</span>
-                      <span className="text-cosmic-orange">{project.output_count} OUTPUT{project.output_count !== 1 ? 'S' : ''}</span>
-                      <span>•</span>
-                      <span>BY: {project.author_name}</span>
+                    <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider flex-wrap min-w-0">
+                      <span className="text-accent-purple flex-shrink-0">{project.input_count} INPUT{project.input_count !== 1 ? 'S' : ''}</span>
+                      <span className="flex-shrink-0">•</span>
+                      <span className="text-cosmic-orange flex-shrink-0">{project.output_count} OUTPUT{project.output_count !== 1 ? 'S' : ''}</span>
+                      <span className="flex-shrink-0">•</span>
+                      <span className="min-w-0 truncate">{orgNamesLabel ? orgNamesLabel.toUpperCase() : '—'}</span>
                     </div>
                   </div>
                   
-                  {/* Status badge */}
-                  <div className="flex-shrink-0 text-caption text-medium-gray uppercase tracking-wider px-2 py-1 bg-white/5 rounded">
-                    {project.orgs && project.orgs.length > 0 ? 'SHARED' : 'PRIVATE'}
+                  {/* Creator (replaces generic SHARED label) */}
+                  <div className="flex-shrink-0 max-w-[40%] sm:max-w-[11rem] text-caption text-medium-gray uppercase tracking-wider px-2 py-1 bg-white/5 rounded">
+                    <span className="block truncate">
+                      {project.orgs && project.orgs.length > 0 ? project.author_name : 'PRIVATE'}
+                    </span>
                   </div>
                   
                   {/* Arrow */}
@@ -256,7 +262,7 @@ export default function SharedWithMePage() {
               className="glass-container p-6 hover:bg-white/10 transition-colors cursor-pointer"
             >
               {/* Project Name */}
-              <h3 className="text-body-md text-secondary-white font-medium mb-4">
+              <h3 className="text-body-md text-secondary-white font-semibold mb-4">
                 {project.name}
               </h3>
               
@@ -285,18 +291,11 @@ export default function SharedWithMePage() {
                   </span>
                 </div>
                 
-                {/* Created By & Date */}
-                <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider">
-                  <span>CREATED BY: {project.author_name}</span>
-                  <span>•</span>
-                  <span>{new Date(project.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}</span>
-                </div>
-                
-                {/* Access */}
-                <div className="text-caption text-medium-gray uppercase tracking-wider">
-                  {project.orgs && project.orgs.length > 0 ? (
-                    <span className="flex items-center gap-1 flex-wrap">
-                      {project.orgs.map((org, index) => (
+                {/* Organization(s) you share with this project & date */}
+                <div className="flex items-start gap-2 text-caption text-medium-gray uppercase tracking-wider">
+                  <span className="flex items-center gap-1 flex-wrap min-w-0 flex-1">
+                    {orgsSharedWithUser.length > 0 ? (
+                      orgsSharedWithUser.map((org, index) => (
                         <span key={org.id} className="inline-flex items-center">
                           <span
                             onClick={(e) => {
@@ -307,10 +306,23 @@ export default function SharedWithMePage() {
                           >
                             {org.name}
                           </span>
-                          {index < project.orgs.length - 1 && <span className="text-medium-gray">,&nbsp;</span>}
+                          {index < orgsSharedWithUser.length - 1 && <span className="text-medium-gray">,&nbsp;</span>}
                         </span>
-                      ))}
-                    </span>
+                      ))
+                    ) : (
+                      <span>—</span>
+                    )}
+                  </span>
+                  <span className="flex-shrink-0">•</span>
+                  <span className="flex-shrink-0">
+                    {new Date(project.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
+                  </span>
+                </div>
+                
+                {/* Creator */}
+                <div className="text-caption text-medium-gray uppercase tracking-wider">
+                  {project.orgs && project.orgs.length > 0 ? (
+                    <span>CREATED BY: {project.author_name}</span>
                   ) : (
                     <span>PRIVATE</span>
                   )}

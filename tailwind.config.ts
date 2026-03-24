@@ -65,6 +65,7 @@ const config: Config = {
         'slide-down': 'slideDown 0.6s ease-out',
         'scale-in': 'scaleIn 0.5s ease-out',
         'float': 'float 6s ease-in-out infinite',
+        'record-pulse': 'recordPulseGlow 2.2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -86,6 +87,19 @@ const config: Config = {
         float: {
           '0%, 100%': { transform: 'translateY(0px)' },
           '50%': { transform: 'translateY(-20px)' },
+        },
+        /** Dim orange breathing ring while recording (mic active) */
+        recordPulseGlow: {
+          '0%, 100%': {
+            opacity: '0.35',
+            boxShadow:
+              '0 0 0 1px rgba(255, 150, 40, 0.22), 0 0 20px rgba(255, 150, 40, 0.12), 0 0 40px rgba(255, 150, 40, 0.06)',
+          },
+          '50%': {
+            opacity: '0.85',
+            boxShadow:
+              '0 0 0 1px rgba(255, 150, 40, 0.45), 0 0 32px rgba(255, 150, 40, 0.22), 0 0 56px rgba(255, 150, 40, 0.12)',
+          },
         },
       },
     },

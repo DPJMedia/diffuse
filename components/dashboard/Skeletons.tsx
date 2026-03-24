@@ -391,64 +391,168 @@ export function OrganizationDetailSkeleton() {
 // ---------------------------------------------------------------------------
 // ProjectDetailSkeleton
 //
-// Real layout:
-//   Header: back chevron + title (text-display-sm) + description (text-body-lg)
-//   Tabs: flex gap-4 mb-8 border-b border-white/10 — pb-3 px-4 per tab
-//   Action row: flex md:justify-end gap-3 mb-4 — Settings icon + Delete icon + Add button
-//   Card grid: grid-cols 3 — each card matches SkeletonCard structure with icon
+// Exact replica of the two-column layout with responsive behavior.
+// Only database-loaded content (project data, inputs, outputs, images) shows skeleton animation.
+// All static UI structure (buttons, section headers, containers) renders normally.
 // ---------------------------------------------------------------------------
 
 export function ProjectDetailSkeleton() {
   return (
     <div>
-      {/* Header: back + title + description */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          {/* Back chevron: w-5 h-5 */}
-          <SkeletonBlock className="w-5 h-5 flex-shrink-0" />
-          {/* Title: text-display-sm ~43px → h-10 */}
-          <SkeletonLine className="w-64 h-10" />
-        </div>
-        {/* Description: text-body-lg ~29px → h-7; ml-8 to clear back icon */}
-        <SkeletonLine className="w-80 h-7 ml-8" />
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div className="mb-6">
+        <button className="inline-flex items-center gap-1.5 text-medium-gray hover:text-secondary-white transition-colors text-body-sm mb-3">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          All Projects
+        </button>
+        {/* Project name - ANIMATED (from database) */}
+        <SkeletonLine className="w-64 h-8 mb-1" />
+        {/* Project description - ANIMATED (from database) */}
+        <SkeletonLine className="w-96 h-[22px]" />
       </div>
 
-      {/* Tab strip: flex gap-4 mb-8 border-b border-white/10 */}
-      <div className="flex gap-4 mb-8 border-b border-white/10">
-        {/* Each tab: pb-3 px-4 — text-body-md ~26px → h-6 */}
-        {['w-20', 'w-24', 'w-24'].map((w, i) => (
-          <div key={i} className="pb-3 px-4">
-            <SkeletonLine className={`${w} h-6`} />
-          </div>
-        ))}
-      </div>
+      {/* ── Two-column layout ──────────────────────────────── */}
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
 
-      {/* Action row: flex md:justify-end gap-3 mb-4
-          Settings icon (w-10 h-10) + Delete icon (w-10 h-10) + Add Input button (w-32 h-10) */}
-      <div className="flex flex-col md:flex-row md:justify-end gap-3 mb-4">
-        <SkeletonBlock className="w-10 h-10 flex-shrink-0" />
-        <SkeletonBlock className="w-10 h-10 flex-shrink-0" />
-        <SkeletonBlock className="w-32 h-10 flex-shrink-0" />
-      </div>
-
-      {/* Card grid: same structure as other pages but cards have an icon on the left */}
-      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="glass-container p-6">
-            <div className="flex items-start gap-3">
-              {/* Type icon: p-2 rounded-lg bg-white/5 wrapping a w-4 h-4 icon → total ~32px */}
-              <SkeletonBlock className="w-8 h-8 flex-shrink-0" />
-              <div className="flex-1 space-y-2">
-                {/* File name: text-heading-md ~28px → h-7 */}
-                <SkeletonLine className="w-3/4 h-7" />
-                {/* Type + size metadata: text-caption ~18px */}
-                <SkeletonLine className="w-1/2 h-[18px]" />
-                {/* Date: text-caption ~18px */}
-                <SkeletonLine className="w-1/3 h-[18px]" />
+        {/* ── Left: Output column ───────────────────────── */}
+        <div className="flex-1 min-w-0">
+          {/* Output display area */}
+          <div>
+            {/* Current output card - ANIMATED (from database) */}
+            <div className="glass-container p-5 mb-4">
+              {/* Output type label */}
+              <div className="flex items-center gap-2 mb-2">
+                <SkeletonBlock className="w-3.5 h-3.5 flex-shrink-0" />
+                <SkeletonLine className="w-20 h-[18px]" />
               </div>
+              {/* Output title */}
+              <SkeletonLine className="w-3/4 h-6 mb-1" />
+              {/* Output subtitle */}
+              <SkeletonLine className="w-2/3 h-[18px] mb-2" />
+              {/* Output excerpt */}
+              <div className="space-y-2 mb-3">
+                <SkeletonLine className="w-full h-[18px]" />
+                <SkeletonLine className="w-full h-[18px]" />
+                <SkeletonLine className="w-5/6 h-[18px]" />
+              </div>
+              {/* Author and date */}
+              <SkeletonLine className="w-48 h-[18px]" />
+            </div>
+
+            {/* Past outputs section */}
+            <div className="mt-4 border-t border-white/10 pt-3">
+              <p className="text-caption text-medium-gray uppercase tracking-wider mb-1">Past Outputs</p>
+              {/* Past output items - ANIMATED (from database) */}
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="border-b border-white/10 last:border-b-0">
+                  <div className="w-full flex items-center justify-between py-2.5 px-1">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <SkeletonBlock className="flex-shrink-0 w-3.5 h-3.5" />
+                      <SkeletonLine className="flex-1 h-[22px]" />
+                      <SkeletonLine className="w-16 h-[18px] flex-shrink-0" />
+                    </div>
+                    <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        ))}
+        </div>
+
+        {/* ── Right sidebar — single container ──────────── */}
+        <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 glass-container overflow-hidden">
+
+          {/* Quick + Generate buttons — STATIC UI */}
+          <div className="flex border-b border-white/10">
+            <button
+              disabled
+              className="btn-secondary flex-1 py-3 gap-1.5 text-body-sm rounded-none border-r border-secondary-white/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Quick
+            </button>
+            <button
+              disabled
+              className="btn-primary flex-1 py-3 gap-1.5 text-body-sm rounded-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              Generate
+            </button>
+          </div>
+
+          {/* Inputs section - STATIC structure */}
+          <div className="border-b border-white/10">
+            <div className="flex items-center justify-between px-4 py-3">
+              <p className="text-body-sm text-secondary-white font-medium">
+                Inputs <span className="text-body-sm text-medium-gray"></span>
+              </p>
+              <button className="text-caption text-medium-gray hover:text-secondary-white transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            </div>
+            {/* Input items - ANIMATED (from database) */}
+            <div className="space-y-0.5 px-4 pb-3">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="relative group">
+                  <div className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors">
+                    <SkeletonBlock className="flex-shrink-0 w-3.5 h-3.5" />
+                    <SkeletonLine className="flex-1 h-[22px]" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Images section - STATIC structure */}
+          <div className="border-b border-white/10">
+            <button className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors">
+              <p className="text-body-sm text-secondary-white font-medium">
+                Images <span className="text-body-sm text-medium-gray"></span>
+              </p>
+              <svg className="w-3.5 h-3.5 text-medium-gray transition-transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {/* Image grid - ANIMATED (from database) */}
+            <div className="grid grid-cols-3 gap-2 px-4 pb-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <SkeletonBlock key={i} className="aspect-square rounded-glass" />
+              ))}
+            </div>
+          </div>
+
+          {/* Visibility section - STATIC structure */}
+          <div className="border-b border-white/10">
+            <button className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors">
+              <p className="text-body-sm text-secondary-white font-medium">
+                Visibility <span className="text-body-sm text-medium-gray"></span>
+              </p>
+              <svg className="w-3.5 h-3.5 text-medium-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Settings section - STATIC structure */}
+          <div>
+            <button className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors">
+              <p className="text-body-sm text-secondary-white font-medium">Settings</p>
+              <svg className="w-3.5 h-3.5 text-medium-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

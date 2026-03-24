@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
-import CreateProjectModal from '@/components/dashboard/CreateProjectModal'
 import EmptyState from '@/components/dashboard/EmptyState'
 import { GridPageSkeleton } from '@/components/dashboard/Skeletons'
 import type { DiffuseProject } from '@/types/database'
@@ -29,7 +28,6 @@ export default function AdvertisementsPage() {
   const [advertisements, setAdvertisements] = useState<ProjectWithCounts[]>([])
   const [totalCountForLimit, setTotalCountForLimit] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [showCreateModal, setShowCreateModal] = useState(false)
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free')
   const [isEditMode, setIsEditMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -94,11 +92,11 @@ export default function AdvertisementsPage() {
 
       // Batch fetch all data in parallel (5 queries instead of 4N queries)
       const [inputsResult, outputsResult, creatorsResult, orgsResult] = await Promise.all([
-        // Get all inputs for all ads
+        // Get all inputs for all ads (excluding images)
         adIds.length > 0
           ? supabase
               .from('diffuse_project_inputs')
-              .select('project_id')
+              .select('project_id, type')
               .in('project_id', adIds)
               .is('deleted_at', null)
           : Promise.resolve({ data: [], error: null }),
@@ -132,10 +130,12 @@ export default function AdvertisementsPage() {
       const creatorNames = new Map<string, string>()
       const orgNames = new Map<string, { id: string; name: string }>()
 
-      // Count inputs per ad
+      // Count inputs per ad (excluding cover_photo and image types)
       const inputsData = inputsResult.data || []
-      inputsData.forEach((input: { project_id: string }) => {
-        inputCounts.set(input.project_id, (inputCounts.get(input.project_id) || 0) + 1)
+      inputsData.forEach((input: { project_id: string; type: string }) => {
+        if (input.type !== 'cover_photo' && input.type !== 'image') {
+          inputCounts.set(input.project_id, (inputCounts.get(input.project_id) || 0) + 1)
+        }
       })
 
       // Count outputs per ad
@@ -317,7 +317,7 @@ export default function AdvertisementsPage() {
           router.push('/dashboard/subscription')
           return
         }
-        setShowCreateModal(true)
+        router.push('/dashboard/advertisements/new')
       }}
       className={`btn-primary px-4 py-2 flex items-center justify-center gap-2 text-body-sm ${className}`}
     >
@@ -343,7 +343,7 @@ export default function AdvertisementsPage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <h1 data-walkthrough="page-title" className="text-display-sm text-secondary-white">Advertisements</h1>
+        <h1 data-walkthrough="page-title" className="text-heading-lg text-secondary-white">Advertisements</h1>
         {/* Desktop buttons - hidden on mobile */}
         <div className="hidden md:flex items-center gap-3">
           {showBulkActions ? (
@@ -371,19 +371,7 @@ export default function AdvertisementsPage() {
           ) : (
             <>
               <div className="flex w-[92px] items-center justify-end gap-3">
-                {viewMode === 'grid' && advertisements.length > 0 ? (
-                  <button
-                    onClick={() => setIsEditMode(true)}
-                    className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
-                    title="Edit"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-                ) : (
-                  <div className="h-10 w-10 flex-shrink-0" />
-                )}
+                <div className="h-10 w-10 flex-shrink-0" />
                 <button
                   onClick={toggleViewMode}
                   className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-glass-sm border border-white/20 text-secondary-white hover:bg-white/10 transition-colors"
@@ -498,7 +486,7 @@ export default function AdvertisementsPage() {
                   
                   {/* Ad info */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-body-md text-secondary-white font-medium truncate mb-1">
+                    <h3 className="text-body-md text-secondary-white font-semibold truncate mb-1">
                       {ad.name}
                     </h3>
                     <div className="flex items-center gap-2 text-caption text-medium-gray uppercase tracking-wider flex-wrap">
@@ -551,7 +539,7 @@ export default function AdvertisementsPage() {
                   </div>
                 )}
                 {/* Name */}
-                <h3 className={`text-body-md text-secondary-white font-medium mb-4 ${isEditMode ? 'pr-8' : ''}`}>
+                <h3 className={`text-body-md text-secondary-white font-semibold mb-4 ${isEditMode ? 'pr-8' : ''}`}>
                   {ad.name}
                 </h3>
                 
@@ -615,16 +603,6 @@ export default function AdvertisementsPage() {
             )
           })}
         </div>
-      )}
-
-      {/* Create Advertisement Modal */}
-      {showCreateModal && (
-        <CreateProjectModal
-          workspaceId={currentWorkspace?.id || null}
-          projectType="advertisement"
-          onClose={() => setShowCreateModal(false)}
-          onSuccess={fetchAdvertisements}
-        />
       )}
     </div>
   )
