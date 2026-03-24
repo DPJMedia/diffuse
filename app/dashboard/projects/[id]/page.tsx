@@ -1272,7 +1272,7 @@ export default function ProjectDetailPage() {
               <button
                 onClick={() => setShowQuickGenerateModal(true)}
                 disabled={generatingArticle || nonImageInputsCount === 0}
-                className="btn-secondary flex-1 py-3 gap-1.5 text-body-sm rounded-none border-r border-secondary-white/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                className="btn-secondary border-0 border-r border-secondary-white/25 flex-1 py-3 gap-1.5 text-body-sm rounded-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
                 title={nonImageInputsCount === 0 ? 'Add inputs first' : 'Quick generate'}
               >
                 {generatingArticle && generateSource === 'quick' ? (
