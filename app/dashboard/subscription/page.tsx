@@ -23,14 +23,6 @@ const individualPlans = {
   contractor_pro: { name: 'Contractor Pro', projects: 40, price: '$0/mo', isEnterprise: false },
 }
 
-// Usage-based is contact-only (no tier in DB)
-const usageBasedPlan = {
-  name: 'Usage-Based',
-  description: 'Pay only for what you use',
-  features: 'No fixed project limit · Pay per project or output · Scale anytime',
-  price: 'Pay as you go',
-}
-
 // Enterprise plans (for organizations) - based on projects
 const enterprisePlans = {
   enterprise_pro: { name: 'Enterprise Pro', projects: 50, price: '$100/mo' },
@@ -69,6 +61,7 @@ export default function SubscriptionPage() {
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false)
   const [selectedEnterprisePlan, setSelectedEnterprisePlan] = useState<EnterprisePlan | null>(null)
   const [contractorEmail, setContractorEmail] = useState('')
+  const [contractorEmailError, setContractorEmailError] = useState<string | null>(null)
   const supabase = createClient()
 
   const subscriptionDetails = individualPlans
@@ -151,7 +144,8 @@ export default function SubscriptionPage() {
       free: 0,
       pro: 1,
       pro_max: 2,
-      contractor_pro: 1,
+      // Treat Contractor Pro as "higher" for UI so Pro/Pro Max show as downgrades.
+      contractor_pro: 3,
     }
     return tierValues[tier] || 0
   }
@@ -200,9 +194,11 @@ export default function SubscriptionPage() {
     if (!user) return
     const email = contractorEmail.trim().toLowerCase()
     if (!CONTRACTOR_PRO_ALLOWED_EMAILS.has(email)) {
+      setContractorEmailError('Email not approved for Contractor Pro.')
       setMessage({ type: 'error', text: 'Email not approved for Contractor Pro.' })
       return
     }
+    setContractorEmailError(null)
     await handleChangeSubscription('contractor_pro')
     setContractorEmail('')
   }
@@ -317,7 +313,7 @@ export default function SubscriptionPage() {
                 : sub.name === 'Free'
                   ? 'Get started with Diffuse'
                   : 'More projects and features'
-            const subtitle2 = tier === 'contractor_pro' ? '50 articles/month' : `${sub.projects} projects included`
+            const subtitle2 = `${sub.projects} projects included`
 
             return (
               <div
@@ -330,27 +326,47 @@ export default function SubscriptionPage() {
                   <p className="leading-tight">{subtitle2}</p>
                 </div>
                 <div className="mt-auto">
-                  {tier === 'contractor_pro' ? (
-                    <div className="space-y-3">
+                  {/* Reserve space so all cards are same height */}
+                  <div className="h-[86px]">
+                    {tier === 'contractor_pro' && !isCurrentPlan && (
                       <div>
                         <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
                           Approved email
                         </label>
                         <input
                           value={contractorEmail}
-                          onChange={(e) => setContractorEmail(e.target.value)}
+                          onChange={(e) => {
+                            setContractorEmail(e.target.value)
+                            if (contractorEmailError) setContractorEmailError(null)
+                          }}
                           placeholder="name@example.com"
-                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md focus:outline-none focus:border-cosmic-orange transition-colors"
+                          className={`w-full px-4 py-3 bg-white/5 border rounded-glass text-secondary-white text-body-md focus:outline-none transition-colors ${
+                            contractorEmailError
+                              ? 'border-red-500/40 focus:border-red-500'
+                              : 'border-white/10 focus:border-cosmic-orange'
+                          }`}
                         />
                       </div>
+                    )}
+                  </div>
+
+                  {tier === 'contractor_pro' ? (
+                    isCurrentPlan ? (
+                      <button
+                        onClick={() => window.location.href = '/dashboard/projects'}
+                        className="btn-primary w-full py-3 text-body-md cursor-pointer"
+                      >
+                        Active
+                      </button>
+                    ) : (
                       <button
                         onClick={handleActivateContractorPro}
                         disabled={saving || !contractorEmail.trim()}
                         className="btn-secondary w-full py-3 text-body-md disabled:opacity-50"
                       >
-                        {isCurrentPlan ? 'Active' : 'Activate'}
+                        Activate
                       </button>
-                    </div>
+                    )
                   ) : isCurrentPlan ? (
                     <button
                       onClick={() => window.location.href = '/dashboard/projects'}
@@ -371,22 +387,6 @@ export default function SubscriptionPage() {
               </div>
             )
           })}
-          {/* Usage-based: contact-only, no tier in DB */}
-          <div className="glass-container p-6 border border-white/10 flex flex-col min-h-[200px]">
-            <h3 className="text-heading-md text-secondary-white mb-2">{usageBasedPlan.name}</h3>
-            <div className="min-h-[4.5rem] text-body-sm text-medium-gray space-y-1 mb-6">
-              <p className="leading-tight">{usageBasedPlan.description}</p>
-              <p className="leading-tight">{usageBasedPlan.price}</p>
-            </div>
-            <div className="mt-auto">
-              <a
-                href="mailto:support@diffuse.ai?subject=Usage-based%20plan%20inquiry"
-                className="btn-secondary w-full py-3 text-body-md text-center"
-              >
-                Contact for pricing
-              </a>
-            </div>
-          </div>
         </div>
       </div>
 
