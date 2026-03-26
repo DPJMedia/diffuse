@@ -269,6 +269,7 @@ export default function RecordingSessionPanel({
         >
           {phase === 'ready' && (
             <button
+              data-walkthrough="recording-mic"
               type="button"
               onClick={handleStartRecording}
               disabled={!!error}

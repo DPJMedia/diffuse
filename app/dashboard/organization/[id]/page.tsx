@@ -9,7 +9,7 @@ import { OrganizationDetailSkeleton } from '@/components/dashboard/Skeletons'
 import EmptyState from '@/components/dashboard/EmptyState'
 import type { DiffuseWorkspace, DiffuseProject, OrganizationPlan } from '@/types/database'
 
-type SubscriptionTier = 'free' | 'pro' | 'pro_max'
+type SubscriptionTier = 'free' | 'pro' | 'pro_max' | 'contractor_pro'
 
 const planDetails = {
   enterprise_pro: { name: 'Enterprise Pro', projects: 50, price: '$100/mo' },
@@ -71,6 +71,7 @@ export default function OrganizationDetailPage() {
     free: 3,
     pro: 15,
     pro_max: 40,
+    contractor_pro: 40,
   }
 
   const fetchOrganizationData = useCallback(async () => {

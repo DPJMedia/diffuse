@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { SubscriptionPageSkeleton } from '@/components/dashboard/Skeletons'
 import UpgradeCodeModal from '@/components/dashboard/UpgradeCodeModal'
 
-type SubscriptionTier = 'free' | 'pro' | 'pro_max'
+type SubscriptionTier = 'free' | 'pro' | 'pro_max' | 'contractor_pro'
 
 interface UserProfile {
   id: string
@@ -20,6 +20,7 @@ const individualPlans = {
   free: { name: 'Free', projects: 3, price: '$0/mo', isEnterprise: false },
   pro: { name: 'Pro', projects: 15, price: '$20/mo', isEnterprise: false },
   pro_max: { name: 'Pro Max', projects: 40, price: '$60/mo', isEnterprise: false },
+  contractor_pro: { name: 'Contractor Pro', projects: 40, price: '$0/mo', isEnterprise: false },
 }
 
 // Usage-based is contact-only (no tier in DB)
@@ -41,7 +42,13 @@ const UPGRADE_CODES: Record<SubscriptionTier, string> = {
   free: '', // No code needed for free
   pro: 'diffusepro',
   pro_max: 'diffusepromax',
+  contractor_pro: '', // Email-gated plan (no code)
 }
+
+const CONTRACTOR_PRO_ALLOWED_EMAILS = new Set([
+  'trmullin95@gmail.com',
+  'johnnmcguire04@gmail.com',
+])
 
 // Enterprise upgrade codes
 const ENTERPRISE_UPGRADE_CODES: Record<string, string> = {
@@ -61,6 +68,7 @@ export default function SubscriptionPage() {
   const [selectedTier, setSelectedTier] = useState<SubscriptionTier | null>(null)
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false)
   const [selectedEnterprisePlan, setSelectedEnterprisePlan] = useState<EnterprisePlan | null>(null)
+  const [contractorEmail, setContractorEmail] = useState('')
   const supabase = createClient()
 
   const subscriptionDetails = individualPlans
@@ -120,6 +128,11 @@ export default function SubscriptionPage() {
     const currentTierValue = getTierValue(currentTier)
     const newTierValue = getTierValue(tier)
     
+    if (tier === 'contractor_pro') {
+      // Activated via email allowlist (inline input), not upgrade code modal
+      return
+    }
+
     // Free tier doesn't need a code
     // Downgrades don't need a code
     if (tier === 'free' || newTierValue < currentTierValue) {
@@ -138,6 +151,7 @@ export default function SubscriptionPage() {
       free: 0,
       pro: 1,
       pro_max: 2,
+      contractor_pro: 1,
     }
     return tierValues[tier] || 0
   }
@@ -164,7 +178,10 @@ export default function SubscriptionPage() {
     try {
       const { error } = await supabase
         .from('user_profiles')
-        .update({ subscription_tier: tier })
+        .update({
+          subscription_tier: tier,
+          ...(tier === 'contractor_pro' ? { user_level: 'contractor' } : {}),
+        })
         .eq('id', user.id)
 
       if (error) throw error
@@ -177,6 +194,17 @@ export default function SubscriptionPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleActivateContractorPro = async () => {
+    if (!user) return
+    const email = contractorEmail.trim().toLowerCase()
+    if (!CONTRACTOR_PRO_ALLOWED_EMAILS.has(email)) {
+      setMessage({ type: 'error', text: 'Email not approved for Contractor Pro.' })
+      return
+    }
+    await handleChangeSubscription('contractor_pro')
+    setContractorEmail('')
   }
 
   const handleEnterpriseUpgradeClick = (plan: EnterprisePlan) => {
@@ -245,9 +273,11 @@ export default function SubscriptionPage() {
   }
 
   // Ensure we have a valid subscription tier, default to 'free'
-  const currentTier: SubscriptionTier = profile.subscription_tier && subscriptionDetails[profile.subscription_tier] 
-    ? profile.subscription_tier 
-    : 'free'
+  const currentTier: SubscriptionTier = (() => {
+    const tier = profile.subscription_tier
+    if (tier === 'contractor_pro') return 'contractor_pro'
+    return (tier && subscriptionDetails[tier]) ? tier : 'free'
+  })()
 
   return (
     <div>
@@ -281,8 +311,13 @@ export default function SubscriptionPage() {
           {(Object.keys(subscriptionDetails) as SubscriptionTier[]).map((tier) => {
             const sub = subscriptionDetails[tier]
             const isCurrentPlan = tier === currentTier
-            const subtitle1 = sub.name === 'Free' ? 'Get started with Diffuse' : 'More projects and features'
-            const subtitle2 = `${sub.projects} projects included`
+            const subtitle1 =
+              tier === 'contractor_pro'
+                ? 'For approved contractors'
+                : sub.name === 'Free'
+                  ? 'Get started with Diffuse'
+                  : 'More projects and features'
+            const subtitle2 = tier === 'contractor_pro' ? '50 articles/month' : `${sub.projects} projects included`
 
             return (
               <div
@@ -295,7 +330,28 @@ export default function SubscriptionPage() {
                   <p className="leading-tight">{subtitle2}</p>
                 </div>
                 <div className="mt-auto">
-                  {isCurrentPlan ? (
+                  {tier === 'contractor_pro' ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">
+                          Approved email
+                        </label>
+                        <input
+                          value={contractorEmail}
+                          onChange={(e) => setContractorEmail(e.target.value)}
+                          placeholder="name@example.com"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-md focus:outline-none focus:border-cosmic-orange transition-colors"
+                        />
+                      </div>
+                      <button
+                        onClick={handleActivateContractorPro}
+                        disabled={saving || !contractorEmail.trim()}
+                        className="btn-secondary w-full py-3 text-body-md disabled:opacity-50"
+                      >
+                        {isCurrentPlan ? 'Active' : 'Activate'}
+                      </button>
+                    </div>
+                  ) : isCurrentPlan ? (
                     <button
                       onClick={() => window.location.href = '/dashboard/projects'}
                       className="btn-primary w-full py-3 text-body-md cursor-pointer"

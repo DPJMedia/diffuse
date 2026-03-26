@@ -1012,14 +1012,62 @@ export default function RecordingDetailPage() {
   if (loading) {
     return (
       <div className="animate-pulse">
+        {/* Header */}
         <div className="mb-6">
-          <div className="h-6 w-48 bg-white/10 rounded mb-3"></div>
-          <div className="h-8 w-64 bg-white/10 rounded mb-1"></div>
-          <div className="h-5 w-96 bg-white/10 rounded"></div>
+          <div className="h-4 w-36 bg-white/10 rounded mb-4" />
+          <div className="h-8 w-80 max-w-[80%] bg-white/10 rounded mb-2" />
+          <div className="h-4 w-72 max-w-[70%] bg-white/10 rounded" />
         </div>
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 glass-container h-96"></div>
-          <div className="w-full lg:w-72 xl:w-80 glass-container h-96"></div>
+
+        {/* Two-column layout */}
+        <div className="flex flex-col lg:flex-row gap-4 items-start">
+          {/* Left column */}
+          <div className="flex-1 min-w-0 flex flex-col gap-4 h-[calc(100vh-200px)]">
+            {/* Audio player card */}
+            <div className="glass-container bg-dark-gray/95 backdrop-blur-glass p-5 flex-shrink-0">
+              <div className="h-10 w-full bg-white/10 rounded" />
+            </div>
+
+            {/* Transcript card */}
+            <div className="glass-container bg-dark-gray/95 backdrop-blur-glass p-5 flex-1 min-h-0">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-5 w-44 bg-white/10 rounded" />
+                <div className="h-5 w-28 bg-white/10 rounded" />
+              </div>
+              <div className="space-y-3">
+                <div className="h-4 w-[92%] bg-white/10 rounded" />
+                <div className="h-4 w-[88%] bg-white/10 rounded" />
+                <div className="h-4 w-[84%] bg-white/10 rounded" />
+                <div className="h-4 w-[90%] bg-white/10 rounded" />
+                <div className="h-4 w-[76%] bg-white/10 rounded" />
+                <div className="h-4 w-[86%] bg-white/10 rounded" />
+              </div>
+            </div>
+          </div>
+
+          {/* Right sidebar */}
+          <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 glass-container bg-dark-gray/95 backdrop-blur-glass overflow-hidden">
+            {/* Actions header */}
+            <div className="border-b border-white/10 px-4 py-3">
+              <div className="h-5 w-20 bg-white/10 rounded" />
+            </div>
+
+            {/* Action rows */}
+            <div className="px-4 py-3 space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-10 w-full bg-white/10 rounded" />
+              ))}
+            </div>
+
+            {/* Settings header */}
+            <div className="border-t border-white/10 px-4 py-3">
+              <div className="h-5 w-24 bg-white/10 rounded" />
+            </div>
+            <div className="px-4 pb-4 space-y-2">
+              <div className="h-10 w-full bg-white/10 rounded" />
+              <div className="h-10 w-full bg-white/10 rounded" />
+            </div>
+          </div>
         </div>
       </div>
     )

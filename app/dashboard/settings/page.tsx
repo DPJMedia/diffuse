@@ -7,7 +7,7 @@ import { useWalkthrough } from '@/contexts/WalkthroughContext'
 import { createClient } from '@/lib/supabase/client'
 import { SettingsPageSkeleton } from '@/components/dashboard/Skeletons'
 
-type SubscriptionTier = 'free' | 'pro' | 'pro_max'
+type SubscriptionTier = 'free' | 'pro' | 'pro_max' | 'contractor_pro'
 
 interface UserProfile {
   id: string

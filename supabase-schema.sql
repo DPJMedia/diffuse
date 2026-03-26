@@ -11,7 +11,7 @@
 CREATE TYPE user_role AS ENUM ('admin', 'member');
 
 -- User subscription tiers
-CREATE TYPE subscription_tier AS ENUM ('free', 'pro', 'pro_max');
+CREATE TYPE subscription_tier AS ENUM ('free', 'pro', 'pro_max', 'contractor_pro');
 
 -- User levels (account types)
 CREATE TYPE user_level AS ENUM ('individual', 'contractor', 'admin', 'enterprise_admin');

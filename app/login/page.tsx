@@ -252,7 +252,7 @@ export default function LoginPage() {
         {/* Logo */}
         <Link href="/" className="block text-center mb-8">
           <h1 className="text-3xl font-bold">
-            diffuse<span className="text-cosmic-orange">.ai</span>
+            Diffuse<span className="text-cosmic-orange">.AI</span>
           </h1>
         </Link>
 

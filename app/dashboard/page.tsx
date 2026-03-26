@@ -8,7 +8,7 @@ import EmptyState from '@/components/dashboard/EmptyState'
 import { GridPageSkeleton } from '@/components/dashboard/Skeletons'
 import type { DiffuseProject } from '@/types/database'
 
-type SubscriptionTier = 'free' | 'pro' | 'pro_max'
+type SubscriptionTier = 'free' | 'pro' | 'pro_max' | 'contractor_pro'
 
 interface OrgInfo {
   id: string
@@ -54,6 +54,7 @@ export default function DashboardPage() {
     free: 3,
     pro: 15,
     pro_max: 40,
+  contractor_pro: 40,
   }
 
   const fetchProjects = useCallback(async () => {

@@ -2,14 +2,14 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { faqSchema, productSchema, serviceSchema, howToSchema } from './schema'
 
-const siteUrl = 'https://diffuse.ai'
-const siteName = 'diffuse.ai'
+const siteUrl = 'https://www.diffuse.press'
+const siteName = 'Diffuse.AI'
 const siteDescription = 'Turn meetings, documents, and web pages into publication-ready articles and ads in minutes. AI transcription, multi-input projects (recordings, PDFs, images, web scrape), article and advertisement generation, team collaboration, and publishing integrations. Built for local news, journalists, and content teams.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'Diffuse.AI - Recordings, Documents & Web → Articles & Ads in Minutes',
+    default: 'Diffuse.AI - AI Content Generation for News & Journalism',
     template: '%s | Diffuse.AI',
   },
   description: siteDescription,
@@ -55,10 +55,10 @@ export const metadata: Metadata = {
     'automated reporting tool',
   ],
   authors: [
-    { name: 'diffuse.ai', url: siteUrl },
+    { name: 'Diffuse.AI', url: siteUrl },
   ],
-  creator: 'diffuse.ai',
-  publisher: 'diffuse.ai',
+  creator: 'Diffuse.AI',
+  publisher: 'Diffuse.AI',
   formatDetection: {
     email: false,
     address: false,
@@ -69,14 +69,14 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: siteUrl,
     siteName: siteName,
-    title: 'Diffuse.AI - Recordings, Documents & Web → Articles & Ads in Minutes',
+    title: 'Diffuse.AI - AI Content Generation for News & Journalism',
     description: siteDescription,
     images: [
       {
         url: '/socialcover.png',
         width: 1200,
         height: 630,
-        alt: 'Diffuse.AI - Turn meetings, documents, and web pages into publication-ready articles and ads with AI',
+        alt: 'Diffuse.AI - Turn meetings, documents, and web pages into articles and ads with AI',
         type: 'image/png',
       },
     ],
@@ -85,7 +85,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@DiffuseAI',
     creator: '@DiffuseAI',
-    title: 'Diffuse.AI - Recordings, Documents & Web → Articles & Ads in Minutes',
+    title: 'Diffuse.AI - AI Content Generation for News & Journalism',
     description: siteDescription,
     images: ['/socialcover.png'],
   },
@@ -145,7 +145,7 @@ export default function RootLayout({
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'Organization',
-              name: 'diffuse.ai',
+              name: 'Diffuse.AI',
               url: siteUrl,
               logo: `${siteUrl}/D.png`,
               description: siteDescription,

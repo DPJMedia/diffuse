@@ -26,6 +26,7 @@ const subscriptionNames: Record<string, string> = {
   free: 'Free',
   pro: 'Pro',
   pro_max: 'Pro Max',
+  contractor_pro: 'Contractor Pro',
 }
 
 interface RecentProject {

@@ -78,7 +78,7 @@ export const productSchema = {
     price: '0',
     priceCurrency: 'USD',
     priceValidUntil: '2026-12-31',
-    url: 'https://diffuse.ai',
+    url: 'https://www.diffuse.press',
   },
   aggregateRating: {
     '@type': 'AggregateRating',
@@ -87,8 +87,8 @@ export const productSchema = {
     bestRating: '5',
     worstRating: '1',
   },
-  image: 'https://diffuse.ai/socialcover.png',
-  url: 'https://diffuse.ai',
+  image: 'https://www.diffuse.press/socialcover.png',
+  url: 'https://www.diffuse.press',
 }
 
 export const serviceSchema = {
@@ -98,7 +98,7 @@ export const serviceSchema = {
   provider: {
     '@type': 'Organization',
     name: 'Diffuse.AI',
-    url: 'https://diffuse.ai',
+    url: 'https://www.diffuse.press',
   },
   areaServed: {
     '@type': 'Country',
@@ -154,7 +154,7 @@ export const howToSchema = {
   '@type': 'HowTo',
   name: 'How to Turn Meetings and Documents Into Articles and Ads with Diffuse.AI',
   description: 'Use Diffuse.AI to turn recordings, documents, images, or web pages into publication-ready articles or advertisements in minutes',
-  image: 'https://diffuse.ai/socialcover.png',
+  image: 'https://www.diffuse.press/socialcover.png',
   totalTime: 'PT15M',
   step: [
     {
@@ -162,28 +162,28 @@ export const howToSchema = {
       position: 1,
       name: 'Record or add inputs',
       text: 'Record in the app, upload audio (MP3, WAV, M4A), add documents (PDF, DOCX, TXT), images (JPG, PNG), or scrape a URL. Combine multiple inputs in one project.',
-      url: 'https://diffuse.ai#how-it-works',
+      url: 'https://www.diffuse.press#how-it-works',
     },
     {
       '@type': 'HowToStep',
       position: 2,
       name: 'Transcribe',
       text: 'Diffuse.AI transcribes audio and extracts text from documents. Edit the transcription and title before generating if needed.',
-      url: 'https://diffuse.ai#how-it-works',
+      url: 'https://www.diffuse.press#how-it-works',
     },
     {
       '@type': 'HowToStep',
       position: 3,
       name: 'Generate',
       text: 'Click Generate to create publication-ready articles or advertisements with headline, excerpt, and content. Edit and re-edit outputs as needed.',
-      url: 'https://diffuse.ai#how-it-works',
+      url: 'https://www.diffuse.press#how-it-works',
     },
     {
       '@type': 'HowToStep',
       position: 4,
       name: 'Publish',
       text: 'Connect your publishing frontend to auto-populate articles, or copy and paste. You can publish in minutes.',
-      url: 'https://diffuse.ai#how-it-works',
+      url: 'https://www.diffuse.press#how-it-works',
     },
   ],
 }
@@ -193,9 +193,9 @@ export const videoSchema = {
   '@type': 'VideoObject',
   name: 'Diffuse.AI Platform Demo',
   description: 'See how Diffuse.AI turns recordings, documents, and web pages into publication-ready articles and ads with AI transcription and multi-input generation',
-  thumbnailUrl: 'https://diffuse.ai/socialcover.png',
+  thumbnailUrl: 'https://www.diffuse.press/socialcover.png',
   uploadDate: '2024-11-01',
-  contentUrl: 'https://diffuse.ai#demo',
-  embedUrl: 'https://diffuse.ai#demo',
+  contentUrl: 'https://www.diffuse.press#demo',
+  embedUrl: 'https://www.diffuse.press#demo',
 }
 

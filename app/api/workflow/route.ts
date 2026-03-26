@@ -195,6 +195,41 @@ export async function POST(request: NextRequest) {
 
     const { project_id, output_type, mode, tone, length, audience, comments, number_of_outputs, article_topics } = validatedData
 
+    // Contractor Pro: enforce 50 articles/month (articles only)
+    if (output_type === 'article') {
+      try {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('subscription_tier')
+          .eq('id', user.id)
+          .single()
+
+        if (profile?.subscription_tier === 'contractor_pro') {
+          const monthStart = new Date()
+          monthStart.setUTCDate(1)
+          monthStart.setUTCHours(0, 0, 0, 0)
+
+          const { count, error: countError } = await supabase
+            .from('diffuse_project_outputs')
+            .select('id, diffuse_projects!inner(created_by)', { count: 'exact', head: true })
+            .eq('output_type', 'article')
+            .gte('created_at', monthStart.toISOString())
+            .eq('diffuse_projects.created_by', user.id)
+
+          if (countError) {
+            console.warn('[workflow] Could not check Contractor Pro limit:', countError.message)
+          } else if ((count ?? 0) >= 50) {
+            return NextResponse.json(
+              { error: 'Monthly article limit reached for Contractor Pro (50 articles/month).' },
+              { status: 429 }
+            )
+          }
+        }
+      } catch (e) {
+        console.warn('[workflow] Contractor Pro limit check failed:', e instanceof Error ? e.message : e)
+      }
+    }
+
     // Authorization check - verify user owns the project
     try {
       await requireProjectOwnership(project_id, user.id, supabase)

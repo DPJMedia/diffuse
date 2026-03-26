@@ -23,7 +23,7 @@ export default function Home() {
                 '@type': 'ListItem',
                 position: 1,
                 name: 'Home',
-                item: 'https://diffuse.ai',
+                item: 'https://www.diffuse.press',
               },
             ],
           }),

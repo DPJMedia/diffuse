@@ -274,6 +274,39 @@ export async function POST(request: NextRequest) {
     }
     const { user, supabase } = authResult
 
+    // Contractor Pro: enforce 50 articles/month (quick workflow always creates an article)
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('subscription_tier')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.subscription_tier === 'contractor_pro') {
+        const monthStart = new Date()
+        monthStart.setUTCDate(1)
+        monthStart.setUTCHours(0, 0, 0, 0)
+
+        const { count, error: countError } = await supabase
+          .from('diffuse_project_outputs')
+          .select('id, diffuse_projects!inner(created_by)', { count: 'exact', head: true })
+          .eq('output_type', 'article')
+          .gte('created_at', monthStart.toISOString())
+          .eq('diffuse_projects.created_by', user.id)
+
+        if (countError) {
+          console.warn('[workflow/quick] Could not check Contractor Pro limit:', countError.message)
+        } else if ((count ?? 0) >= 50) {
+          return NextResponse.json(
+            { error: 'Monthly article limit reached for Contractor Pro (50 articles/month).' },
+            { status: 429 }
+          )
+        }
+      }
+    } catch (e) {
+      console.warn('[workflow/quick] Contractor Pro limit check failed:', e instanceof Error ? e.message : e)
+    }
+
     // Parse and validate request body
     let body
     try {

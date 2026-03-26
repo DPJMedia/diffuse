@@ -251,7 +251,7 @@ function AddRecordingButton({
   )
 }
 
-type SubscriptionTier = 'free' | 'pro' | 'pro_max'
+type SubscriptionTier = 'free' | 'pro' | 'pro_max' | 'contractor_pro'
 
 /** Format minute as "[0 min]" or "[1:05 min]" for display and save */
 function formatMinuteLabel(minute: number): string {
@@ -470,6 +470,7 @@ export default function RecordingsPage() {
     free: 3,
     pro: 15,
     pro_max: 40,
+    contractor_pro: 40,
   }
 
   const fetchLimitData = useCallback(async () => {

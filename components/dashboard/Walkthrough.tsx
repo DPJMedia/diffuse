@@ -28,69 +28,58 @@ const walkthroughSteps: WalkthroughStep[] = [
   },
   {
     page: '/dashboard',
-    targetSelector: '[data-walkthrough="create-project"]',
-    title: 'Create a Project',
-    description: 'Click here to create a new project. Projects contain your inputs (recordings, documents) and generate AI-powered outputs.',
-    position: 'bottom',
-    highlightPadding: 6,
-    mockView: 'none',
-  },
-  {
-    page: '/dashboard',
     targetSelector: '[data-walkthrough="nav-projects"]',
-    title: 'Your Projects',
-    description: 'All your projects are listed here. Click on any project to open it and manage inputs and outputs.',
+    title: 'Projects',
+    description: 'Your projects live here. Open one to add inputs and generate outputs.',
     position: 'right',
     highlightPadding: 6,
     mockView: 'none',
   },
   {
+    page: '/dashboard',
+    targetSelector: '[data-walkthrough="create-project"]',
+    title: 'Create a Project',
+    description: 'Create a project to group your inputs (recordings, documents, text) and generate outputs.',
+    position: 'bottom',
+    highlightPadding: 6,
+    mockView: 'none',
+  },
+  {
     page: '/dashboard/walkthrough-project',
-    tab: 'inputs',
     targetSelector: null,
     title: 'Inside a Project',
-    description: 'When you open a project, you\'ll see tabs for Inputs, Outputs, and Visibility. Let\'s explore each one.',
+    description: 'Your latest output is on the left. Project controls and inputs are in the right sidebar.',
     position: 'center',
     mockView: 'none',
   },
   {
     page: '/dashboard/walkthrough-project',
-    tab: 'inputs',
-    targetSelector: '[data-walkthrough="wt-inputs-tab"]',
-    title: 'Inputs Tab',
-    description: 'This is where you add your source materials - recordings, documents, images, or text that will be processed by AI.',
-    position: 'bottom',
-    highlightPadding: 4,
-    mockView: 'none',
-  },
-  {
-    page: '/dashboard/walkthrough-project',
-    tab: 'inputs',
-    targetSelector: '[data-walkthrough="wt-add-input"]',
-    title: 'Adding Inputs',
-    description: 'Click "Add Input" to add recordings from your library, upload audio files, PDFs, documents, images, or paste text directly.',
-    position: 'bottom',
+    tab: 'outputs',
+    targetSelector: '[data-walkthrough="wt-inputs-section"]',
+    title: 'Inputs',
+    description: 'Add a recording, upload files, scrape a web page, or paste text. Inputs power everything you generate.',
+    position: 'left',
     highlightPadding: 6,
     mockView: 'none',
   },
   {
     page: '/dashboard/walkthrough-project',
     tab: 'outputs',
-    targetSelector: '[data-walkthrough="wt-outputs-tab"]',
-    title: 'Outputs Tab',
-    description: 'Switch to Outputs to see your AI-generated content. Click "Generate with diffuse.ai" to create articles from your inputs.',
+    targetSelector: '[data-walkthrough="wt-quick-generate"]',
+    title: 'Generate',
+    description: 'Use Quick for a fast default run, or Generate to fine-tune options.',
     position: 'bottom',
-    highlightPadding: 4,
+    highlightPadding: 6,
     mockView: 'none',
   },
   {
     page: '/dashboard/walkthrough-project',
     tab: 'visibility',
-    targetSelector: '[data-walkthrough="wt-visibility-tab"]',
-    title: 'Visibility Tab',
-    description: 'Control who can see your project. Keep it private or share with your organization for team collaboration.',
-    position: 'bottom',
-    highlightPadding: 4,
+    targetSelector: '[data-walkthrough="wt-visibility-section"]',
+    title: 'Visibility',
+    description: 'Control who can access the project. Keep it private or share it with your organization for collaboration.',
+    position: 'left',
+    highlightPadding: 6,
     mockView: 'none',
   },
   {
@@ -103,28 +92,19 @@ const walkthroughSteps: WalkthroughStep[] = [
     mockView: 'none',
   },
   {
-    page: '/dashboard',
-    targetSelector: '[data-walkthrough="mock-recording-modal"]',
-    title: 'Recording Audio',
-    description: 'Click "New Recording" to record directly in your browser. Your recording is automatically transcribed when you save.',
-    position: 'right',
-    highlightPadding: 0,
-    mockView: 'recording-modal',
-  },
-  {
-    page: '/dashboard',
-    targetSelector: '[data-walkthrough="nav-organizations"]',
-    title: 'Organizations',
-    description: 'Create or join organizations to collaborate with your team. Share projects and manage access levels.',
-    position: 'right',
-    highlightPadding: 6,
+    page: '/dashboard/recordings/new',
+    targetSelector: '[data-walkthrough="recording-mic"]',
+    title: 'New Recording',
+    description: 'Click the microphone to start recording. When you save, it will be transcribed automatically.',
+    position: 'left',
+    highlightPadding: 10,
     mockView: 'none',
   },
   {
     page: '/dashboard',
     targetSelector: null,
-    title: 'You\'re All Set! 🎉',
-    description: 'That\'s the basics! Start by creating a project and adding your first input. You can restart this tour anytime from Settings.',
+    title: 'You\'re all set',
+    description: 'Create a project, add inputs, and generate output. You can restart this tour anytime from Settings.',
     position: 'center',
     mockView: 'none',
   },
@@ -137,45 +117,57 @@ function MockViewComponent({ view }: { view: MockView }) {
   // Recording Modal Mock
   if (view === 'recording-modal') {
     return (
-      <div className="fixed inset-0 flex items-center justify-center z-[99] pointer-events-none">
-        <div 
-          data-walkthrough="mock-recording-modal"
-          className="bg-dark-gray/95 backdrop-blur-xl border border-white/10 rounded-xl w-[450px] max-w-[90vw] overflow-hidden shadow-2xl"
-        >
-          <div className="p-8 pb-24 relative">
-            {/* Header */}
-            <div className="flex items-start justify-between mb-6">
-              <h2 className="text-heading-lg text-secondary-white">New Recording</h2>
-              <button className="text-medium-gray">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Mic Button */}
-            <div className="flex flex-col items-center justify-center">
-              <div className="w-32 h-32 rounded-full bg-cosmic-orange/20 border-2 border-cosmic-orange flex items-center justify-center">
-                <svg className="w-14 h-14 text-cosmic-orange" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
-                </svg>
+      <div className="fixed inset-0 z-[99] pointer-events-none">
+        {/* Full-page mock of the New Recording screen (sidebar + centered mic) */}
+        <div data-walkthrough="mock-recording-panel" className="absolute inset-0 flex bg-black">
+          {/* Sidebar */}
+          <div className="w-[260px] shrink-0 border-r border-white/10 bg-white/5 backdrop-blur-glass relative">
+            <div className="px-6 py-5">
+              <div className="text-lg font-semibold text-secondary-white">
+                Diffuse<span className="text-cosmic-orange">.AI</span>
               </div>
-              <p className="text-body-sm text-medium-gray mt-4">
-                Click the microphone to start recording
-              </p>
+            </div>
+            <div className="px-3 space-y-0.5">
+              {['Organizations', 'Projects', 'Advertisements', 'Shared With Me', 'Recordings'].map((label) => (
+                <div
+                  key={label}
+                  className={`px-3 py-2 rounded-glass text-body-sm ${
+                    label === 'Recordings' ? 'bg-white/10 text-secondary-white' : 'text-medium-gray'
+                  }`}
+                >
+                  {label}
+                </div>
+              ))}
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 p-4">
+              <div className="glass-container-sm bg-dark-gray/95 backdrop-blur-glass p-3">
+                <div className="text-body-sm text-secondary-white font-medium">Preston Schlagheck</div>
+                <div className="text-caption text-medium-gray uppercase tracking-wider">Pro Max</div>
+              </div>
             </div>
           </div>
 
-          {/* Audio Visualization Placeholder */}
-          <div className="absolute bottom-0 left-0 right-0 h-20 flex items-end overflow-hidden px-4">
-            <div className="flex items-end w-full h-full gap-0.5">
-              {Array.from({ length: 48 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-t-sm bg-medium-gray/20"
-                  style={{ height: `${4 + Math.random() * 8}px` }}
-                />
-              ))}
+          {/* Main */}
+          <div className="flex-1 min-w-0 p-6">
+            <div className="mb-6">
+              <button className="inline-flex items-center gap-1.5 text-medium-gray text-body-sm mb-3">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Recordings
+              </button>
+              <h1 className="text-heading-lg text-secondary-white font-medium leading-tight">New Recording</h1>
+            </div>
+
+            <div className="min-h-[calc(100vh-220px)] flex items-center justify-center">
+              <div className="flex flex-col items-center justify-center">
+                <div className="w-28 h-28 rounded-full bg-cosmic-orange/20 border-2 border-cosmic-orange flex items-center justify-center">
+                  <svg className="w-12 h-12 text-cosmic-orange" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
+                  </svg>
+                </div>
+                <p className="text-body-sm text-medium-gray mt-4">Click the microphone to start recording</p>
+              </div>
             </div>
           </div>
         </div>
@@ -201,7 +193,6 @@ export default function Walkthrough() {
 
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null)
   const [targetBorderRadius, setTargetBorderRadius] = useState<string>('8px')
-  const [isNavigating, setIsNavigating] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [displayedStep, setDisplayedStep] = useState(currentStep)
   
@@ -292,10 +283,8 @@ export default function Walkthrough() {
     const needsNav = pathname !== step.page || (step.tab && currentTab !== step.tab)
 
     if (needsNav) {
-      setIsNavigating(true)
       router.push(targetUrl)
     } else {
-      setIsNavigating(false)
       // Small delay to let page render before finding element
       setTimeout(updateTargetRect, 300)
     }
@@ -472,16 +461,7 @@ export default function Walkthrough() {
 
   return (
     <div className="fixed inset-0 z-[100]">
-      {/* When navigating, show only overlay + spinner - no partial content */}
-      {isNavigating ? (
-        <>
-          <div className="absolute inset-0 bg-black/75" />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101]">
-            <div className="w-8 h-8 border-2 border-cosmic-orange border-t-transparent rounded-full animate-spin" />
-          </div>
-        </>
-      ) : (
-      /* Unified transition wrapper - overlay, highlight, mock view, tooltip fade together */
+      {/* Unified transition wrapper - overlay, highlight, mock view, tooltip fade together */}
       <div
         className={`absolute inset-0 transition-opacity duration-200 ${
           isTransitioning ? 'opacity-0' : 'opacity-100'
@@ -631,7 +611,6 @@ export default function Walkthrough() {
           </button>
         </div>
       </div>
-      )}
     </div>
   )
 }

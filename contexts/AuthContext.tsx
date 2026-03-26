@@ -5,7 +5,7 @@ import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import type { DiffuseWorkspace, UserRole } from '@/types/database'
 
-type SubscriptionTier = 'free' | 'pro' | 'pro_max'
+type SubscriptionTier = 'free' | 'pro' | 'pro_max' | 'contractor_pro'
 
 interface UserProfile {
   id: string
