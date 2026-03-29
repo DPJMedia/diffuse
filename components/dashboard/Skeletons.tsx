@@ -559,6 +559,165 @@ export function ProjectDetailSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
+// OutputDetailSkeleton
+//
+// Mirrors ProjectOutputDetailClient + OutputDetailView layout="page":
+//   Header: back row, text-heading-lg title, status · date line
+//   Main: glass scroll column — TITLE / AUTHOR / SUBTITLE; md:flex-row IMAGE + caption/credit;
+//     then full-width EXCERPT + ARTICLE CONTENT
+//   Sidebar: w-full lg:w-72 xl:w-80 — Actions, Settings, Delete (static chrome)
+// ---------------------------------------------------------------------------
+
+export function OutputDetailSkeleton() {
+  const fieldRow = (key: string) => (
+    <div key={key}>
+      <div className="flex items-center justify-between mb-2">
+        <SkeletonLine className="w-14 h-[18px]" />
+        <div className="flex items-center gap-1">
+          <SkeletonBlock className="w-4 h-4 rounded" />
+        </div>
+      </div>
+      <SkeletonLine className="w-full h-11 rounded-glass" />
+    </div>
+  )
+
+  return (
+    <div>
+      {/* ── Header (matches mb-6 block) ───────────────────────────────── */}
+      <div className="mb-6">
+        <div className="inline-flex items-center gap-1.5 mb-3">
+          <svg className="w-4 h-4 text-medium-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          <SkeletonLine className="w-40 h-[22px]" />
+        </div>
+        <h1 className="text-heading-lg text-secondary-white font-medium leading-tight">Output Details</h1>
+        <p className="text-body-sm text-medium-gray mt-1 flex flex-wrap items-center gap-x-1 gap-y-1">
+          <SkeletonLine className="w-52 h-[22px]" />
+          <span className="text-medium-gray">·</span>
+          <SkeletonLine className="w-44 h-[22px]" />
+        </p>
+      </div>
+
+      {/* ── Page layout: main + Actions sidebar ────────────────────────── */}
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+        {/* Main article column */}
+        <div className="flex-1 min-w-0 flex flex-col h-[calc(100vh-200px)]">
+          <div className="glass-container bg-dark-gray/95 backdrop-blur-glass p-5 flex-1 overflow-hidden min-h-0 custom-scrollbar pr-3 -mr-1">
+            <div className="space-y-5">
+              {fieldRow('title')}
+              {fieldRow('author')}
+              {fieldRow('subtitle')}
+
+              {/* IMAGE + caption/credit/content — md:flex-row md:gap-5 */}
+              <div className="flex flex-col md:flex-row md:items-start md:gap-5">
+                {/* Left: IMAGE column md:w-52 md:max-w-[220px] */}
+                <div className="mb-4 flex w-full min-w-0 flex-shrink-0 flex-col md:mb-0 md:w-52 md:max-w-[220px]">
+                  <div className="flex items-center justify-between mb-2">
+                    <SkeletonLine className="w-12 h-[18px]" />
+                    <div className="flex items-center gap-1">
+                      <SkeletonBlock className="w-3.5 h-3.5 rounded" />
+                      <SkeletonBlock className="w-3.5 h-3.5 rounded" />
+                    </div>
+                  </div>
+                  <SkeletonBlock className="w-full min-h-[140px] aspect-[4/5] max-md:max-h-[min(70vh,520px)] border border-white/10 bg-white/5" />
+                </div>
+
+                {/* Right: IMAGE CAPTION + CREDIT only (matches OutputDetailView) */}
+                <div className="flex min-w-0 flex-1 flex-col gap-5">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <SkeletonLine className="w-52 h-[18px]" />
+                      <SkeletonBlock className="w-4 h-4 rounded" />
+                    </div>
+                    <SkeletonLine className="w-full h-11 rounded-glass" />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <SkeletonLine className="w-48 h-[18px]" />
+                      <SkeletonBlock className="w-4 h-4 rounded" />
+                    </div>
+                    <SkeletonLine className="w-full h-11 rounded-glass" />
+                  </div>
+                </div>
+              </div>
+
+              {/* EXCERPT — full width below image row */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <SkeletonLine className="w-16 h-[18px]" />
+                  <SkeletonBlock className="w-4 h-4 rounded" />
+                </div>
+                <SkeletonBlock className="w-full min-h-[80px] rounded-glass border border-white/10" />
+              </div>
+
+              {/* ARTICLE CONTENT — tall textarea */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <SkeletonLine className="w-36 h-[18px]" />
+                  <div className="flex items-center gap-1">
+                    <SkeletonBlock className="w-4 h-4 rounded" />
+                    <SkeletonBlock className="w-4 h-4 rounded" />
+                    <SkeletonBlock className="w-4 h-4 rounded" />
+                  </div>
+                </div>
+                <SkeletonBlock className="w-full min-h-[200px] max-h-[40vh] rounded-glass border border-white/10" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions sidebar — static chrome, same widths as OutputDetailView */}
+        <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 glass-container bg-dark-gray/95 backdrop-blur-glass overflow-hidden">
+          <div className="border-b border-white/10">
+            <div className="px-4 py-3">
+              <p className="text-body-sm text-secondary-white font-medium">Actions</p>
+            </div>
+            <div className="space-y-0.5 px-4 pb-3">
+              {[
+                'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
+                'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+                'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+                'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
+                'M5 13l4 4L19 7',
+              ].map((d, i) => (
+                <div
+                  key={i}
+                  className="w-full flex items-center gap-2 py-2 px-2 rounded text-left opacity-40 pointer-events-none"
+                >
+                  <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+                  </svg>
+                  <span className="text-body-sm text-secondary-white">
+                    {['Edit Content', 'Regenerate Image', 'Download Image', 'Copy All', 'Save Changes'][i]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="w-full flex items-center justify-between px-4 py-3 text-left opacity-40 pointer-events-none">
+              <p className="text-body-sm text-secondary-white font-medium">Settings</p>
+              <svg className="w-3.5 h-3.5 text-medium-gray rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            <div className="space-y-0.5 px-4 pb-3">
+              <div className="w-full flex items-center gap-2 py-2 px-2 rounded opacity-40 pointer-events-none">
+                <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span className="text-body-sm text-red-400">Delete Output</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // SelectRecordingModalSkeleton
 // Used inside ModalShell's ModalScrollRegion
 //

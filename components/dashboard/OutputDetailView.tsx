@@ -1,14 +1,21 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
-import { formatDateTime } from '@/lib/utils/format'
+import { formatDateTime, sanitizeStorageFilename } from '@/lib/utils/format'
 import type { DiffuseProjectOutput } from '@/types/database'
 import { ModalShell, ModalHeader, ModalMetadataRow, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
 import { MODAL_ICONS } from './modalIcons'
 import ReEditCommentsModal from './ReEditCommentsModal'
+import RegenerateImageModal from './RegenerateImageModal'
+import CoverRegenerationLayer, { type CoverRegenPhase } from './CoverRegenerationLayer'
 import HighlightedDiff from './HighlightedDiff'
+import {
+  mergeStructuredArticleIntoContent,
+  parseOutputContentToStructuredArticle,
+  type StructuredArticle,
+} from '@/lib/output-content'
 
 export interface OutputDetailViewProps {
   output: DiffuseProjectOutput
@@ -25,122 +32,10 @@ export interface OutputDetailViewProps {
   projectType?: 'article' | 'advertisement'
   /** Modal overlay (default) vs full-page glass panel */
   layout?: 'modal' | 'page'
-}
-
-interface StructuredArticle {
-  title: string
-  author: string
-  subtitle?: string | null
-  excerpt: string
-  content: string
-  /** Short description of cover image, tied to article (for integration Image caption) */
-  photo_caption?: string | null
-  /** Credit for cover photo; only include when provided (for integration Photo credit) */
-  photo_credit?: string | null
-  suggested_sections?: string[]
-  category?: string
-  tags?: string[]
-  meta_title?: string
-  meta_description?: string
-}
-
-// Helper to extract field from JSON-like string using regex
-const extractField = (content: string, field: string): string | null => {
-  const regex = new RegExp(`"${field}"\\s*:\\s*"([^"]*(?:\\\\"[^"]*)*)"`, 's')
-  const match = content.match(regex)
-  if (match) {
-    return match[1].replace(/\\"/g, '"').replace(/\\n/g, '\n')
-  }
-  return null
-}
-
-// Helper to extract array field
-const extractArrayField = (content: string, field: string): string[] => {
-  const regex = new RegExp(`"${field}"\\s*:\\s*\\[([^\\]]*)\\]`, 's')
-  const match = content.match(regex)
-  if (match) {
-    const arrayContent = match[1]
-    const items = arrayContent.match(/"([^"]*)"/g)
-    if (items) {
-      return items.map(item => item.replace(/"/g, ''))
-    }
-  }
-  return []
-}
-
-// Parse output content to StructuredArticle (used for display and diff)
-function parseContentToArticle(content: string): StructuredArticle | null {
-  try {
-    let parsed: Record<string, unknown> | null = null
-    let jsonString = (content || '').trim()
-    try {
-      parsed = JSON.parse(jsonString)
-    } catch {
-      if (jsonString.startsWith('"') && jsonString.endsWith('"')) {
-        try {
-          jsonString = JSON.parse(jsonString)
-          parsed = JSON.parse(jsonString)
-        } catch {
-          /* fall through */
-        }
-      }
-    }
-    const str = (v: unknown) => (typeof v === 'string' ? v.replace(/\\n/g, '\n') : '')
-    if (Array.isArray(parsed) && parsed.length >= 2 && parsed[1]?.article && typeof parsed[1].article === 'object') {
-      const a = parsed[1].article as Record<string, unknown>
-      return {
-        title: (a.title as string) || '',
-        author: (a.author as string) || 'Diffuse.AI',
-        subtitle: (a.subtitle as string)?.replace(/\\n/g, '\n') ?? null,
-        excerpt: str(a.excerpt) || '',
-        content: str(a.content) || '',
-        photo_caption: (a.photo_caption as string)?.replace(/\\n/g, '\n') ?? null,
-        photo_credit: (a.photo_credit as string)?.replace(/\\n/g, '\n') ?? null,
-        suggested_sections: a.suggested_sections as string[] | undefined,
-        category: a.category as string | undefined,
-        tags: a.tags as string[] | undefined,
-        meta_title: a.meta_title as string | undefined,
-        meta_description: a.meta_description as string | undefined,
-      }
-    }
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed.title || parsed.content)) {
-      return {
-        title: (parsed.title as string) || '',
-        author: (parsed.author as string) || 'Diffuse.AI',
-        subtitle: ((parsed.subtitle as string)?.replace(/\\n/g, '\n')) || null,
-        excerpt: ((parsed.excerpt as string)?.replace(/\\n/g, '\n')) || '',
-        content: ((parsed.content as string)?.replace(/\\n/g, '\n')) || '',
-        photo_caption: ((parsed.photo_caption as string)?.replace(/\\n/g, '\n')) || null,
-        photo_credit: ((parsed.photo_credit as string)?.replace(/\\n/g, '\n')) || null,
-        suggested_sections: parsed.suggested_sections as string[] | undefined,
-        category: parsed.category as string | undefined,
-        tags: parsed.tags as string[] | undefined,
-        meta_title: parsed.meta_title as string | undefined,
-        meta_description: parsed.meta_description as string | undefined,
-      }
-    }
-    const title = extractField(content, 'title')
-    const articleContent = extractField(content, 'content')
-    if (title || articleContent) {
-      return {
-        title: title || '',
-        author: extractField(content, 'author') || 'Diffuse.AI',
-        subtitle: extractField(content, 'subtitle') || null,
-        excerpt: extractField(content, 'excerpt') || '',
-        content: articleContent || '',
-        photo_caption: extractField(content, 'photo_caption') || null,
-        photo_credit: extractField(content, 'photo_credit') || null,
-        suggested_sections: extractArrayField(content, 'suggested_sections'),
-        category: extractField(content, 'category') || undefined,
-        tags: extractArrayField(content, 'tags'),
-        meta_title: extractField(content, 'meta_title') || undefined,
-        meta_description: extractField(content, 'meta_description') || undefined,
-      }
-    }
-    return null
-  } catch {
-    return null
-  }
+  /** Notifies parent (e.g. full-page header) when local edit state changes */
+  onEditingChange?: (editing: boolean) => void
+  /** When a cover regen is waiting for accept/reject — parent can match pending status styling */
+  onRegenPendingChange?: (pending: boolean) => void
 }
 
 export default function OutputDetailView({ 
@@ -154,6 +49,8 @@ export default function OutputDetailView({
   fallbackCoverPhotoPath = null,
   projectType,
   layout = 'modal',
+  onEditingChange,
+  onRegenPendingChange,
 }: OutputDetailViewProps) {
   // Use output's own type (article vs ad) for label/icon; fall back to project type for older data
   const displayAsAd = output.output_type === 'ad' || projectType === 'advertisement'
@@ -168,6 +65,11 @@ export default function OutputDetailView({
   const [uploadingCover, setUploadingCover] = useState(false)
   const [photoLightboxOpen, setPhotoLightboxOpen] = useState(false)
   const [showReEditModal, setShowReEditModal] = useState(false)
+  const [showRegenImageModal, setShowRegenImageModal] = useState(false)
+  const [regenPhase, setRegenPhase] = useState<CoverRegenPhase>('idle')
+  /** URL frozen when user (or DB) starts cover regeneration — blur layer source */
+  const [regenSnapshotUrl, setRegenSnapshotUrl] = useState<string | null>(null)
+  const [sharpCacheKey, setSharpCacheKey] = useState(0)
   /** Optimistic reedit count so the label updates immediately after apply */
   const [optimisticReeditCount, setOptimisticReeditCount] = useState<number | null>(null)
   const [reeditState, setReeditState] = useState<{
@@ -177,22 +79,39 @@ export default function OutputDetailView({
   } | null>(null)
   const [fieldApprovals, setFieldApprovals] = useState<Record<string, boolean>>({})
   const [applying, setApplying] = useState(false)
+  /** Pending regen review (check/X per field, then apply — mirrors Edit with Diffuse). */
+  const [regenReviewState, setRegenReviewState] = useState<{
+    proposedCaption: string | null
+    proposedCredit: string | null
+    previousCaption: string | null
+    previousCredit: string | null
+    pendingImagePath: string
+    imagePrompt: string | null
+    previousCoverPath: string | null
+  } | null>(null)
+  const [regenFieldApprovals, setRegenFieldApprovals] = useState<Partial<Record<'cover_image', boolean>>>({})
+  const [applyingRegen, setApplyingRegen] = useState(false)
+  /** Re-edit workflow POST in flight (modal closes first; overlay covers content like image regen). */
+  const [reeditProcessing, setReeditProcessing] = useState(false)
   /** Page layout: right sidebar Settings section (same pattern as recordings detail) */
   const [sidebarSettingsOpen, setSidebarSettingsOpen] = useState(false)
   const coverPhotoInputRef = useRef<HTMLInputElement>(null)
+  /** Desktop: image frame height = top(caption input/diff) → bottom(credit input/diff); labels excluded; remeasure on resize / structural changes only. */
+  const coverCaptionFieldRef = useRef<HTMLDivElement>(null)
+  const coverCreditFieldRef = useRef<HTMLDivElement>(null)
+  const [coverImageFrameHeightPx, setCoverImageFrameHeightPx] = useState<number | null>(null)
 
-  // Build merged content JSON from previous structure + merged article
-  const buildMergedContent = (merged: StructuredArticle): string => {
-    try {
-      const prevParsed = JSON.parse(reeditState!.previousContent)
-      if (Array.isArray(prevParsed) && prevParsed.length >= 2) {
-        return JSON.stringify([prevParsed[0], { article: merged }])
-      }
-      return JSON.stringify(merged)
-    } catch {
-      return JSON.stringify(merged)
-    }
-  }
+  useEffect(() => {
+    onEditingChange?.(isEditing)
+  }, [isEditing, onEditingChange])
+
+  useEffect(() => {
+    onRegenPendingChange?.(!!regenReviewState)
+  }, [regenReviewState, onRegenPendingChange])
+
+  useEffect(() => {
+    setIsEditing(false)
+  }, [output.id])
 
   const DIFF_FIELDS = ['title', 'author', 'subtitle', 'excerpt', 'content', 'category', 'suggested_sections', 'tags', 'meta_title', 'meta_description'] as const
 
@@ -207,15 +126,50 @@ export default function OutputDetailView({
     return getFieldVal(prev, field) !== getFieldVal(next, field)
   }
 
+  /** Re-edit workflow: one edit per diff field that changed and was not denied. */
+  const countAcceptedReeditFields = (
+    previous: StructuredArticle,
+    proposed: StructuredArticle,
+    approvals: Record<string, boolean>
+  ): number => {
+    let n = 0
+    for (const field of DIFF_FIELDS) {
+      if (!hasFieldChanged(previous, proposed, field)) continue
+      if (approvals[field] === false) continue
+      n++
+    }
+    return n
+  }
+
+  /** Manual save: one edit per structured field that differs from last saved `output.content`. */
+  const countManualFieldChanges = (baseline: StructuredArticle, current: StructuredArticle): number => {
+    let n = 0
+    for (const field of DIFF_FIELDS) {
+      if (hasFieldChanged(baseline, current, field)) n++
+    }
+    for (const field of ['photo_caption', 'photo_credit'] as const) {
+      const b = baseline[field] ?? ''
+      const c = current[field] ?? ''
+      if (String(b) !== String(c)) n++
+    }
+    return n
+  }
+
   // Display value: when in reedit mode use proposed (synced with previous for resolved fields)
   const getDisplayVal = (field: (typeof DIFF_FIELDS)[number]) =>
     reeditState && article ? getFieldVal(reeditState.proposedArticle, field) : getFieldVal(article, field)
 
   const showDiff = !!reeditState && !!article
+  /** Regen review uses regenReviewState; do not require article so caption/credit UI still shows if parse lags. */
+  const showRegenDiff = !!regenReviewState
 
   useEffect(() => {
     if (layout === 'page' && showDiff) setSidebarSettingsOpen(true)
   }, [layout, showDiff])
+
+  useEffect(() => {
+    if (layout === 'page' && showRegenDiff) setSidebarSettingsOpen(true)
+  }, [layout, showRegenDiff])
 
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
@@ -271,9 +225,84 @@ export default function OutputDetailView({
     ?? (effectiveCoverPath ? `/api/project-file?path=${encodeURIComponent(effectiveCoverPath)}` : null)
     ?? (generatedImageUrl ? `/api/proxy-image?url=${encodeURIComponent(generatedImageUrl)}` : null)
 
+  const regenPendingPath =
+    (output.workflow_metadata?.regen_image as { pending?: { cover_photo_path?: string } } | undefined)?.pending
+      ?.cover_photo_path ?? null
+  const pendingCoverUrl = regenPendingPath
+    ? `/api/project-file?path=${encodeURIComponent(regenPendingPath)}`
+    : null
+
+  /** Refine mode requires a stored project-files path on this output (not external URL-only covers). */
+  const canRefineOutputCover = !!(output.cover_photo_path || uploadedCoverPath)
+
   useEffect(() => {
     setUploadedCoverPath(null)
   }, [output.id, effectiveCoverPath])
+
+  useEffect(() => {
+    setRegenPhase('idle')
+    setRegenSnapshotUrl(null)
+    setSharpCacheKey(0)
+    setRegenReviewState(null)
+    setRegenFieldApprovals({})
+  }, [output.id])
+
+  /** When regen completes (sync API + DB): transition to review (check). From `processing`, blur fades to the new image. */
+  useEffect(() => {
+    const st = (output.workflow_metadata?.regen_image as { status?: string; pending?: unknown } | undefined)?.status
+    const pending = (output.workflow_metadata?.regen_image as { pending?: unknown } | undefined)?.pending
+    if (st !== 'complete' || !pending) return
+    if (regenPhase === 'check') return
+    if (regenPhase !== 'idle' && regenPhase !== 'processing') return
+
+    const snap = coverPhotoUrl ?? pendingCoverUrl
+    if (!snap) return
+    setRegenSnapshotUrl((s) => s ?? snap)
+    setSharpCacheKey(Date.now())
+    setRegenPhase('check')
+  }, [
+    output.workflow_metadata,
+    output.id,
+    coverPhotoUrl,
+    pendingCoverUrl,
+    regenPhase,
+  ])
+
+  useEffect(() => {
+    const ri = output.workflow_metadata?.regen_image as {
+      status?: string
+      pending?: {
+        cover_photo_path: string
+        photo_caption: string | null
+        photo_credit: string | null
+        image_prompt: string | null
+      }
+    } | undefined
+    const p = ri?.pending?.cover_photo_path
+    if (ri?.status !== 'complete' || !ri.pending || !p) {
+      setRegenReviewState(null)
+      setRegenFieldApprovals({})
+      return
+    }
+    setRegenReviewState((prev) => {
+      if (prev?.pendingImagePath === p) return prev
+      return {
+        proposedCaption: ri.pending!.photo_caption,
+        proposedCredit: ri.pending!.photo_credit,
+        previousCaption: article?.photo_caption ?? null,
+        previousCredit: article?.photo_credit ?? null,
+        pendingImagePath: ri.pending!.cover_photo_path,
+        imagePrompt: ri.pending!.image_prompt,
+        previousCoverPath: output.cover_photo_path ?? null,
+      }
+    })
+  }, [
+    output.workflow_metadata?.regen_image,
+    output.cover_photo_path,
+    article?.photo_caption,
+    article?.photo_credit,
+    output.id,
+  ])
 
   const handleUploadCoverPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -343,15 +372,65 @@ export default function OutputDetailView({
 
   // Parse structured content when output changes
   useEffect(() => {
-    const parsedArticle = parseContentToArticle(output.content)
+    const parsedArticle = parseOutputContentToStructuredArticle(output.content)
     setArticle(parsedArticle)
     setRawContent(output.content)
   }, [output.content])
 
+  /** Commit pending cover regen (also invoked at start of Save when review is open). */
+  const applyPendingRegenReview = async (): Promise<DiffuseProjectOutput | false | null> => {
+    if (!regenReviewState) return null
+    setApplyingRegen(true)
+    try {
+      const res = await fetch('/api/workflow/regen-image/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          output_id: output.id,
+          approvals: {
+            cover_image: regenFieldApprovals.cover_image !== false,
+            photo_caption: true,
+            photo_credit: true,
+          },
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || 'Failed to apply')
+      }
+      const nextOut = (data as { output?: DiffuseProjectOutput }).output
+      if (!nextOut) {
+        alert('Failed to apply cover')
+        return false
+      }
+      onReeditComplete?.(nextOut)
+      setRegenPhase('idle')
+      setRegenSnapshotUrl(null)
+      setRegenReviewState(null)
+      setRegenFieldApprovals({})
+      onUpdate?.()
+      return nextOut
+    } catch (err) {
+      console.error('Apply regen failed:', err)
+      alert(err instanceof Error ? err.message : 'Failed to apply')
+      return false
+    } finally {
+      setApplyingRegen(false)
+    }
+  }
+
   const handleSave = async () => {
     setSaving(true)
     try {
+      let effectiveOutput = output
+      if (regenReviewState) {
+        const applied = await applyPendingRegenReview()
+        if (applied === false) return
+        if (applied) effectiveOutput = applied
+      }
+
       let contentToSave: string
+      let editIncrement = 0
       if (reeditState) {
         // Saving after reedit: use proposed content, with any denied fields reverted to previous
         const merged = { ...reeditState.proposedArticle }
@@ -360,22 +439,20 @@ export default function OutputDetailView({
             (merged as Record<string, unknown>)[field] = reeditState.previousArticle[field]
           }
         }
-        try {
-          const prevParsed = JSON.parse(reeditState.previousContent)
-          if (Array.isArray(prevParsed) && prevParsed.length >= 2) {
-            const first = prevParsed[0]
-            contentToSave = JSON.stringify([first, { article: merged }])
-          } else {
-            contentToSave = JSON.stringify(merged)
-          }
-        } catch {
-          contentToSave = JSON.stringify(merged)
-        }
+        contentToSave = mergeStructuredArticleIntoContent(reeditState.previousContent, merged)
+        editIncrement = countAcceptedReeditFields(
+          reeditState.previousArticle,
+          reeditState.proposedArticle,
+          fieldApprovals
+        )
       } else {
-        contentToSave = article ? JSON.stringify(article) : rawContent
+        contentToSave = article ? mergeStructuredArticleIntoContent(rawContent, article) : rawContent
+        const baseline = parseOutputContentToStructuredArticle(effectiveOutput.content)
+        editIncrement =
+          article && baseline ? countManualFieldChanges(baseline, article) : 0
       }
 
-      const newReeditCount = reeditState ? (output.reedit_count ?? 0) + 1 : (output.reedit_count ?? 0)
+      const newReeditCount = (effectiveOutput.reedit_count ?? 0) + editIncrement
 
       const { data: updatedOutput, error: updateError } = await supabase
         .from('diffuse_project_outputs')
@@ -394,14 +471,16 @@ export default function OutputDetailView({
       if (reeditState) {
         setReeditState(null)
         setFieldApprovals({})
-        const newArticle = parseContentToArticle(contentToSave)
-        if (newArticle) setArticle(newArticle)
-        setRawContent(contentToSave)
-        setOptimisticReeditCount(newReeditCount)
       }
+      setOptimisticReeditCount(newReeditCount)
+      const newArticle = parseOutputContentToStructuredArticle(contentToSave)
+      if (newArticle) setArticle(newArticle)
+      setRawContent(contentToSave)
+
       if (onUpdate) onUpdate()
-      onReeditComplete?.(updatedOutput ? { ...updatedOutput, reedit_count: newReeditCount } : output)
-      onDismiss()
+      onReeditComplete?.(
+        updatedOutput ? { ...updatedOutput, reedit_count: newReeditCount } : effectiveOutput
+      )
     } catch (error) {
       console.error('Error saving output:', error)
       alert('Failed to save changes')
@@ -434,24 +513,88 @@ export default function OutputDetailView({
     }
   }
 
+  const handleDownloadCoverImage = async () => {
+    if (!coverPhotoUrl) return
+    try {
+      const res = await fetch(coverPhotoUrl, { credentials: 'include' })
+      if (!res.ok) throw new Error('Download failed')
+      const blob = await res.blob()
+      const ct = res.headers.get('content-type') || ''
+      const ext = ct.includes('webp') ? 'webp' : ct.includes('jpeg') || ct.includes('jpg') ? 'jpg' : 'png'
+      const rawCaption = regenReviewState
+        ? (regenReviewState.proposedCaption ?? article?.photo_caption ?? '').trim()
+        : (article?.photo_caption ?? '').trim()
+      const baseName = rawCaption
+        ? sanitizeStorageFilename(rawCaption.slice(0, 200))
+        : `cover-${output.id}`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${baseName}.${ext}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('Cover download failed:', e)
+      alert('Failed to download image')
+    }
+  }
+
+  const handleRegenImageSubmit = async ({ mode, comments }: { mode: 'scratch' | 'update'; comments: string }) => {
+    if (!coverPhotoUrl) {
+      throw new Error('Add or generate a cover image first.')
+    }
+    setRegenSnapshotUrl(coverPhotoUrl)
+    setRegenPhase('processing')
+    try {
+      const res = await fetch('/api/workflow/regen-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_id: output.id, mode, comments }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as {
+          error?: string
+          message?: string
+          n8n_status?: number
+          n8n_detail?: string
+        }
+        const parts = [
+          data?.message || data?.error || 'Request failed',
+          data?.n8n_status != null ? `n8n HTTP ${data.n8n_status}` : null,
+          data?.n8n_detail,
+        ].filter(Boolean)
+        throw new Error(parts.join(' — '))
+      }
+    } catch (e) {
+      setRegenPhase('idle')
+      setRegenSnapshotUrl(null)
+      throw e
+    }
+  }
+
   const handleReeditSubmit = async (comments: string) => {
-    const res = await fetch('/api/workflow/reedit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ output_id: output.id, comments }),
-    })
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data?.error || data?.message || 'Re-edit failed')
+    setReeditProcessing(true)
+    try {
+      const res = await fetch('/api/workflow/reedit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_id: output.id, comments }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data?.error || data?.message || 'Re-edit failed')
+      }
+      const { proposed_content, previous_content } = await res.json()
+      const proposedArticle = parseOutputContentToStructuredArticle(proposed_content)
+      const previousArticle = parseOutputContentToStructuredArticle(previous_content)
+      if (!proposedArticle || !previousArticle) {
+        throw new Error('Could not parse workflow response')
+      }
+      setReeditState({ proposedArticle, previousArticle, previousContent: previous_content })
+      setFieldApprovals({})
+    } finally {
+      setReeditProcessing(false)
     }
-    const { proposed_content, previous_content } = await res.json()
-    const proposedArticle = parseContentToArticle(proposed_content)
-    const previousArticle = parseContentToArticle(previous_content)
-    if (!proposedArticle || !previousArticle) {
-      throw new Error('Could not parse workflow response')
-    }
-    setReeditState({ proposedArticle, previousArticle, previousContent: previous_content })
-    setFieldApprovals({})
   }
 
   const handleApplyReedit = async () => {
@@ -466,22 +609,20 @@ export default function OutputDetailView({
         }
         // fieldApprovals[field] === true or undefined → use proposed (already in merged)
       }
-      let contentToSave: string
-      try {
-        const prevParsed = JSON.parse(reeditState.previousContent)
-        if (Array.isArray(prevParsed) && prevParsed.length >= 2) {
-          const first = prevParsed[0]
-          contentToSave = JSON.stringify([first, { article: merged }])
-        } else {
-          contentToSave = JSON.stringify(merged)
-        }
-      } catch {
-        contentToSave = JSON.stringify(merged)
-      }
+      const contentToSave = mergeStructuredArticleIntoContent(reeditState.previousContent, merged)
+      const acceptedCount = countAcceptedReeditFields(
+        reeditState.previousArticle,
+        reeditState.proposedArticle,
+        fieldApprovals
+      )
       const res = await fetch('/api/workflow/reedit/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ output_id: output.id, content: contentToSave }),
+        body: JSON.stringify({
+          output_id: output.id,
+          content: contentToSave,
+          accepted_edit_count: acceptedCount,
+        }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -514,6 +655,94 @@ export default function OutputDetailView({
     setFieldApprovals(prev => ({ ...prev, [field]: false }))
     // Update display immediately: sync proposed to previous so this field shows the old version
     setReeditState(prev => prev ? { ...prev, proposedArticle: { ...prev.proposedArticle, [field]: prev.previousArticle[field] } } : null)
+  }
+
+  const hasRegenCaptionChange =
+    !!regenReviewState &&
+    (regenReviewState.previousCaption ?? '') !== (regenReviewState.proposedCaption ?? '')
+  const hasRegenCreditChange =
+    !!regenReviewState &&
+    (regenReviewState.previousCredit ?? '') !== (regenReviewState.proposedCredit ?? '')
+
+  /** Boolean so deps stay stable while `article` object identity changes on every field edit. */
+  const structuredArticleReady = article != null
+
+  useLayoutEffect(() => {
+    if (!structuredArticleReady) {
+      setCoverImageFrameHeightPx(null)
+      return
+    }
+
+    const measure = () => {
+      if (typeof window === 'undefined') return
+      if (window.innerWidth < 768) {
+        setCoverImageFrameHeightPx(null)
+        return
+      }
+      const topEl = coverCaptionFieldRef.current
+      const bottomEl = coverCreditFieldRef.current
+      if (!topEl || !bottomEl) return
+      const top = topEl.getBoundingClientRect().top
+      const bottom = bottomEl.getBoundingClientRect().bottom
+      setCoverImageFrameHeightPx(Math.max(140, Math.round(bottom - top)))
+    }
+
+    const schedule = () => {
+      requestAnimationFrame(() => requestAnimationFrame(measure))
+    }
+    schedule()
+
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [
+    output.id,
+    output.content,
+    structuredArticleReady,
+    showRegenDiff,
+    hasRegenCaptionChange,
+    hasRegenCreditChange,
+    regenPhase,
+    layout,
+  ])
+
+  const getRegenCaptionDisplay = () => {
+    if (!regenReviewState) return article?.photo_caption ?? ''
+    return regenReviewState.proposedCaption ?? ''
+  }
+
+  const getRegenCreditDisplay = () => {
+    if (!regenReviewState) return article?.photo_credit ?? ''
+    return regenReviewState.proposedCredit ?? ''
+  }
+
+  const handleDenyRegenField = (field: 'cover_image') => {
+    if (!regenReviewState) return
+    setRegenFieldApprovals((prev) => ({ ...prev, [field]: false }))
+  }
+
+  const handleRejectRegenReview = async () => {
+    setApplyingRegen(true)
+    try {
+      const res = await fetch('/api/workflow/regen-image/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_id: output.id }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error || 'Failed to discard')
+      }
+      setRegenPhase('idle')
+      setRegenSnapshotUrl(null)
+      setRegenReviewState(null)
+      setRegenFieldApprovals({})
+      onUpdate?.()
+    } catch (err) {
+      console.error('Reject regen failed:', err)
+      alert(err instanceof Error ? err.message : 'Failed to discard')
+    } finally {
+      setApplyingRegen(false)
+    }
   }
 
   const handleCopyAll = async () => {
@@ -560,25 +789,77 @@ export default function OutputDetailView({
     ws === 'completed'
       ? `COMPLETED (${reeditCount} EDIT${reeditCount !== 1 ? 'S' : ''})`
       : (ws && String(ws).toUpperCase()) || 'UNKNOWN'
+  /** While editing or cover regen is unaccepted, show the same pending copy as the page header. */
+  const hasPendingStatusSurface = isEditing || showRegenDiff
+  const displayStatusLabel = hasPendingStatusSurface ? 'UNSAVED CHANGES (PENDING EDITS)' : statusLabel
+  const displayStatusClassName = hasPendingStatusSurface
+    ? 'uppercase font-medium tracking-wider text-cosmic-orange'
+    : `uppercase font-medium tracking-wider ${statusColors[ws] ?? 'text-medium-gray'}`
+
+  /** Full-area blur + spinner: re-edit request or apply only (image regen uses cover layer + Regenerate row). */
+  const contentWorkflowOverlay = reeditProcessing || applying
+
+  const workflowOverlayNode = contentWorkflowOverlay ? (
+    <div
+      className="absolute inset-0 z-[25] flex items-center justify-center rounded-glass bg-black/35 backdrop-blur-md"
+      aria-busy="true"
+      aria-label="Loading"
+    >
+      <svg
+        className="h-10 w-10 text-cosmic-orange animate-spin"
+        fill="none"
+        viewBox="0 0 24 24"
+        aria-hidden
+      >
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        />
+      </svg>
+    </div>
+  ) : null
+
+  const actionSpinnerIcon = (className = 'w-3.5 h-3.5') => (
+    <svg
+      className={`${className} text-cosmic-orange flex-shrink-0 animate-spin`}
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  )
 
   const headerActions = (
     <>
       <button
         type="button"
         onClick={() => setShowReEditModal(true)}
-        className="inline-flex items-center gap-2 px-2 py-2 rounded-full text-medium-gray hover:text-cosmic-orange transition-colors focus:outline-none focus:ring-0"
-        title="Edit with Diffuse"
+        disabled={!canEdit || reeditProcessing}
+        className="inline-flex items-center gap-2 px-2 py-2 rounded-full text-medium-gray hover:text-cosmic-orange transition-colors focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-medium-gray"
+        title="Edit Content"
       >
-        <span className="text-body-sm hidden sm:inline">Edit with Diffuse</span>
-        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
+        <span className="text-body-sm hidden sm:inline">Edit Content</span>
+        {reeditProcessing ? (
+          actionSpinnerIcon('w-5 h-5')
+        ) : (
+          <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        )}
       </button>
       <button
         type="button"
         onClick={handleCopyAll}
         className="inline-flex items-center justify-center p-2 rounded-full text-medium-gray hover:text-cosmic-orange transition-colors focus:outline-none focus:ring-0"
-        title="Copy all fields"
+        title="Copy All Fields"
       >
         {copied === 'all' ? (
           <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -598,13 +879,32 @@ export default function OutputDetailView({
           className="inline-flex items-center justify-center p-2 rounded-full text-medium-gray hover:text-red-400 transition-colors disabled:opacity-50 focus:outline-none focus:ring-0"
           title="Delete"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+          {deleting ? (
+            actionSpinnerIcon('w-5 h-5')
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          )}
         </button>
       )}
     </>
   )
+
+  const sharpRevealBase =
+    regenPhase === 'check' && sharpCacheKey
+      ? (pendingCoverUrl ?? coverPhotoUrl)
+      : null
+  const sharpRevealUrl =
+    sharpRevealBase
+      ? `${sharpRevealBase}${sharpRevealBase.includes('?') ? '&' : '?'}cb=${sharpCacheKey}`
+      : null
+  const regenSharpUrl =
+    regenFieldApprovals.cover_image === false ? null : sharpRevealUrl
+
+  /** Full-size preview: pending regen image when reviewing, otherwise current cover */
+  const lightboxImageUrl =
+    showRegenDiff && pendingCoverUrl ? pendingCoverUrl : coverPhotoUrl
 
   const scrollableFields = (
     <>
@@ -624,59 +924,65 @@ export default function OutputDetailView({
               <div className="flex items-center justify-between mb-2">
                 <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE</label>
                 <div className="flex items-center gap-1">
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => coverPhotoInputRef.current?.click()}
-                      disabled={uploadingCover}
-                      className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors disabled:opacity-50"
-                      title="Replace cover image"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
+                  {showRegenDiff && regenReviewState && regenFieldApprovals.cover_image === undefined && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void applyPendingRegenReview()}
+                        disabled={applyingRegen}
+                        className="p-1.5 rounded transition-colors text-medium-gray hover:text-green-400 hover:bg-green-400/10 disabled:opacity-50"
+                        title="Accept new cover, caption, and credit"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDenyRegenField('cover_image')}
+                        disabled={applyingRegen}
+                        className="p-1.5 rounded transition-colors text-medium-gray hover:text-red-400 hover:bg-red-400/10 disabled:opacity-50"
+                        title="Keep previous image"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </>
                   )}
                   <button
                     type="button"
-                    onClick={async () => {
-                      try {
-                        const res = await fetch(coverPhotoUrl!, { credentials: 'include' })
-                        if (!res.ok) throw new Error('Download failed')
-                        const blob = await res.blob()
-                        const ext = (res.headers.get('content-type') || '').includes('webp') ? 'webp' : (res.headers.get('content-type') || '').includes('jpeg') || (res.headers.get('content-type') || '').includes('jpg') ? 'jpg' : 'png'
-                        const url = URL.createObjectURL(blob)
-                        const a = document.createElement('a')
-                        a.href = url
-                        a.download = `cover-${output.id}.${ext}`
-                        a.click()
-                        URL.revokeObjectURL(url)
-                      } catch (e) {
-                        console.error('Cover download failed:', e)
-                        alert('Failed to download image')
-                      }
-                    }}
+                    onClick={() => handleCopy(coverPhotoUrl, 'photo')}
                     className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                    title="Download image"
+                    title="Copy Image URL"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
+                    {copied === 'photo' ? (
+                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>
-              <div className="w-full rounded-glass overflow-hidden bg-white/5 relative h-[40vh] min-h-[200px]">
-              <Image
-                key={coverPhotoUrl}
-                src={coverPhotoUrl}
-                alt="Cover"
-                fill
-                sizes="(max-width: 768px) 100vw, 800px"
-                className="object-contain"
-                referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
-                unoptimized={coverPhotoUrl.startsWith('/api/')}
-              />
-              </div>
+              <button
+                type="button"
+                onClick={() => lightboxImageUrl && setPhotoLightboxOpen(true)}
+                className="relative w-full block p-0 border-0 bg-transparent cursor-pointer focus:outline-none focus:ring-0"
+                aria-label="View cover full size"
+              >
+                <CoverRegenerationLayer
+                  phase={regenPhase}
+                  snapshotUrl={regenSnapshotUrl ?? coverPhotoUrl}
+                  sharpUrl={regenSharpUrl}
+                  alt="Cover"
+                  sizes="(max-width: 768px) 100vw, 800px"
+                  className="relative w-full h-[40vh] min-h-[200px]"
+                />
+              </button>
             </div>
           ) : !article && canEdit ? (
             <div className="w-full rounded-glass border border-dashed border-white/20 bg-white/5 p-6 mb-5">
@@ -827,57 +1133,44 @@ export default function OutputDetailView({
                 )}
               </div>
 
-              {/* Cover image + Image caption + Photo credit: desktop = image left (same-style window), caption/credit right; mobile = image below subtitle, then caption/credit */}
-              <div className="flex flex-col md:flex-row md:gap-5 md:items-stretch">
-                {/* Photo window: same format as other fields (label + copy + bordered box); box aligns top with caption, bottom with credit */}
-                <div className="flex flex-col mb-4 md:mb-0 md:flex-shrink-0 w-full md:w-52 md:max-w-[220px] min-h-0">
+              {/* Cover image + caption/credit: desktop image height = measured caption→credit stack (resize / structural updates only; typing does not grow the image frame) */}
+              <div className="flex flex-col md:flex-row md:items-start md:gap-5">
+                <div className="mb-4 flex w-full min-w-0 flex-shrink-0 flex-col md:mb-0 md:w-52 md:max-w-[220px]">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE</label>
                     {coverPhotoUrl ? (
                       <div className="flex items-center gap-1">
-                        {canEdit && (
-                          <button
-                            type="button"
-                            onClick={() => coverPhotoInputRef.current?.click()}
-                            disabled={uploadingCover}
-                            className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors disabled:opacity-50"
-                            title="Replace cover image"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                          </button>
+                        {showRegenDiff && regenReviewState && regenFieldApprovals.cover_image === undefined && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void applyPendingRegenReview()}
+                              disabled={applyingRegen}
+                              className="p-1.5 rounded transition-colors text-medium-gray hover:text-green-400 hover:bg-green-400/10 disabled:opacity-50"
+                              title="Accept new cover, caption, and credit"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDenyRegenField('cover_image')}
+                              disabled={applyingRegen}
+                              className="p-1.5 rounded transition-colors text-medium-gray hover:text-red-400 hover:bg-red-400/10 disabled:opacity-50"
+                              title="Keep previous image"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </>
                         )}
                         <button
                           type="button"
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(coverPhotoUrl, { credentials: 'include' })
-                              if (!res.ok) throw new Error('Download failed')
-                              const blob = await res.blob()
-                              const ext = (res.headers.get('content-type') || '').includes('webp') ? 'webp' : (res.headers.get('content-type') || '').includes('jpeg') || (res.headers.get('content-type') || '').includes('jpg') ? 'jpg' : 'png'
-                              const url = URL.createObjectURL(blob)
-                              const a = document.createElement('a')
-                              a.href = url
-                              a.download = `cover-${output.id}.${ext}`
-                              a.click()
-                              URL.revokeObjectURL(url)
-                            } catch (e) {
-                              console.error('Cover download failed:', e)
-                              alert('Failed to download image')
-                            }
-                          }}
-                          className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                          title="Download image"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                          </svg>
-                        </button>
-                        <button
                           onClick={() => handleCopy(coverPhotoUrl, 'photo')}
                           className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                          title="Copy image URL"
+                          title="Copy Image URL"
                         >
                           {copied === 'photo' ? (
                             <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -892,24 +1185,47 @@ export default function OutputDetailView({
                       </div>
                     ) : null}
                   </div>
-                  <div className="flex-1 min-h-[140px] md:min-h-0 border border-white/10 rounded-glass flex flex-col overflow-hidden bg-white/5">
+                  <div
+                    className={`flex w-full flex-shrink-0 flex-col overflow-hidden border border-white/10 rounded-glass bg-white/5 md:min-h-0 ${
+                      coverImageFrameHeightPx == null ? 'min-h-[140px] aspect-[4/5] max-md:max-h-[min(70vh,520px)]' : ''
+                    }`}
+                    style={coverImageFrameHeightPx != null ? { height: coverImageFrameHeightPx } : undefined}
+                  >
                     {coverPhotoUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => setPhotoLightboxOpen(true)}
-                        className="flex-1 min-h-0 w-full h-full relative flex items-center justify-center focus:outline-none focus:ring-0 overflow-hidden"
-                      >
-                        <Image
-                          key={coverPhotoUrl}
-                          src={coverPhotoUrl}
-                          alt="Cover"
-                          fill
-                          sizes="(max-width: 768px) 100vw, 400px"
-                          className="object-cover"
-                          referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
-                          unoptimized={coverPhotoUrl.startsWith('/api/')}
-                        />
-                      </button>
+                      regenPhase === 'idle' ? (
+                        <button
+                          type="button"
+                          onClick={() => setPhotoLightboxOpen(true)}
+                          className="relative flex h-full min-h-[140px] w-full flex-1 flex-col overflow-hidden cursor-pointer focus:outline-none focus:ring-0"
+                        >
+                          <CoverRegenerationLayer
+                            phase="idle"
+                            snapshotUrl={coverPhotoUrl}
+                            sharpUrl={null}
+                            alt="Cover"
+                            sizes="(max-width: 768px) 100vw, 400px"
+                            className="absolute inset-0 h-full w-full min-h-[140px]"
+                            imageClassName="object-cover object-center"
+                          />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => lightboxImageUrl && setPhotoLightboxOpen(true)}
+                          className="relative flex h-full min-h-[140px] w-full flex-1 flex-col self-stretch p-0 border-0 bg-transparent cursor-pointer focus:outline-none focus:ring-0"
+                          aria-label="View cover full size"
+                        >
+                          <CoverRegenerationLayer
+                            phase={regenPhase}
+                            snapshotUrl={regenSnapshotUrl ?? coverPhotoUrl}
+                            sharpUrl={regenSharpUrl}
+                            alt="Cover"
+                            sizes="(max-width: 768px) 100vw, 400px"
+                            className="h-full min-h-[140px] w-full flex-1"
+                            imageClassName="object-cover object-center"
+                          />
+                        </button>
+                      )
                     ) : canEdit ? (
                       <button
                         type="button"
@@ -934,65 +1250,94 @@ export default function OutputDetailView({
                     )}
                   </div>
                 </div>
-                {/* Caption + Credit: right on desktop, below image on mobile */}
-                <div className="flex-1 min-w-0 space-y-5">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex flex-col gap-5">
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE CAPTION (OPTIONAL)</label>
-                      <button
-                        onClick={() => handleCopy(article.photo_caption || '', 'photo_caption')}
-                        className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                      >
-                        {copied === 'photo_caption' ? (
-                          <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleCopy((showRegenDiff ? getRegenCaptionDisplay() : article?.photo_caption) || '', 'photo_caption')}
+                          className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                        >
+                          {copied === 'photo_caption' ? (
+                            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
-                    <input
-                      type="text"
-                      value={article.photo_caption || ''}
-                      onChange={(e) => handleFieldChange('photo_caption', e.target.value)}
-                      placeholder="Short description of the cover image, tied to the article"
-                      readOnly={!canEdit || showDiff}
-                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
-                        canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                      }`}
-                    />
+                    <div ref={coverCaptionFieldRef} className="w-full min-w-0">
+                    {showRegenDiff && regenReviewState && hasRegenCaptionChange ? (
+                      <div className="w-full min-w-0 h-11 overflow-x-auto overflow-y-hidden flex items-center px-4 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm custom-scrollbar">
+                        <HighlightedDiff
+                          nowrap
+                          oldStr={regenReviewState.previousCaption ?? ''}
+                          newStr={regenReviewState.proposedCaption ?? ''}
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={showRegenDiff ? getRegenCaptionDisplay() : article?.photo_caption || ''}
+                        onChange={(e) => handleFieldChange('photo_caption', e.target.value)}
+                        placeholder="Short description of the cover image, tied to the article"
+                        readOnly={!canEdit || showDiff || showRegenDiff}
+                        className={`w-full min-w-0 px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                          canEdit && !showDiff && !showRegenDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                        }`}
+                      />
+                    )}
+                    </div>
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE CREDIT (OPTIONAL)</label>
-                      <button
-                        onClick={() => handleCopy(article.photo_credit || '', 'photo_credit')}
-                        className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
-                      >
-                        {copied === 'photo_credit' ? (
-                          <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleCopy((showRegenDiff ? getRegenCreditDisplay() : article?.photo_credit) || '', 'photo_credit')}
+                          className="p-1.5 text-medium-gray hover:text-cosmic-orange hover:bg-cosmic-orange/10 rounded transition-colors"
+                        >
+                          {copied === 'photo_credit' ? (
+                            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
-                    <input
-                      type="text"
-                      value={article.photo_credit || ''}
-                      onChange={(e) => handleFieldChange('photo_credit', e.target.value)}
-                      placeholder="e.g. Jane Smith / Spring-Ford Press"
-                      readOnly={!canEdit || showDiff}
-                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
-                        canEdit && !showDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                      }`}
-                    />
+                    <div ref={coverCreditFieldRef} className="w-full min-w-0">
+                    {showRegenDiff && regenReviewState && hasRegenCreditChange ? (
+                      <div className="w-full min-w-0 h-11 overflow-x-auto overflow-y-hidden flex items-center px-4 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm custom-scrollbar">
+                        <HighlightedDiff
+                          nowrap
+                          oldStr={regenReviewState.previousCredit ?? ''}
+                          newStr={regenReviewState.proposedCredit ?? ''}
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={showRegenDiff ? getRegenCreditDisplay() : article?.photo_credit || ''}
+                        onChange={(e) => handleFieldChange('photo_credit', e.target.value)}
+                        placeholder="e.g. Jane Smith / Spring-Ford Press"
+                        readOnly={!canEdit || showDiff || showRegenDiff}
+                        className={`w-full min-w-0 px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                          canEdit && !showDiff && !showRegenDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                        }`}
+                      />
+                    )}
+                    </div>
+                  </div>
                   </div>
                 </div>
               </div>
@@ -1278,12 +1623,17 @@ export default function OutputDetailView({
 
   const modalFooter = (
     <ModalFooter>
-      <button onClick={onDismiss} className="btn-secondary flex-1 py-3" disabled={saving}>
+      <button onClick={onDismiss} className="btn-secondary flex-1 py-3">
         {isEditing ? 'Discard Changes' : 'Close'}
       </button>
       {canEdit && (
-        <button onClick={handleSave} className="btn-primary flex-1 py-3 disabled:opacity-50" disabled={saving}>
-          {saving ? 'Saving...' : 'Save Changes'}
+        <button
+          onClick={handleSave}
+          className="btn-primary flex-1 py-3 disabled:opacity-50 flex items-center justify-center gap-2"
+          disabled={saving}
+        >
+          {saving ? actionSpinnerIcon('w-5 h-5') : null}
+          {saving ? 'Saving…' : 'Save Changes'}
         </button>
       )}
     </ModalFooter>
@@ -1299,17 +1649,11 @@ export default function OutputDetailView({
           onClose={onDismiss}
         />
         <ModalMetadataRow>
-          <span className={`uppercase font-medium tracking-wider ${statusColors[ws] ?? 'text-medium-gray'}`}>
-            {statusLabel}
+          <span className={displayStatusClassName}>
+            {displayStatusLabel}
           </span>
           <span>•</span>
           <span>{formatDateTime(output.created_at)}</span>
-          {isEditing && (
-            <>
-              <span>•</span>
-              <span className="text-cosmic-orange">Unsaved changes</span>
-            </>
-          )}
           {showDiff && (
             <>
               <span>•</span>
@@ -1318,25 +1662,43 @@ export default function OutputDetailView({
                 onClick={() => { setReeditState(null); setFieldApprovals({}) }}
                 className="text-medium-gray hover:text-secondary-white underline"
               >
-                Dismiss change highlights
+                Dismiss Change Highlights
+              </button>
+            </>
+          )}
+          {showRegenDiff && (
+            <>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRejectRegenReview()
+                }}
+                disabled={applyingRegen}
+                className="text-medium-gray hover:text-secondary-white underline disabled:opacity-50"
+              >
+                Discard Review
               </button>
             </>
           )}
         </ModalMetadataRow>
         <ModalBody>
-          <ModalScrollRegion>{scrollableFields}</ModalScrollRegion>
+          <ModalScrollRegion>
+            <div className="relative min-h-[min(40vh,480px)]">
+              {scrollableFields}
+              {workflowOverlayNode}
+            </div>
+          </ModalScrollRegion>
         </ModalBody>
         {modalFooter}
       </>
     ) : (
       <>
-        {isEditing && (
-          <div className="mb-4 text-body-sm text-cosmic-orange">Unsaved changes</div>
-        )}
         <div className="flex flex-col lg:flex-row gap-4 items-start">
           <div className="flex-1 min-w-0 flex flex-col h-[calc(100vh-200px)]">
-            <div className="glass-container bg-dark-gray/95 backdrop-blur-glass p-5 flex-1 overflow-y-auto min-h-0 custom-scrollbar pr-3 -mr-1">
+            <div className="glass-container bg-dark-gray/95 backdrop-blur-glass p-5 flex-1 overflow-y-auto min-h-0 custom-scrollbar pr-3 -mr-1 relative">
               {scrollableFields}
+              {workflowOverlayNode}
             </div>
           </div>
           <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 glass-container bg-dark-gray/95 backdrop-blur-glass overflow-hidden">
@@ -1349,13 +1711,43 @@ export default function OutputDetailView({
                 <button
                   type="button"
                   onClick={() => setShowReEditModal(true)}
-                  disabled={!canEdit}
+                  disabled={!canEdit || reeditProcessing}
+                  className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                >
+                  {reeditProcessing ? (
+                    actionSpinnerIcon()
+                  ) : (
+                    <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  )}
+                  <span className="text-body-sm text-secondary-white">Edit Content</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRegenImageModal(true)}
+                  disabled={!canEdit || !coverPhotoUrl || regenPhase === 'processing'}
+                  className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                >
+                  {regenPhase === 'processing' ? (
+                    actionSpinnerIcon()
+                  ) : (
+                    <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  )}
+                  <span className="text-body-sm text-secondary-white">Regenerate Image</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadCoverImage()}
+                  disabled={!coverPhotoUrl}
                   className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                 >
                   <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  <span className="text-body-sm text-secondary-white">Edit with Diffuse</span>
+                  <span className="text-body-sm text-secondary-white">Download Image</span>
                 </button>
                 <button
                   type="button"
@@ -1371,7 +1763,7 @@ export default function OutputDetailView({
                       <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   )}
-                  <span className="text-body-sm text-secondary-white">Copy all</span>
+                  <span className="text-body-sm text-secondary-white">Copy All</span>
                 </button>
                 {canEdit && (
                   <button
@@ -1381,10 +1773,7 @@ export default function OutputDetailView({
                     className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   >
                     {saving ? (
-                      <svg className="w-3.5 h-3.5 text-cosmic-orange flex-shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
+                      actionSpinnerIcon()
                     ) : (
                       <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                         <path d="M5 13l4 4L19 7" />
@@ -1410,38 +1799,40 @@ export default function OutputDetailView({
                   </svg>
                 </div>
               </button>
-              {sidebarSettingsOpen && showDiff && (
+              {sidebarSettingsOpen && (showDiff || showDeleteButton) && (
                 <div className="space-y-0.5 px-4 pb-3">
-                  <button
-                    type="button"
-                    onClick={() => { setReeditState(null); setFieldApprovals({}) }}
-                    className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left"
-                  >
-                    <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    <span className="text-body-sm text-secondary-white">Dismiss change highlights</span>
-                  </button>
+                  {showDiff && (
+                    <button
+                      type="button"
+                      onClick={() => { setReeditState(null); setFieldApprovals({}) }}
+                      className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left"
+                    >
+                      <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      <span className="text-body-sm text-secondary-white">Dismiss Change Highlights</span>
+                    </button>
+                  )}
+                  {showDeleteButton && (
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={deleting}
+                      className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+                    >
+                      {deleting ? (
+                        actionSpinnerIcon()
+                      ) : (
+                        <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      )}
+                      <span className="text-body-sm text-red-400">Delete Output</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
-
-            {/* Delete output — below Settings (recordings delete pattern) */}
-            {showDeleteButton && (
-              <div className="border-t border-white/10 px-4 py-3">
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left disabled:opacity-50"
-                >
-                  <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  <span className="text-body-sm text-red-400">Delete output</span>
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </>
@@ -1464,8 +1855,18 @@ export default function OutputDetailView({
       />
     )}
 
+    {showRegenImageModal && (
+      <RegenerateImageModal
+        onClose={() => setShowRegenImageModal(false)}
+        canRefineCurrent={canRefineOutputCover}
+        outputId={output.id}
+        onSubmit={handleRegenImageSubmit}
+        onComplete={() => onUpdate?.()}
+      />
+    )}
+
     {/* Full-size photo lightbox */}
-    {photoLightboxOpen && coverPhotoUrl && (
+    {photoLightboxOpen && lightboxImageUrl && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
           onClick={() => setPhotoLightboxOpen(false)}
@@ -1484,13 +1885,13 @@ export default function OutputDetailView({
           </button>
           <div className="relative w-full max-w-6xl max-h-[90vh] h-[90vh]" onClick={(e) => e.stopPropagation()}>
             <Image
-              src={coverPhotoUrl}
+              src={lightboxImageUrl}
               alt="Cover full size"
               fill
               sizes="100vw"
               className="object-contain"
-              referrerPolicy={coverPhotoUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
-              unoptimized={coverPhotoUrl.startsWith('/api/')}
+              referrerPolicy={lightboxImageUrl.startsWith('/api/proxy-image') ? 'no-referrer' : undefined}
+              unoptimized={lightboxImageUrl.startsWith('/api/')}
             />
           </div>
         </div>
