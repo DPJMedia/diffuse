@@ -13,6 +13,8 @@ interface HighlightedDiffProps {
   className?: string
   /** Render as block (div) or inline (span). Default block for multiline */
   block?: boolean
+  /** Single horizontal line: no wrap (parent should use overflow-x-auto) */
+  nowrap?: boolean
 }
 
 /**
@@ -25,6 +27,7 @@ export default function HighlightedDiff({
   useWords,
   className = '',
   block = false,
+  nowrap = false,
 }: HighlightedDiffProps) {
   const oldVal = String(oldStr ?? '')
   const newVal = String(newStr ?? '')
@@ -33,9 +36,10 @@ export default function HighlightedDiff({
   const changes: Change[] = useWordLevel ? diffWords(oldVal, newVal) : diffChars(oldVal, newVal)
 
   const Wrapper = block ? 'div' : 'span'
+  const wrapWhitespace = nowrap ? 'whitespace-nowrap' : 'whitespace-pre-wrap break-words'
 
   return (
-    <Wrapper className={`whitespace-pre-wrap break-words ${className}`}>
+    <Wrapper className={`${wrapWhitespace} ${className}`}>
       {changes.map((part, i) => {
         if (part.added) {
           return (
