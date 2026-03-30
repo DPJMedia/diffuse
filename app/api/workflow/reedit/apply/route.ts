@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
     const { user, supabase } = authResult
 
-    let body: { output_id?: string; content?: string }
+    let body: { output_id?: string; content?: string; accepted_edit_count?: number }
     try {
       body = await request.json()
     } catch {
@@ -57,7 +57,12 @@ export async function POST(request: NextRequest) {
       revision_type: 'previous',
     })
 
-    const reeditCount = (output.reedit_count ?? 0) + 1
+    const rawInc = body.accepted_edit_count
+    const increment =
+      typeof rawInc === 'number' && Number.isFinite(rawInc) && rawInc >= 0
+        ? Math.min(Math.floor(rawInc), 100)
+        : 1
+    const reeditCount = (output.reedit_count ?? 0) + increment
     const { data: updatedOutput, error: updateError } = await supabase
       .from('diffuse_project_outputs')
       .update({

@@ -6,6 +6,9 @@ import { createClient } from '@/lib/supabase/client'
 import { formatDateTime, formatDuration, sanitizeStorageFilename } from '@/lib/utils/format'
 import type { DiffuseProjectInput } from '@/types/database'
 import { ModalShell, ModalHeader, ModalMetadataRow, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
+import RegenerateImageModal from './RegenerateImageModal'
+import CoverRegenerationLayer, { type CoverRegenPhase } from './CoverRegenerationLayer'
+import HighlightedDiff from './HighlightedDiff'
 
 interface InputDetailModalProps {
   input: DiffuseProjectInput
@@ -26,10 +29,23 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   const [deleting, setDeleting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null)
-  const [replacingCover, setReplacingCover] = useState(false)
+  const [showRegenImageModal, setShowRegenImageModal] = useState(false)
+  const [uploadingCoverFile, setUploadingCoverFile] = useState(false)
   const [organizing, setOrganizing] = useState(false)
   const [organizedContent, setOrganizedContent] = useState<string | null>(null)
   const [hasApprovedOrganizedPendingSave, setHasApprovedOrganizedPendingSave] = useState(false)
+  const [regenPhase, setRegenPhase] = useState<CoverRegenPhase>('idle')
+  const [regenSnapshotUrl, setRegenSnapshotUrl] = useState<string | null>(null)
+  const [sharpCacheKey, setSharpCacheKey] = useState(0)
+  const [regenReviewState, setRegenReviewState] = useState<{
+    proposedCaption: string | null
+    proposedCredit: string | null
+    previousCaption: string | null
+    previousCredit: string | null
+    pendingImagePath: string
+  } | null>(null)
+  const [regenFieldApprovals, setRegenFieldApprovals] = useState<Partial<Record<'cover_image', boolean>>>({})
+  const [applyingRegen, setApplyingRegen] = useState(false)
 
   // Content search state
   const [contentSearchQuery, setContentSearchQuery] = useState('')
@@ -38,7 +54,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   const [showContentSearch, setShowContentSearch] = useState(false)
   const contentSearchInputRef = useRef<HTMLInputElement>(null)
 
-  const coverReplaceInputRef = useRef<HTMLInputElement>(null)
+  const coverUploadInputRef = useRef<HTMLInputElement>(null)
   const scrapedContentRef = useRef<HTMLDivElement>(null)
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
@@ -226,6 +242,33 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
     ? `/api/project-file?path=${encodeURIComponent(input.file_path)}`
     : null
   const coverDisplayUrl = coverImageUrl ?? coverPhotoApiUrl
+  const canRefineCoverInput = !!(input.file_path || input.metadata?.storage_url)
+  const displayCoverForRegen = coverDisplayUrl ?? (input.metadata?.storage_url as string | undefined) ?? ''
+
+  const regenPendingPath =
+    (input.metadata?.regen_image as { pending?: { cover_photo_path?: string } } | undefined)?.pending
+      ?.cover_photo_path ?? null
+  const pendingCoverUrl = regenPendingPath
+    ? `/api/project-file?path=${encodeURIComponent(regenPendingPath)}`
+    : null
+
+  const sharpRevealBase =
+    regenPhase === 'check' && sharpCacheKey
+      ? (pendingCoverUrl ?? displayCoverForRegen)
+      : null
+  const sharpRevealUrl =
+    sharpRevealBase
+      ? `${sharpRevealBase}${sharpRevealBase.includes('?') ? '&' : '?'}cb=${sharpCacheKey}`
+      : null
+  const regenSharpUrl = regenFieldApprovals.cover_image === false ? null : sharpRevealUrl
+
+  const showRegenDiff = !!regenReviewState && isCoverPhoto
+  const hasRegenCaptionChange =
+    !!regenReviewState &&
+    (regenReviewState.previousCaption ?? '') !== (regenReviewState.proposedCaption ?? '')
+  const hasRegenCreditChange =
+    !!regenReviewState &&
+    (regenReviewState.previousCredit ?? '') !== (regenReviewState.proposedCredit ?? '')
 
   // Image inputs (e.g. workflow-generated): same retrieval as output section; use project-file API when we have file_path
   const imageInputDisplayUrl = isImage && input.file_path
@@ -235,6 +278,55 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   useEffect(() => {
     setCoverImageUrl(null)
   }, [input.id, input.file_path])
+
+  useEffect(() => {
+    setRegenPhase('idle')
+    setRegenSnapshotUrl(null)
+    setSharpCacheKey(0)
+    setRegenReviewState(null)
+    setRegenFieldApprovals({})
+  }, [input.id])
+
+  /** Regen complete (sync API): show review (check). From `processing`, blur fades to the new image. */
+  useEffect(() => {
+    const st = (input.metadata?.regen_image as { status?: string; pending?: unknown } | undefined)?.status
+    const pending = (input.metadata?.regen_image as { pending?: unknown } | undefined)?.pending
+    if (st !== 'complete' || !pending) return
+    if (regenPhase === 'check') return
+    if (regenPhase !== 'idle' && regenPhase !== 'processing') return
+    const snap = displayCoverForRegen || pendingCoverUrl
+    if (!snap) return
+    setRegenSnapshotUrl((s) => s ?? snap)
+    setSharpCacheKey(Date.now())
+    setRegenPhase('check')
+  }, [input.metadata?.regen_image, displayCoverForRegen, pendingCoverUrl, regenPhase, input.id])
+
+  useEffect(() => {
+    const ri = input.metadata?.regen_image as {
+      status?: string
+      pending?: {
+        cover_photo_path: string
+        photo_caption: string | null
+        photo_credit: string | null
+      }
+    } | undefined
+    const p = ri?.pending?.cover_photo_path
+    if (ri?.status !== 'complete' || !ri.pending || !p) {
+      setRegenReviewState(null)
+      setRegenFieldApprovals({})
+      return
+    }
+    setRegenReviewState((prev) => {
+      if (prev?.pendingImagePath === p) return prev
+      return {
+        proposedCaption: ri.pending!.photo_caption,
+        proposedCredit: ri.pending!.photo_credit,
+        previousCaption: (input.metadata?.photo_caption as string) ?? null,
+        previousCredit: (input.metadata?.photo_credit as string) ?? null,
+        pendingImagePath: ri.pending!.cover_photo_path,
+      }
+    })
+  }, [input.metadata?.regen_image, input.id, input.metadata?.photo_caption, input.metadata?.photo_credit])
 
   const handleCopy = async (text: string, field: string) => {
     try {
@@ -261,7 +353,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
       e.target.value = ''
       return
     }
-    setReplacingCover(true)
+    setUploadingCoverFile(true)
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser()
       if (!currentUser) throw new Error('Not authenticated')
@@ -303,8 +395,111 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
       console.error('Replace cover photo failed:', err)
       alert(err instanceof Error ? err.message : 'Failed to replace cover photo')
     } finally {
-      setReplacingCover(false)
+      setUploadingCoverFile(false)
       e.target.value = ''
+    }
+  }
+
+  const handleRegenImageSubmit = async ({ mode, comments }: { mode: 'scratch' | 'update'; comments: string }) => {
+    if (!displayCoverForRegen) {
+      throw new Error('Add or upload a cover image first.')
+    }
+    const snap =
+      typeof displayCoverForRegen === 'string' && displayCoverForRegen.startsWith('/')
+        ? displayCoverForRegen
+        : coverDisplayUrl ?? (input.metadata?.storage_url as string | undefined) ?? displayCoverForRegen
+    setRegenSnapshotUrl(snap)
+    setRegenPhase('processing')
+    try {
+      const res = await fetch('/api/workflow/regen-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input_id: input.id, mode, comments }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as {
+          error?: string
+          message?: string
+          n8n_status?: number
+          n8n_detail?: string
+        }
+        const parts = [
+          data?.message || data?.error || 'Request failed',
+          data?.n8n_status != null ? `n8n HTTP ${data.n8n_status}` : null,
+          data?.n8n_detail,
+        ].filter(Boolean)
+        throw new Error(parts.join(' — '))
+      }
+    } catch (e) {
+      setRegenPhase('idle')
+      setRegenSnapshotUrl(null)
+      throw e
+    }
+  }
+
+  const getRegenCreditDisplay = () => {
+    if (!regenReviewState) return photoCredit
+    return regenReviewState.proposedCredit ?? ''
+  }
+
+  const handleDenyRegenField = (field: 'cover_image') => {
+    if (!regenReviewState) return
+    setRegenFieldApprovals((prev) => ({ ...prev, [field]: false }))
+  }
+
+  const handleApplyRegenReview = async () => {
+    if (!regenReviewState) return
+    setApplyingRegen(true)
+    try {
+      const res = await fetch('/api/workflow/regen-image/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input_id: input.id,
+          approvals: {
+            cover_image: regenFieldApprovals.cover_image !== false,
+            photo_caption: true,
+            photo_credit: true,
+          },
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to apply')
+      setRegenPhase('idle')
+      setRegenSnapshotUrl(null)
+      setRegenReviewState(null)
+      setRegenFieldApprovals({})
+      onUpdate?.()
+    } catch (err) {
+      console.error(err)
+      alert(err instanceof Error ? err.message : 'Failed to apply')
+    } finally {
+      setApplyingRegen(false)
+    }
+  }
+
+  const handleRejectRegenReview = async () => {
+    setApplyingRegen(true)
+    try {
+      const res = await fetch('/api/workflow/regen-image/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input_id: input.id }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error || 'Failed to discard')
+      }
+      setRegenPhase('idle')
+      setRegenSnapshotUrl(null)
+      setRegenReviewState(null)
+      setRegenFieldApprovals({})
+      onUpdate?.()
+    } catch (err) {
+      console.error(err)
+      alert(err instanceof Error ? err.message : 'Failed to discard')
+    } finally {
+      setApplyingRegen(false)
     }
   }
 
@@ -373,12 +568,37 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
 
   const headerActions = (
     <>
+      {isCoverPhoto && showRegenDiff && regenReviewState && regenFieldApprovals.cover_image === undefined && (
+        <>
+          <button
+            type="button"
+            onClick={() => void handleApplyRegenReview()}
+            disabled={applyingRegen}
+            className="p-2 rounded-full text-medium-gray hover:text-green-400 hover:bg-green-400/10 transition-colors disabled:opacity-50"
+            title="Apply new cover"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDenyRegenField('cover_image')}
+            disabled={applyingRegen}
+            className="p-2 rounded-full text-medium-gray hover:text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-50"
+            title="Keep previous image"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </>
+      )}
       {isCoverPhoto && canEdit && (
         <button
-          onClick={() => coverReplaceInputRef.current?.click()}
-          disabled={replacingCover}
-          className="p-2 rounded-full text-medium-gray hover:text-lime-400 hover:bg-lime-400/10 transition-colors disabled:opacity-50"
-          title="Replace image"
+          onClick={() => setShowRegenImageModal(true)}
+          className="p-2 rounded-full text-medium-gray hover:text-lime-400 hover:bg-lime-400/10 transition-colors"
+          title="Regenerate image"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -446,6 +666,16 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
   )
 
   return (
+    <>
+    {showRegenImageModal && (
+      <RegenerateImageModal
+        onClose={() => setShowRegenImageModal(false)}
+        canRefineCurrent={canRefineCoverInput}
+        inputId={input.id}
+        onSubmit={handleRegenImageSubmit}
+        onComplete={() => onUpdate?.()}
+      />
+    )}
     <ModalShell onClose={onClose} maxWidth="max-w-4xl" maxHeight="max-h-[90vh]">
       <ModalHeader
         icon={<span className={typeInfo.color}>{typeInfo.icon}</span>}
@@ -471,6 +701,28 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
         )}
         <span>•</span>
         <span>{formatDateTime(input.created_at)}</span>
+        {showRegenDiff && regenReviewState && (
+          <>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => void handleApplyRegenReview()}
+              disabled={applyingRegen}
+              className="text-cosmic-orange hover:text-secondary-white underline disabled:opacity-50"
+            >
+              {applyingRegen ? 'Applying…' : 'Apply cover'}
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => void handleRejectRegenReview()}
+              disabled={applyingRegen}
+              className="text-medium-gray hover:text-secondary-white underline disabled:opacity-50"
+            >
+              Discard review
+            </button>
+          </>
+        )}
       </ModalMetadataRow>
       <ModalBody>
         <ModalScrollRegion>
@@ -497,8 +749,7 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
           {/* Image input: image left (title + download + copy), title/caption/credit right; same style as output popup */}
           {isImage && imageInputDisplayUrl && (
             <div className="flex flex-col md:flex-row md:gap-5 md:items-stretch shrink-0">
-              {/* Image window: label row + image (zoom to fill); larger to match taller right column */}
-              <div className="flex flex-col flex-shrink-0 w-full md:w-80 md:max-w-[340px] mb-4 md:mb-0 min-h-0">
+              <div className="flex flex-col flex-shrink-0 md:h-full w-full md:w-80 md:max-w-[340px] mb-4 md:mb-0 min-h-0">
                 <div className="flex items-center justify-between mb-2 shrink-0">
                   <label className="text-caption text-medium-gray uppercase tracking-wider">IMAGE</label>
                   <div className="flex items-center gap-1">
@@ -546,13 +797,13 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
                     </button>
                   </div>
                 </div>
-                <div className="flex-1 min-h-[140px] md:min-h-0 border border-white/10 rounded-glass overflow-hidden bg-white/5 relative">
+                <div className="min-h-[140px] flex-1 border border-white/10 rounded-glass overflow-hidden bg-white/5 relative">
                   <Image
                     src={imageInputDisplayUrl}
                     alt={input.file_name || 'Image'}
                     fill
                     sizes="(max-width: 768px) 100vw, 220px"
-                    className="object-cover"
+                    className="object-contain object-center"
                     unoptimized={imageInputDisplayUrl.startsWith('/api/')}
                   />
                 </div>
@@ -660,40 +911,82 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
           {isCoverPhoto && (
             <div className="space-y-4 shrink-0">
               <input
-                ref={coverReplaceInputRef}
+                ref={coverUploadInputRef}
                 type="file"
                 accept=".jpg,.jpeg,.png,image/jpeg,image/png"
                 className="hidden"
                 onChange={handleReplaceCoverPhoto}
               />
               <div>
-                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">COVER PHOTO</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-caption text-medium-gray uppercase tracking-wider">COVER PHOTO</label>
+                </div>
                 {(coverDisplayUrl ?? input.metadata?.storage_url) ? (
                   <div className="bg-white/5 border border-white/10 rounded-glass p-4 relative w-full h-[300px]">
-                    <Image
-                      src={coverDisplayUrl ?? input.metadata?.storage_url ?? ''}
+                    <CoverRegenerationLayer
+                      phase={regenPhase}
+                      snapshotUrl={regenSnapshotUrl ?? displayCoverForRegen}
+                      sharpUrl={regenSharpUrl}
                       alt={input.file_name || 'Cover photo'}
-                      fill
                       sizes="(max-width: 768px) 100vw, 600px"
-                      className="rounded-lg object-contain"
+                      className="relative w-full h-full min-h-[240px]"
+                      imageClassName="object-contain rounded-lg"
                     />
                   </div>
                 ) : (
-                  <p className="text-body-sm text-medium-gray italic">No image. Use Replace in the header to add one, or Delete to remove this input.</p>
+                  <div className="space-y-3">
+                    <p className="text-body-sm text-medium-gray italic">
+                      No image yet. Upload a JPG or PNG below, or use Regenerate image in the header to create one with Diffuse.
+                    </p>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => coverUploadInputRef.current?.click()}
+                        disabled={uploadingCoverFile}
+                        className="btn-secondary text-body-sm py-2 px-4 disabled:opacity-50"
+                      >
+                        {uploadingCoverFile ? 'Uploading…' : 'Upload image'}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
+              {showRegenDiff && regenReviewState && hasRegenCaptionChange && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-caption text-medium-gray uppercase tracking-wider">IMAGE CAPTION (OPTIONAL)</label>
+                  </div>
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                    <HighlightedDiff
+                      oldStr={regenReviewState.previousCaption ?? ''}
+                      newStr={regenReviewState.proposedCaption ?? ''}
+                    />
+                  </div>
+                </div>
+              )}
               <div>
-                <label className="block text-caption text-medium-gray mb-2 uppercase tracking-wider">PHOTO CREDIT (OPTIONAL)</label>
-                <input
-                  type="text"
-                  value={photoCredit}
-                  onChange={(e) => canEdit && setPhotoCredit(e.target.value)}
-                  placeholder="e.g. Jane Smith / Spring-Ford Press"
-                  readOnly={!canEdit}
-                  className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
-                    canEdit ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
-                  }`}
-                />
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-caption text-medium-gray uppercase tracking-wider">PHOTO CREDIT (OPTIONAL)</label>
+                </div>
+                {showRegenDiff && regenReviewState && hasRegenCreditChange ? (
+                  <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm min-h-[44px]">
+                    <HighlightedDiff
+                      oldStr={regenReviewState.previousCredit ?? ''}
+                      newStr={regenReviewState.proposedCredit ?? ''}
+                    />
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={showRegenDiff ? getRegenCreditDisplay() : photoCredit}
+                    onChange={(e) => canEdit && setPhotoCredit(e.target.value)}
+                    placeholder="e.g. Jane Smith / Spring-Ford Press"
+                    readOnly={!canEdit || showRegenDiff}
+                    className={`w-full px-4 py-3 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm transition-colors ${
+                      canEdit && !showRegenDiff ? 'focus:outline-none focus:border-cosmic-orange cursor-text' : 'cursor-default opacity-75'
+                    }`}
+                  />
+                )}
                 <p className="text-body-sm text-medium-gray mt-1 italic">Used when publishing to integrations. Leave blank if no credit.</p>
               </div>
             </div>
@@ -867,5 +1160,6 @@ export default function InputDetailModal({ input, onClose, onSave, onDelete, onU
         )}
       </ModalFooter>
     </ModalShell>
+    </>
   )
 }

@@ -33,6 +33,13 @@ export function getReeditWebhookUrl(): string | null {
   return N8N_REEDIT_WEBHOOK_URL?.trim() || null
 }
 
+/** Cover image regeneration workflow — set N8N_REGEN_IMAGE_WEBHOOK_URL (server-only, not NEXT_PUBLIC). */
+export function getRegenImageWebhookUrl(): string | null {
+  // Read at call time so Next.js picks up .env.local after changes without relying on module init order.
+  const url = process.env.N8N_REGEN_IMAGE_WEBHOOK_URL?.trim()
+  return url || null
+}
+
 export function requireN8nWebhookUrl(): string {
   const url = getN8nWebhookUrl()
   if (!url) {

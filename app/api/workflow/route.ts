@@ -742,13 +742,36 @@ export async function POST(request: NextRequest) {
       let photoCredit: string | undefined
       try {
         const parsed = JSON.parse(finalContent)
-        const article = (Array.isArray(parsed) && parsed[0]?.article) ? parsed[0].article : (parsed?.article ?? parsed)
-        if (article && typeof article === 'object') {
-          const a = article as Record<string, unknown>
-          if (typeof a.title === 'string' && a.title.trim()) imageTitle = a.title.trim()
-          if (typeof a.photo_caption === 'string' && a.photo_caption.trim()) photoCaption = a.photo_caption.trim()
-          if (typeof a.photo_credit === 'string' && a.photo_credit.trim()) photoCredit = a.photo_credit.trim()
+        let wrapper: Record<string, unknown> | null = null
+        let article: Record<string, unknown> | null = null
+        if (Array.isArray(parsed) && parsed[0] && typeof parsed[0] === 'object') {
+          wrapper = parsed[0] as Record<string, unknown>
+          const a = wrapper.article
+          article = a && typeof a === 'object' ? (a as Record<string, unknown>) : null
+        } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const p = parsed as Record<string, unknown>
+          if (p.article && typeof p.article === 'object') {
+            wrapper = p
+            article = p.article as Record<string, unknown>
+          } else {
+            article = p as Record<string, unknown>
+          }
         }
+        const pickCap = (o: Record<string, unknown> | null) => {
+          if (!o) return undefined
+          const c = o.photo_caption
+          return typeof c === 'string' && c.trim() ? c.trim() : undefined
+        }
+        const pickCredit = (o: Record<string, unknown> | null) => {
+          if (!o) return undefined
+          const c = o.photo_credit
+          return typeof c === 'string' && c.trim() ? c.trim() : undefined
+        }
+        if (article && typeof article.title === 'string' && article.title.trim()) {
+          imageTitle = article.title.trim()
+        }
+        photoCaption = pickCap(wrapper) ?? pickCap(article)
+        photoCredit = pickCredit(wrapper) ?? pickCredit(article)
       } catch {
         /* ignore */
       }

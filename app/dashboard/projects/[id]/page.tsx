@@ -18,6 +18,7 @@ import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
 import { ConfirmModal } from '@/components/dashboard/ConfirmModal'
 import type { DiffuseProject, DiffuseProjectInput, DiffuseProjectOutput, ProjectVisibility, UserRole, InputType, OutputType } from '@/types/database'
 import { getRoleLevel } from '@/lib/projects/projectRoles'
+import { parseOutputContentToStructuredArticle } from '@/lib/output-content'
 // tus-js-client will be dynamically imported when needed
 
 export default function ProjectDetailPage() {
@@ -132,73 +133,19 @@ export default function ProjectDetailPage() {
   const canEdit = isProjectOwner || getRoleLevel(userProjectRole) >= getRoleLevel('editor')
   const canDelete = isProjectOwner || getRoleLevel(userProjectRole) >= getRoleLevel('admin')
 
-  // Helper to extract article info from output content
+  // Helper to extract article info from output content (same merge rules as output detail)
   const getOutputInfo = (output: DiffuseProjectOutput) => {
-    // Helper to extract field from JSON-like string using regex
-    const extractField = (content: string, field: string): string | null => {
-      const regex = new RegExp(`"${field}"\\s*:\\s*"([^"]*(?:\\\\"[^"]*)*)"`, 's')
-      const match = content.match(regex)
-      if (match) {
-        return match[1].replace(/\\"/g, '"').replace(/\\n/g, '\n')
-      }
-      return null
-    }
-
-    try {
-      // First try standard JSON parsing
-      let parsed: Record<string, unknown> | null = null
-      if (typeof output.content === 'string') {
-        const trimmed = output.content.trim()
-        try {
-          parsed = JSON.parse(trimmed)
-        } catch {
-          // If parsing fails, check for double-encoded JSON
-          if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-            try {
-              const unwrapped = JSON.parse(trimmed)
-              parsed = JSON.parse(unwrapped)
-            } catch {
-              // Fall through to regex extraction
-            }
-          }
-        }
-      }
-
-      // If we got a parsed object with expected fields
-      if (parsed && typeof parsed === 'object' && (parsed.title || parsed.content)) {
-        return {
-          title: (parsed.title as string) || 'Untitled Article',
-          subtitle: (parsed.subtitle as string) || null,
-          author: (parsed.author as string) || 'Diffuse.AI',
-          excerpt: (parsed.excerpt as string) || null,
-          photo_caption: (parsed.photo_caption as string) || null,
-          photo_credit: (parsed.photo_credit as string) || null,
-        }
-      }
-    } catch {
-      // Fall through to regex extraction
-    }
-
-    // Fallback: try regex extraction for JSON-like content
-    const title = extractField(output.content, 'title')
-    const subtitle = extractField(output.content, 'subtitle')
-    const author = extractField(output.content, 'author')
-    const excerpt = extractField(output.content, 'excerpt')
-    const photo_caption = extractField(output.content, 'photo_caption')
-    const photo_credit = extractField(output.content, 'photo_credit')
-
-    if (title) {
+    const structured = parseOutputContentToStructuredArticle(output.content)
+    if (structured) {
       return {
-        title,
-        subtitle,
-        author: author || 'Diffuse.AI',
-        excerpt,
-        photo_caption: photo_caption || null,
-        photo_credit: photo_credit || null,
+        title: structured.title || 'Untitled Article',
+        subtitle: structured.subtitle ?? null,
+        author: structured.author || 'Diffuse.AI',
+        excerpt: structured.excerpt || null,
+        photo_caption: structured.photo_caption ?? null,
+        photo_credit: structured.photo_credit ?? null,
       }
     }
-
-    // Ultimate fallback
     return {
       title: 'Untitled Article',
       subtitle: null,
@@ -1113,13 +1060,25 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* ── Two-column layout ──────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row gap-4 items-start">
+      <div
+        className={`flex flex-col lg:flex-row gap-4 ${
+          outputs.length === 0 && !generatingArticle ? 'lg:items-stretch' : 'items-start'
+        }`}
+      >
 
         {/* ── Left: Output column ───────────────────────── */}
-        <div className="flex-1 min-w-0">
+        <div
+          className={`flex-1 min-w-0 ${
+            outputs.length === 0 && !generatingArticle ? 'flex flex-col min-h-0' : ''
+          }`}
+        >
 
           {/* Output display area */}
-          <div>
+          <div
+            className={
+              outputs.length === 0 && !generatingArticle ? 'flex flex-1 flex-col min-h-0' : ''
+            }
+          >
             {/* Generating placeholder card — shown as first item */}
             {generatingArticle && (
               <div className="glass-container p-5 mb-4">
@@ -1137,7 +1096,7 @@ export default function ProjectDetailPage() {
             )}
 
             {outputs.length === 0 && !generatingArticle ? (
-              <div className="py-12 flex items-center justify-center">
+              <div className="glass-container flex flex-1 min-h-0 items-center justify-center p-5">
                 <p className="text-body-md text-medium-gray text-center">No output generated yet.</p>
               </div>
             ) : (

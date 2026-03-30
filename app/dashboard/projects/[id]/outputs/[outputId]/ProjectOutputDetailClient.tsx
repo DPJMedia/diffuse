@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import OutputDetailView from '@/components/dashboard/OutputDetailView'
 import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
+import { OutputDetailSkeleton } from '@/components/dashboard/Skeletons'
 import { getRoleLevel } from '@/lib/projects/projectRoles'
 import { formatDateTime } from '@/lib/utils/format'
 import type { DiffuseProject, DiffuseProjectOutput } from '@/types/database'
@@ -43,6 +44,9 @@ export default function ProjectOutputDetailClient() {
   const [fallbackCoverPhotoPath, setFallbackCoverPhotoPath] = useState<string | null>(null)
   const [userProjectRole, setUserProjectRole] = useState<string>('viewer')
   const [loading, setLoading] = useState(true)
+  /** Synced from OutputDetailView — drives header status line on full-page layout */
+  const [outputDetailEditing, setOutputDetailEditing] = useState(false)
+  const [outputDetailPendingRegen, setOutputDetailPendingRegen] = useState(false)
 
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
@@ -50,12 +54,15 @@ export default function ProjectOutputDetailClient() {
   const projectBackHrefRef = useRef(projectBackHref)
   projectBackHrefRef.current = projectBackHref
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true
     if (!projectId || !outputId) {
       setLoading(false)
       return
     }
-    setLoading(true)
+    if (!silent) {
+      setLoading(true)
+    }
     try {
       const { data: projectData, error: projectError } = await supabase
         .from('diffuse_projects')
@@ -64,6 +71,7 @@ export default function ProjectOutputDetailClient() {
         .single()
 
       if (projectError || !projectData) {
+        if (!silent) setLoading(false)
         router.push('/dashboard')
         return
       }
@@ -113,6 +121,7 @@ export default function ProjectOutputDetailClient() {
         .single()
 
       if (outputError || !outputData) {
+        if (!silent) setLoading(false)
         router.push(projectBackHrefRef.current)
         return
       }
@@ -127,16 +136,20 @@ export default function ProjectOutputDetailClient() {
         .maybeSingle()
 
       setFallbackCoverPhotoPath(coverInput?.file_path ?? null)
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
     } catch (e) {
       console.error('Error loading output detail:', e)
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
       router.push('/dashboard')
     }
   }, [projectId, outputId, router, supabase])
 
   useEffect(() => {
-    fetchData()
+    fetchData({ silent: false })
   }, [fetchData])
 
   useEffect(() => {
@@ -153,7 +166,7 @@ export default function ProjectOutputDetailClient() {
           filter: `id=eq.${outputId}`,
         },
         () => {
-          fetchData()
+          fetchData({ silent: true })
         }
       )
       .subscribe()
@@ -162,6 +175,10 @@ export default function ProjectOutputDetailClient() {
       supabase.removeChannel(channel)
     }
   }, [outputId, supabase, fetchData])
+
+  useEffect(() => {
+    setOutputDetailEditing(false)
+  }, [outputId])
 
   const isProjectOwner = project?.created_by === user?.id
   const canEdit = isProjectOwner || getRoleLevel(userProjectRole) >= getRoleLevel('editor')
@@ -183,15 +200,7 @@ export default function ProjectOutputDetailClient() {
   }
 
   if (loading) {
-    return (
-      <div className="animate-pulse">
-        <div className="mb-6">
-          <div className="h-5 w-40 bg-white/10 rounded mb-3" />
-          <div className="h-8 w-56 bg-white/10 rounded mb-2" />
-        </div>
-        <div className="glass-container max-w-4xl mx-auto h-96" />
-      </div>
-    )
+    return <OutputDetailSkeleton />
   }
 
   if (!project || !output) {
@@ -222,6 +231,14 @@ export default function ProjectOutputDetailClient() {
             ? 'text-red-400'
             : 'text-medium-gray'
 
+  const headerPendingSurface = outputDetailEditing || outputDetailPendingRegen
+  const headerStatusLabel = headerPendingSurface
+    ? 'UNSAVED CHANGES (PENDING EDITS)'
+    : statusLabel
+  const headerStatusClassName = headerPendingSurface
+    ? 'uppercase font-medium tracking-wider text-cosmic-orange'
+    : `uppercase font-medium tracking-wider ${statusColorClass}`
+
   return (
     <div>
       <div className="mb-6">
@@ -237,7 +254,7 @@ export default function ProjectOutputDetailClient() {
         </button>
         <h1 className="text-heading-lg text-secondary-white font-medium leading-tight">Output Details</h1>
         <p className="text-body-sm text-medium-gray mt-1">
-          <span className={`uppercase font-medium tracking-wider ${statusColorClass}`}>{statusLabel}</span>
+          <span className={headerStatusClassName}>{headerStatusLabel}</span>
           <span> · </span>
           <span>{formatDateTime(output.created_at)}</span>
         </p>
@@ -246,8 +263,10 @@ export default function ProjectOutputDetailClient() {
       <OutputDetailView
         layout="page"
         output={output}
+        onEditingChange={setOutputDetailEditing}
+        onRegenPendingChange={setOutputDetailPendingRegen}
         onDismiss={() => router.push(projectBackHref)}
-        onUpdate={fetchData}
+        onUpdate={() => fetchData({ silent: true })}
         onReeditComplete={(updated) => setOutput(updated)}
         onDelete={handleDeleteOutput}
         canEdit={canEdit}

@@ -353,7 +353,7 @@ export default function SubscriptionPage() {
                   {tier === 'contractor_pro' ? (
                     isCurrentPlan ? (
                       <button
-                        onClick={() => window.location.href = '/dashboard/projects'}
+                        onClick={() => (window.location.href = '/dashboard')}
                         className="btn-primary w-full py-3 text-body-md cursor-pointer"
                       >
                         Active
@@ -369,7 +369,7 @@ export default function SubscriptionPage() {
                     )
                   ) : isCurrentPlan ? (
                     <button
-                      onClick={() => window.location.href = '/dashboard/projects'}
+                      onClick={() => (window.location.href = '/dashboard')}
                       className="btn-primary w-full py-3 text-body-md cursor-pointer"
                     >
                       Active
