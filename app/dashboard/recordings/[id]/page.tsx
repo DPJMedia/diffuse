@@ -9,6 +9,7 @@ import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 import AudioPlayer from '@/components/dashboard/AudioPlayer'
 import { ConfirmModal } from '@/components/dashboard/ConfirmModal'
 import { diffWordsWithSpace, type Change } from 'diff'
+import { getSpeakerLabel, buildUtteranceTranscriptCopy } from '@/lib/utils/speaker-label'
 
 type RecordingStatus = 'recorded' | 'generating' | 'transcribed'
 
@@ -132,34 +133,6 @@ function highlightSearch(text: string, query: string, currentMatch: number): Rea
   }
   if (lastIndex < text.length) nodes.push(text.slice(lastIndex))
   return nodes.length > 0 ? nodes : [text]
-}
-
-// Helper function to convert AssemblyAI speaker labels (A, B, C, D) to numbered format (Speaker 1, 2, 3, 4)
-function getSpeakerLabel(
-  speaker: string, 
-  speakerMap?: Record<string, { name: string; position?: string }> | null,
-  detectedNames?: Record<string, string> | null
-): string {
-  // Priority 1: If we have a custom speaker map, use it
-  if (speakerMap && speakerMap[speaker]) {
-    const info = speakerMap[speaker]
-    return info.position ? `${info.name} (${info.position})` : info.name
-  }
-  
-  // Priority 2: If we have auto-detected names, use them
-  if (detectedNames && detectedNames[speaker]) {
-    return detectedNames[speaker]
-  }
-  
-  // Priority 3: Convert letter labels to numbered format
-  const match = speaker.match(/^([A-Z])$/)
-  if (match) {
-    const speakerNumber = match[1].charCodeAt(0) - 'A'.charCodeAt(0) + 1
-    return `Speaker ${speakerNumber}`
-  }
-  
-  // Fallback to original speaker label if format is unexpected
-  return speaker
 }
 
 /** True when the saved label is still the generic "Speaker N" placeholder (not a real identified name). */
@@ -1009,6 +982,25 @@ export default function RecordingDetailPage() {
   const displayUtterances = isEditingUtterances && editedUtterances ? editedUtterances : (recording?.utterances || [])
   const displayTranscription = editedTranscription !== null ? editedTranscription : (recording?.transcription || '')
 
+  const handleCopyFullTranscript = async () => {
+    if (!recording) return
+    const text = buildUtteranceTranscriptCopy(
+      displayUtterances,
+      recording.speaker_map,
+      recording.detected_speaker_names,
+      recording.transcription
+    )
+    if (!text.trim()) {
+      alert('Nothing to copy yet.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      alert('Could not copy to clipboard.')
+    }
+  }
+
   if (loading) {
     return (
       <div className="animate-pulse">
@@ -1597,6 +1589,20 @@ export default function RecordingDetailPage() {
                 </svg>
                 <span className="text-body-sm text-secondary-white">Download Audio</span>
               </button>
+
+              {/* Copy full transcript */}
+              {recording.status === 'transcribed' && (recording.transcription || displayUtterances.length > 0) && (
+                <button
+                  type="button"
+                  onClick={handleCopyFullTranscript}
+                  className="w-full flex items-center gap-2 py-2 px-2 rounded hover:bg-white/10 transition-colors text-left"
+                >
+                  <svg className="w-3.5 h-3.5 text-medium-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-body-sm text-secondary-white">Copy Full Transcript</span>
+                </button>
+              )}
             </div>
           </div>
 

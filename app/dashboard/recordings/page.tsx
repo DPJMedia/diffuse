@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase/client'
 import { formatRelativeTime, formatDuration } from '@/lib/utils/format'
+import { buildUtteranceTranscriptCopy } from '@/lib/utils/speaker-label'
 import { GridPageSkeleton } from '@/components/dashboard/Skeletons'
 import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 import EmptyState from '@/components/dashboard/EmptyState'
@@ -24,6 +25,7 @@ interface Recording {
   transcription: string | null
   original_transcription: string | null
   speaker_map?: Record<string, { name: string; position?: string }> | null
+  detected_speaker_names?: Record<string, string> | null
   utterances?: Array<{ speaker: string; text: string; start: number; end: number }> | null
   original_utterances?: Array<{ speaker: string; text: string; start: number; end: number }> | null
   status: RecordingStatus
@@ -1107,6 +1109,8 @@ export default function RecordingsPage() {
       // Replace A, B, C, D in the transcript with names (and positions); include minute markers at correct spots
       const enrichedTranscript = buildTranscriptWithMinuteMarkers(utterances, newSpeakerMap)
 
+      // Remove clip boundary listener so full-length playback is not paused at the last sample’s end time
+      pauseCurrentSpeakerClip()
       setTranscribePhase('done')
       if (!selectedRecording) return
       try {
@@ -1436,6 +1440,34 @@ export default function RecordingsPage() {
         : (selectedRecording?.original_utterances ?? selectedRecording?.utterances ?? []),
     [originalUtterances, selectedRecording?.original_utterances, selectedRecording?.utterances]
   )
+
+  const copyFullTranscriptToClipboard = useCallback(async () => {
+    if (!selectedRecording) return
+    const rows = isEditingUtterances && editedUtterances ? editedUtterances : displayUtterances
+    const mergedMap = { ...(selectedRecording.speaker_map || {}), ...speakerMap }
+    const text = buildUtteranceTranscriptCopy(
+      rows,
+      mergedMap,
+      selectedRecording.detected_speaker_names,
+      selectedRecording.transcription
+    )
+    if (!text.trim()) {
+      alert('Nothing to copy yet.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      alert('Could not copy to clipboard.')
+    }
+  }, [
+    selectedRecording,
+    isEditingUtterances,
+    editedUtterances,
+    displayUtterances,
+    speakerMap,
+  ])
+
   const LINES_BEFORE_SCROLL = 2
 
   // Recompute search match offsets and count whenever query or utterances change
@@ -2149,6 +2181,19 @@ export default function RecordingsPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
                 </button>
+                {selectedRecording.status === 'transcribed' &&
+                  (selectedRecording.transcription || displayUtterances.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={copyFullTranscriptToClipboard}
+                    className="text-medium-gray hover:text-secondary-white transition-colors p-1"
+                    title="Copy full transcript"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                )}
                 {/* Delete button */}
                 <button
                   onClick={() => {
