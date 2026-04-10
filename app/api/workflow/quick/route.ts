@@ -5,6 +5,9 @@ import { requireAuth, requireRecordingOwnership, unauthorizedResponse, forbidden
 import { validateSchema, validateRecordingId, validateTranscription, validateRecordingTitle } from '@/lib/security/validation'
 import { getN8nWebhookUrl } from '@/lib/n8n'
 
+// Match the main workflow route's limit so long quick generations don't hit a lower default cap.
+export const maxDuration = 300
+
 interface QuickWorkflowResponse {
   project_title?: string
   project_description?: string
@@ -384,12 +387,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const N8N_FETCH_TIMEOUT_MS = 300_000 // 5 min — matches maxDuration
     const n8nResponse = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(n8nPayload),
+      signal: AbortSignal.timeout(N8N_FETCH_TIMEOUT_MS),
     })
 
     if (!n8nResponse.ok) {

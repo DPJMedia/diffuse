@@ -13,6 +13,9 @@
     },
     "app/api/workflow/quick/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/workflow/callback/route.ts": {
+      "maxDuration": 120
     }
   }
 }

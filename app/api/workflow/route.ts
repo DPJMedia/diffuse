@@ -284,6 +284,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Compute the primary input ID now so we can include it in the pending row before calling n8n.
+    const primaryInputId = inputsForWorkflow[0]?.id ?? inputs[0]?.id ?? null
+
+    // Create a pending output row before calling n8n. This gives the UI something to show immediately
+    // and lets the async callback route update it when n8n finishes (instead of the HTTP response).
+    const { data: pendingOutput, error: pendingCreateError } = await supabase
+      .from('diffuse_project_outputs')
+      .insert({
+        project_id,
+        input_id: primaryInputId,
+        content: '',
+        output_type,
+        workflow_status: 'pending',
+        cover_photo_path: coverPhotoPathFromDb ?? null,
+      })
+      .select()
+      .single()
+
+    if (pendingCreateError) {
+      console.error('[workflow] Failed to create pending output row:', pendingCreateError.message)
+      return NextResponse.json({ error: 'Failed to initialize output' }, { status: 500 })
+    }
+
+    // Build callback URL from request headers — works in local dev and on Vercel/custom domains.
+    const callbackHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? ''
+    const callbackProto = request.headers.get('x-forwarded-proto') ?? 'https'
+    const callbackUrl = `${callbackProto}://${callbackHost}/api/workflow/callback`
+
     // Prepare payload for n8n - all fields always present for clean consumption by AI nodes.
     // See docs/N8N_WEBHOOK_PAYLOAD.md for schema.
     const n8nPayload = {
@@ -307,11 +335,17 @@ export async function POST(request: NextRequest) {
       comments: (comments != null && comments !== '') ? comments : null,
       number_of_outputs: (number_of_outputs != null && number_of_outputs >= 2) ? number_of_outputs : 1,
       article_topics: (article_topics != null && article_topics !== '') ? article_topics : null,
+      output_id: pendingOutput.id,  // echoed back in async callbacks so the callback route knows which row to update
+      callback_url: callbackUrl,    // where n8n should POST the final result when running in async mode
     }
 
     // Call n8n webhook
     const webhookUrl = getN8nWebhookUrl()
     if (!webhookUrl) {
+      await supabase
+        .from('diffuse_project_outputs')
+        .update({ workflow_status: 'failed', updated_at: new Date().toISOString() })
+        .eq('id', pendingOutput.id)
       return NextResponse.json(
         { error: 'Workflow service unavailable' },
         { status: 503 }
@@ -331,6 +365,11 @@ export async function POST(request: NextRequest) {
     if (!n8nResponse.ok) {
       const errorText = await n8nResponse.text()
       console.error('[workflow] n8n webhook returned', n8nResponse.status, errorText?.slice(0, 500))
+      // Mark the pending output as failed so the UI doesn't show a stuck PENDING card.
+      await supabase
+        .from('diffuse_project_outputs')
+        .update({ workflow_status: 'failed', updated_at: new Date().toISOString() })
+        .eq('id', pendingOutput.id)
       const message = errorText?.trim()
         ? `Workflow returned ${n8nResponse.status}: ${errorText.slice(0, 200)}${errorText.length > 200 ? '…' : ''}`
         : 'Workflow execution failed'
@@ -565,34 +604,55 @@ export async function POST(request: NextRequest) {
       // Not valid JSON, use as-is
     }
 
-    // Save the output to Supabase. When the workflow returns an image (URL or base64), do NOT use project cover
-    // so the output is overwritten by the incoming image once we download/save it (or we use proxy).
+    // Guard: n8n returned empty/meaningless content. This happens when:
+    // (a) n8n's internal webhook response timeout fired before the workflow finished (sync mode), or
+    // (b) n8n is configured in async mode and will POST the real content via the callback URL.
+    // Either way, do NOT persist garbage — leave the pending row alive for the callback to update.
+    const looksEmpty =
+      !finalContent ||
+      finalContent.trim() === '' ||
+      finalContent.trim() === '{}' ||
+      finalContent.trim() === '[]'
+
+    if (looksEmpty) {
+      console.log('[workflow] n8n returned empty/ack body; pending row stays for async callback:', pendingOutput.id)
+      const pendingResp = NextResponse.json({
+        success: true,
+        output: pendingOutput,
+        pending: true,
+        message: 'Generation is running. Results will appear automatically when complete.',
+      })
+      const pendingRateLimitHeaders = getRateLimitHeaders(request, 'expensive')
+      Object.entries(pendingRateLimitHeaders).forEach(([key, value]) => {
+        pendingResp.headers.set(key, value)
+      })
+      return pendingResp
+    }
+
+    // n8n responded synchronously with real content — update the pending row to completed.
     const hasWorkflowImage = !!(workflowStoragePath || generatedImageUrl || imageBase64 || imageBinaryFromMultipart)
     const initialCoverPath = workflowStoragePath ?? (hasWorkflowImage ? null : coverPhotoPathFromDb)
-    const primaryInputId = inputsForWorkflow[0]?.id ?? inputs[0]?.id ?? null
     const { data: output, error: outputError } = await supabase
       .from('diffuse_project_outputs')
-      .insert({
-        project_id,
-        input_id: primaryInputId,
+      .update({
         content: finalContent,
-        output_type, // 'article' or 'ad'
         workflow_status: 'completed',
         cover_photo_path: initialCoverPath,
         ...(workflowMetadata && { workflow_metadata: workflowMetadata }),
+        updated_at: new Date().toISOString(),
       })
+      .eq('id', pendingOutput.id)
       .select()
       .single()
 
     if (outputError) {
       console.error('Error saving output:', outputError)
-      // RLS or permission denial (e.g. shared user before policy allows insert)
       const isPermissionError =
         outputError.code === '42501' ||
         (outputError.message && /policy|permission|row-level security/i.test(outputError.message))
       const status = isPermissionError ? 403 : 500
       const message = isPermissionError
-        ? "You don't have permission to add outputs to this project. Only the project owner can generate outputs until the database policy is updated."
+        ? "You don't have permission to update outputs for this project."
         : 'Failed to save output'
       return NextResponse.json({ error: message }, { status })
     }
@@ -819,7 +879,7 @@ export async function POST(request: NextRequest) {
 
     if (error?.name === 'AbortError' || error?.message?.includes?.('timeout') || error?.message?.includes?.('aborted')) {
       return NextResponse.json(
-        { error: 'Workflow timed out. The workflow may still be running in the background; refresh the outputs tab in a few minutes.' },
+        { error: 'Workflow timed out waiting for a response from n8n. If n8n is configured for async callbacks, results will appear automatically when complete. Otherwise, please try again.' },
         { status: 504 }
       )
     }
