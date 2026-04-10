@@ -36,7 +36,9 @@ function SkeletonBlock({
 
 /** Inline text-bar placeholder — slightly lighter than the block surface */
 function SkeletonLine({ className = '' }: { className?: string }) {
-  return <div className={`bg-white/[0.07] rounded animate-pulse ${className}`} />
+  return (
+    <span className={`block bg-white/[0.07] rounded animate-pulse ${className}`} aria-hidden />
+  )
 }
 //
 // Real card layout:
@@ -592,11 +594,11 @@ export function OutputDetailSkeleton() {
           <SkeletonLine className="w-40 h-[22px]" />
         </div>
         <h1 className="text-heading-lg text-secondary-white font-medium leading-tight">Output Details</h1>
-        <p className="text-body-sm text-medium-gray mt-1 flex flex-wrap items-center gap-x-1 gap-y-1">
+        <div className="text-body-sm text-medium-gray mt-1 flex flex-wrap items-center gap-x-1 gap-y-1">
           <SkeletonLine className="w-52 h-[22px]" />
           <span className="text-medium-gray">·</span>
           <SkeletonLine className="w-44 h-[22px]" />
-        </p>
+        </div>
       </div>
 
       {/* ── Page layout: main + Actions sidebar ────────────────────────── */}
