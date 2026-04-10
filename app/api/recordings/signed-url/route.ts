@@ -70,11 +70,9 @@ export async function POST(request: NextRequest) {
 
     if (error || !data?.signedUrl) {
       console.error('Error getting signed URL:', error)
-      const statusCode =
-        typeof (error as { statusCode?: string })?.statusCode === 'string'
-          ? (error as { statusCode: string }).statusCode
-          : ''
-      const msg = (error as { message?: string })?.message ?? ''
+      const err = error as unknown as { statusCode?: unknown; message?: unknown } | null
+      const statusCode = typeof err?.statusCode === 'string' ? err.statusCode : ''
+      const msg = typeof err?.message === 'string' ? err.message : ''
       const looksMissing =
         statusCode === '404' ||
         /not\s*found/i.test(msg) ||
