@@ -375,6 +375,17 @@ export default function ProjectDetailPage() {
     }
   }, [projectId, supabase, fetchProjectData])
 
+  // While the newest output is still pending/processing, poll periodically. Realtime is already
+  // subscribed (event: * on diffuse_project_outputs for this project_id) and calls the same
+  // refetch — polling covers publication/RLS gaps, missed events, or slow channel connect.
+  useEffect(() => {
+    if (!projectId || !primaryOutputAwaitingWorkflow) return
+    const id = window.setInterval(() => {
+      void fetchProjectData({ silent: true })
+    }, 4000)
+    return () => window.clearInterval(id)
+  }, [projectId, primaryOutputAwaitingWorkflow, fetchProjectData])
+
   // Sync active tab with URL parameter changes
   useEffect(() => {
     const tabParam = searchParams.get('tab')
