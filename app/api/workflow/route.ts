@@ -5,6 +5,7 @@ import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, requireProjectOwnership, unauthorizedResponse, forbiddenResponse } from '@/lib/security/authorization'
 import { validateSchema, validateProjectId, validateOutputType, sanitizeString } from '@/lib/security/validation'
 import { getN8nWebhookUrl } from '@/lib/n8n'
+import { parseOutputContentToStructuredArticle } from '@/lib/output-content'
 
 // Workflow timeout: 5 minutes. Same limit locally and when deployed.
 // When deployed: Vercel Pro allows up to 300s; Hobby is 10s. Other hosts may differ.
@@ -307,10 +308,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to initialize output' }, { status: 500 })
     }
 
-    // Build callback URL from request headers — works in local dev and on Vercel/custom domains.
-    const callbackHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? ''
-    const callbackProto = request.headers.get('x-forwarded-proto') ?? 'https'
-    const callbackUrl = `${callbackProto}://${callbackHost}/api/workflow/callback`
+    // n8n must POST to a stable absolute URL; use public app origin (set on Vercel, localhost in dev).
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const callbackUrl = `${appUrl}/api/workflow/callback`
 
     // Prepare payload for n8n - all fields always present for clean consumption by AI nodes.
     // See docs/N8N_WEBHOOK_PAYLOAD.md for schema.
@@ -604,18 +604,27 @@ export async function POST(request: NextRequest) {
       // Not valid JSON, use as-is
     }
 
-    // Guard: n8n returned empty/meaningless content. This happens when:
-    // (a) n8n's internal webhook response timeout fired before the workflow finished (sync mode), or
-    // (b) n8n is configured in async mode and will POST the real content via the callback URL.
-    // Either way, do NOT persist garbage — leave the pending row alive for the callback to update.
-    const looksEmpty =
-      !finalContent ||
-      finalContent.trim() === '' ||
-      finalContent.trim() === '{}' ||
-      finalContent.trim() === '[]'
+    // Only finish synchronously when the webhook body actually contains article output (or an image).
+    // n8n often returns an immediate ack object, e.g. { message: "Workflow was started" }, which is
+    // non-empty JSON but must NOT mark the row completed — the real payload arrives via callback_url.
+    const structuredGate = parseOutputContentToStructuredArticle(finalContent)
+    const hasDeliverableArticleText =
+      !!structuredGate &&
+      (structuredGate.title.trim().length > 0 ||
+        structuredGate.content.trim().length > 0 ||
+        structuredGate.excerpt.trim().length > 0)
+    const hasWorkflowImageAsset = !!(
+      workflowStoragePath ||
+      generatedImageUrl ||
+      imageBase64 ||
+      imageBinaryFromMultipart
+    )
 
-    if (looksEmpty) {
-      console.log('[workflow] n8n returned empty/ack body; pending row stays for async callback:', pendingOutput.id)
+    if (!hasDeliverableArticleText && !hasWorkflowImageAsset) {
+      console.log(
+        '[workflow] n8n webhook body has no article/image payload (likely async ack); pending row stays for callback:',
+        pendingOutput.id
+      )
       const pendingResp = NextResponse.json({
         success: true,
         output: pendingOutput,
