@@ -785,6 +785,8 @@ export default function OutputDetailView({
   }
   const reeditCount = optimisticReeditCount ?? output.reedit_count ?? 0
   const ws = output.workflow_status
+  const workflowAwaitingRemote =
+    ws === 'pending' || ws === 'processing'
   const statusLabel =
     ws === 'completed'
       ? `COMPLETED (${reeditCount} EDIT${reeditCount !== 1 ? 'S' : ''})`
@@ -796,8 +798,8 @@ export default function OutputDetailView({
     ? 'uppercase font-medium tracking-wider text-cosmic-orange'
     : `uppercase font-medium tracking-wider ${statusColors[ws] ?? 'text-medium-gray'}`
 
-  /** Full-area blur + spinner: re-edit request or apply only (image regen uses cover layer + Regenerate row). */
-  const contentWorkflowOverlay = reeditProcessing || applying
+  /** Full-area blur + spinner: async workflow still running, re-edit request, or apply only (image regen uses cover layer + Regenerate row). */
+  const contentWorkflowOverlay = workflowAwaitingRemote || reeditProcessing || applying
 
   const workflowOverlayNode = contentWorkflowOverlay ? (
     <div

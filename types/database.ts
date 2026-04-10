@@ -100,6 +100,8 @@ export interface DiffuseRecording {
   utterances?: RecordingUtterance[] | null
   original_utterances?: RecordingUtterance[] | null
   status: RecordingStatus
+  /** Source event time when known (e.g. URL pull from Swagit); UI uses created_at if null */
+  recorded_at?: string | null
   created_at: string
   updated_at: string
 }

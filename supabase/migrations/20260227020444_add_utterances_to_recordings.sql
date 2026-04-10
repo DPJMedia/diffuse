@@ -1,0 +1,2 @@
+ALTER TABLE diffuse_recordings
+ADD COLUMN IF NOT EXISTS utterances JSONB DEFAULT NULL;;

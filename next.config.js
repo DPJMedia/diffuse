@@ -7,18 +7,16 @@ const nextConfig = {
   compress: true,
 
   experimental: {
-    // Load from node_modules instead of webpack vendor chunks (avoids missing ./vendor-chunks/*.js after HMR).
-    serverComponentsExternalPackages: [
-      '@supabase/supabase-js',
-      '@supabase/ssr',
-      'diff',
-    ],
+    // Externalize Supabase only. Including `diff` here broke the server chunk layout (require("./1682.js")
+    // next to webpack-runtime while files lived under chunks/), causing "Cannot find module './1682.js'".
+    serverComponentsExternalPackages: ['@supabase/supabase-js', '@supabase/ssr'],
   },
 
-  webpack: (config, { dev, isServer }) => {
-    if (dev && isServer) {
-      // Filesystem webpack cache can reference missing vendor chunks; memory cache is enough in dev.
-      config.cache = { type: 'memory' }
+  webpack: (config, { dev }) => {
+    if (dev) {
+      // Disable webpack persistent caching in dev. Client memory cache still produced bad server
+      // chunk maps for large client pages (e.g. recordings + `diff`); full disable is slower but stable.
+      config.cache = false
     }
     return config
   },
@@ -62,7 +60,15 @@ const nextConfig = {
       )
     }
 
-    return [{ source: '/:path*', headers: baseHeaders }]
+    // Do not attach these to `/_next/*` — same idea as middleware `matcher`. A catch-all `/:path*`
+    // can interact oddly with dev static serving; missing chunks then return HTML and the browser
+    // reports "MIME type text/html" for .js/.css.
+    return [
+      {
+        source: '/((?!_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        headers: baseHeaders,
+      },
+    ]
   },
 }
 

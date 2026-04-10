@@ -2,7 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { formatRelativeTime, formatDuration } from '@/lib/utils/format'
+import {
+  formatRelativeTime,
+  formatDuration,
+  recordingDisplayTimestamp,
+  effectiveRecordingDurationSeconds,
+} from '@/lib/utils/format'
 import { SelectRecordingModalSkeleton } from './Skeletons'
 import { ModalShell, ModalHeader, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
 import { MODAL_ICONS } from './modalIcons'
@@ -22,6 +27,7 @@ interface Recording {
   file_path: string
   transcription: string | null
   status: string
+  recorded_at?: string | null
   created_at: string
 }
 
@@ -223,9 +229,9 @@ export default function SelectRecordingModal({
                           )}
                         </div>
                         <div className="flex items-center gap-4 text-body-sm text-medium-gray ml-8">
-                          <span>{formatDuration(recording.duration)}</span>
+                          <span>{formatDuration(effectiveRecordingDurationSeconds(recording))}</span>
                           <span>•</span>
-                          <span>{formatRelativeTime(recording.created_at)}</span>
+                          <span>{formatRelativeTime(recordingDisplayTimestamp(recording))}</span>
                         </div>
                       </div>
                     </div>

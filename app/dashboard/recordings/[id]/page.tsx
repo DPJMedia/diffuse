@@ -1,15 +1,26 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { formatRelativeTime, formatDuration } from '@/lib/utils/format'
+import {
+  formatRelativeTime,
+  formatDuration,
+  recordingDisplayTimestamp,
+  effectiveRecordingDurationSeconds,
+} from '@/lib/utils/format'
 import { useAuth } from '@/contexts/AuthContext'
 import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
 import AudioPlayer from '@/components/dashboard/AudioPlayer'
 import { ConfirmModal } from '@/components/dashboard/ConfirmModal'
-import { diffWordsWithSpace, type Change } from 'diff'
 import { getSpeakerLabel, buildUtteranceTranscriptCopy } from '@/lib/utils/speaker-label'
+import { highlightSearch } from '@/lib/utils/transcriptSearchHighlight'
+
+const RecordingTranscriptDiff = dynamic(() => import('@/components/dashboard/RecordingTranscriptDiff'), {
+  ssr: false,
+  loading: () => <p className="text-body-sm text-medium-gray">Loading comparison…</p>,
+})
 
 type RecordingStatus = 'recorded' | 'generating' | 'transcribed'
 
@@ -26,113 +37,8 @@ interface Recording {
   utterances?: Array<{ speaker: string; text: string; start: number; end: number }> | null
   original_utterances?: Array<{ speaker: string; text: string; start: number; end: number }> | null
   status: RecordingStatus
+  recorded_at?: string | null
   created_at: string
-}
-
-type InlineDiffPart = { text: string; type: 'same' | 'added' | 'removed' }
-
-function buildInlineDiffParts(original: string, current: string): InlineDiffPart[] {
-  const changes = diffWordsWithSpace(original, current) as Change[]
-  const parts: InlineDiffPart[] = []
-  
-  const pushPart = (type: InlineDiffPart['type'], text: string) => {
-    if (!text) return
-    const last = parts[parts.length - 1]
-    if (last && last.type === type) last.text += text
-    else parts.push({ type, text })
-  }
-
-  const commonPrefixLen = (a: string, b: string) => {
-    const n = Math.min(a.length, b.length)
-    let k = 0
-    while (k < n && a[k] === b[k]) k++
-    return k
-  }
-
-  const commonSuffixLen = (a: string, b: string) => {
-    const n = Math.min(a.length, b.length)
-    let k = 0
-    while (k < n && a[a.length - 1 - k] === b[b.length - 1 - k]) k++
-    return k
-  }
-
-  const buffer: Change[] = []
-  
-  const flushBuffer = () => {
-    if (buffer.length === 0) return
-    const hasAdded = buffer.some((c) => !!c.added)
-    const hasRemoved = buffer.some((c) => !!c.removed)
-
-    if (hasAdded && hasRemoved) {
-      const originalSeg = buffer.filter((c) => !c.added).map((c) => c.value ?? '').join('')
-      const currentSeg = buffer.filter((c) => !c.removed).map((c) => c.value ?? '').join('')
-      const prefix = commonPrefixLen(originalSeg, currentSeg)
-      const aRest = originalSeg.slice(prefix)
-      const bRest = currentSeg.slice(prefix)
-      let suffix = commonSuffixLen(aRest, bRest)
-      suffix = Math.min(suffix, aRest.length, bRest.length)
-      const prefixStr = originalSeg.slice(0, prefix)
-      const suffixStr = suffix > 0 ? originalSeg.slice(originalSeg.length - suffix) : ''
-      const removedMid = originalSeg.slice(prefix, originalSeg.length - suffix)
-      const addedMid = currentSeg.slice(prefix, currentSeg.length - suffix)
-      pushPart('same', prefixStr)
-      pushPart('removed', removedMid)
-      pushPart('added', addedMid)
-      pushPart('same', suffixStr)
-    } else {
-      for (const c of buffer) {
-        const type: InlineDiffPart['type'] = c.added ? 'added' : c.removed ? 'removed' : 'same'
-        pushPart(type, c.value ?? '')
-      }
-    }
-    buffer.length = 0
-  }
-
-  for (const c of changes) {
-    const value = c.value ?? ''
-    if (value.includes('\n\n')) {
-      const lines = value.split(/(\n\n)/)
-      for (const line of lines) {
-        if (line === '\n\n') {
-          flushBuffer()
-          pushPart('same', line)
-        } else if (line) {
-          buffer.push({ ...c, value: line })
-        }
-      }
-    } else {
-      buffer.push(c)
-    }
-  }
-  flushBuffer()
-  return parts
-}
-
-function highlightSearch(text: string, query: string, currentMatch: number): React.ReactNode[] {
-  if (!query) return [text]
-  const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
-  const matches = Array.from(text.matchAll(regex))
-  if (matches.length === 0) return [text]
-  const nodes: React.ReactNode[] = []
-  let lastIndex = 0
-  let count = 0
-  for (const match of matches) {
-    const globalIdx = count
-    if (match.index! > lastIndex) nodes.push(text.slice(lastIndex, match.index))
-    nodes.push(
-      <mark
-        key={`match-${globalIdx}`}
-        data-search-match={globalIdx}
-        className={`rounded px-0.5 ${globalIdx === currentMatch ? 'bg-cosmic-orange text-black' : 'bg-cosmic-orange/30 text-secondary-white'}`}
-      >
-        {match[0]}
-      </mark>
-    )
-    count++
-    lastIndex = match.index! + match[0].length
-  }
-  if (lastIndex < text.length) nodes.push(text.slice(lastIndex))
-  return nodes.length > 0 ? nodes : [text]
 }
 
 /** True when the saved label is still the generic "Speaker N" placeholder (not a real identified name). */
@@ -191,6 +97,8 @@ export default function RecordingDetailPage() {
   const [loading, setLoading] = useState(true)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [loadingAudio, setLoadingAudio] = useState(false)
+  /** Set when there is no real file (e.g. failed URL pull) so we don't blame "Supabase" generically. */
+  const [audioUnavailableReason, setAudioUnavailableReason] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [editedTitle, setEditedTitle] = useState('')
   const [editedTranscription, setEditedTranscription] = useState<string | null>(null)
@@ -257,23 +165,43 @@ export default function RecordingDetailPage() {
 
       setRecording(data)
       setEditedTitle(data.title)
-      
-      // Load audio
+      setAudioUnavailableReason(null)
+      setAudioUrl(null)
+
+      // Load audio (Swagit / uploads only — never touches Cobalt; Cobalt is YouTube-only on the server.)
       setLoadingAudio(true)
       try {
+        if (typeof data.file_path === 'string' && data.file_path.includes('/pending-pull-')) {
+          setAudioUnavailableReason(
+            'This row was created for a URL pull that never finished, so no audio was saved. Delete it and run Pull again (or use a recording that completed successfully).'
+          )
+          return
+        }
+
         const res = await fetch('/api/recordings/signed-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filePath: data.file_path }),
         })
-        const audioData = await res.json()
+        const audioData = (await res.json()) as {
+          signedUrl?: string
+          error?: string
+          code?: string
+        }
         if (audioData.signedUrl) {
           setAudioUrl(audioData.signedUrl)
         } else {
-          console.error('No signed URL received')
+          console.error('No signed URL received', audioData.code, audioData.error)
+          setAudioUnavailableReason(
+            audioData.error ||
+              (res.status === 404 || res.status === 422
+                ? 'No audio file in storage for this recording.'
+                : 'Could not load audio.')
+          )
         }
       } catch (audioError) {
         console.error('Error loading audio:', audioError)
+        setAudioUnavailableReason('Could not load audio.')
       } finally {
         setLoadingAudio(false)
       }
@@ -1086,7 +1014,8 @@ export default function RecordingDetailPage() {
         </h1>
         
         <p className="text-body-sm text-medium-gray mt-2">
-          {formatDuration(recording.duration)} • {formatRelativeTime(recording.created_at)}
+          {formatDuration(effectiveRecordingDurationSeconds(recording))} •{' '}
+          {formatRelativeTime(recordingDisplayTimestamp(recording))}
         </p>
       </div>
 
@@ -1105,14 +1034,20 @@ export default function RecordingDetailPage() {
               <AudioPlayer
                 ref={audioPlayerRef}
                 src={audioUrl}
-                onError={() => setAudioUrl(null)}
-                initialDuration={recording.duration || 0}
+                onError={() => {
+                  setAudioUrl(null)
+                  setAudioUnavailableReason('Playback failed — the signed link may have expired. Refresh the page or download again.')
+                }}
+                initialDuration={effectiveRecordingDurationSeconds(recording)}
                 onTimeUpdate={(sec) => setCurrentPlaybackTimeMs(sec * 1000)}
                 compact
               />
             ) : (
-              <div className="p-4 text-center">
-                <p className="text-body-sm text-red-400">Failed to load audio. The file may be unavailable.</p>
+              <div className="p-4 text-center space-y-2">
+                <p className="text-body-sm text-red-400">
+                  {audioUnavailableReason ||
+                    'Failed to load audio. The file may be unavailable or removed from storage.'}
+                </p>
               </div>
             )}
           </div>
@@ -1422,31 +1357,13 @@ export default function RecordingDetailPage() {
                   </div>
                 ) : recording.original_transcription &&
                   recording.transcription !== recording.original_transcription ? (
-                  <div className="space-y-2 text-body-sm">
-                    {buildInlineDiffParts(recording.original_transcription, recording.transcription).map((part, i) => {
-                      if (part.type === 'same') {
-                        return (
-                          <span key={i} className="text-secondary-white whitespace-pre-wrap">
-                            {transcriptSearchQuery && activeMode === 'search'
-                              ? highlightSearch(part.text, transcriptSearchQuery, transcriptSearchCurrentMatch)
-                              : part.text}
-                          </span>
-                        )
-                      } else if (part.type === 'removed') {
-                        return (
-                          <del key={i} className="bg-red-500/20 text-red-300 whitespace-pre-wrap">
-                            {part.text}
-                          </del>
-                        )
-                      } else {
-                        return (
-                          <ins key={i} className="bg-green-500/20 text-green-300 no-underline whitespace-pre-wrap">
-                            {part.text}
-                          </ins>
-                        )
-                      }
-                    })}
-                  </div>
+                  <RecordingTranscriptDiff
+                    original={recording.original_transcription}
+                    current={recording.transcription}
+                    transcriptSearchQuery={transcriptSearchQuery}
+                    activeMode={activeMode}
+                    transcriptSearchCurrentMatch={transcriptSearchCurrentMatch}
+                  />
                 ) : (
                   <p className="text-body-sm text-secondary-white whitespace-pre-wrap">
                     {transcriptSearchQuery && activeMode === 'search'

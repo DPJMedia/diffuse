@@ -1,31 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
+import { getRedirectBaseUrl } from '@/lib/site-url'
 import { NextResponse } from 'next/server'
 import { checkRateLimit } from '@/lib/security/rate-limit'
 import { NextRequest } from 'next/server'
 import type { UserRole } from '@/types/database'
 
-/**
- * Validate redirect URL to prevent open redirect attacks
- */
-function validateRedirectUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    // Only allow redirects to same origin or configured site URL
-    const allowedOrigin = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.diffuse.press'
-    const allowedHost = new URL(allowedOrigin).hostname
-    
-    return parsed.hostname === allowedHost || parsed.hostname.endsWith('.vercel.app')
-  } catch {
-    return false
-  }
-}
-
-/**
- * Get safe redirect URL
- */
-function getSafeRedirectUrl(path: string): string {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.diffuse.press'
-  return `${siteUrl}${path}`
+function getSafeRedirectUrl(request: NextRequest, path: string): string {
+  const base = getRedirectBaseUrl(request)
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`
 }
 
 function normalizeInviteRole(input: unknown): UserRole {
@@ -52,7 +34,7 @@ export async function GET(request: NextRequest) {
   // Validate code parameter (should be a valid auth code)
   if (code && code.length > 1000) {
     // Auth codes shouldn't be this long - potential attack
-    return NextResponse.redirect(getSafeRedirectUrl('/login?error=auth_callback_error'), { status: 302 })
+    return NextResponse.redirect(getSafeRedirectUrl(request, '/login?error=auth_callback_error'), { status: 302 })
   }
 
   if (code) {
@@ -81,22 +63,25 @@ export async function GET(request: NextRequest) {
 
             // If the user is already a member, ignore the duplicate constraint error.
             if (insertError && insertError.code !== '23505') {
-              return NextResponse.redirect(getSafeRedirectUrl('/login?error=invite_join_failed'), { status: 302 })
+              return NextResponse.redirect(getSafeRedirectUrl(request, '/login?error=invite_join_failed'), { status: 302 })
             }
 
-            return NextResponse.redirect(getSafeRedirectUrl(`/dashboard/organization/${workspace.id}`), { status: 302 })
+            return NextResponse.redirect(
+              getSafeRedirectUrl(request, `/dashboard/organization/${workspace.id}`),
+              { status: 302 }
+            )
           }
 
-          return NextResponse.redirect(getSafeRedirectUrl('/login?error=invite_invalid'), { status: 302 })
+          return NextResponse.redirect(getSafeRedirectUrl(request, '/login?error=invite_invalid'), { status: 302 })
         }
       }
 
       // Default: Safe redirect to dashboard
-      return NextResponse.redirect(getSafeRedirectUrl('/dashboard'), { status: 302 })
+      return NextResponse.redirect(getSafeRedirectUrl(request, '/dashboard'), { status: 302 })
     }
   }
 
   // Return the user to an error page with instructions
-  return NextResponse.redirect(getSafeRedirectUrl('/login?error=auth_callback_error'), { status: 302 })
+  return NextResponse.redirect(getSafeRedirectUrl(request, '/login?error=auth_callback_error'), { status: 302 })
 }
 

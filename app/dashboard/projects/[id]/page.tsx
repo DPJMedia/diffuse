@@ -88,9 +88,13 @@ export default function ProjectDetailPage() {
   const [showDeleteProjectConfirm, setShowDeleteProjectConfirm] = useState(false)
   useBodyScrollLock(showTextInputModal || showProjectSettings)
 
-  // Animate loading dots
+  const primaryOutputAwaitingWorkflow =
+    outputs[0] &&
+    (outputs[0].workflow_status === 'pending' || outputs[0].workflow_status === 'processing')
+
+  // Animate loading dots (generate in flight, or newest output still running async workflow)
   useEffect(() => {
-    if (!generatingArticle) {
+    if (!generatingArticle && !primaryOutputAwaitingWorkflow) {
       setLoadingDots('.')
       return
     }
@@ -102,7 +106,7 @@ export default function ProjectDetailPage() {
       })
     }, 500)
     return () => clearInterval(interval)
-  }, [generatingArticle])
+  }, [generatingArticle, primaryOutputAwaitingWorkflow])
 
   // Close Add Input dropdown when clicking outside (same behavior as modals)
   useEffect(() => {
@@ -213,8 +217,9 @@ export default function ProjectDetailPage() {
     }
   }
 
-  const fetchProjectData = useCallback(async () => {
-    setLoading(true)
+  const fetchProjectData = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true
+    if (!silent) setLoading(true)
     try {
       // Fetch project
       const { data: projectData, error: projectError } = await supabase
@@ -299,7 +304,7 @@ export default function ProjectDetailPage() {
     } catch (error) {
       console.error('Error fetching project data:', error)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [projectId, supabase])
 
@@ -323,7 +328,7 @@ export default function ProjectDetailPage() {
           filter: `id=eq.${projectId}`,
         },
         () => {
-          fetchProjectData()
+          void fetchProjectData({ silent: true })
         }
       )
       .subscribe()
@@ -340,7 +345,7 @@ export default function ProjectDetailPage() {
           filter: `project_id=eq.${projectId}`,
         },
         () => {
-          fetchProjectData()
+          void fetchProjectData({ silent: true })
         }
       )
       .subscribe()
@@ -357,7 +362,7 @@ export default function ProjectDetailPage() {
           filter: `project_id=eq.${projectId}`,
         },
         () => {
-          fetchProjectData()
+          void fetchProjectData({ silent: true })
         }
       )
       .subscribe()
@@ -671,8 +676,12 @@ export default function ProjectDetailPage() {
         throw new Error(result.error || 'Failed to generate')
       }
 
-      // Refresh data to show new output
-      fetchProjectData()
+      // Async workflow: n8n acked immediately — pending row exists; refresh without full-page skeleton.
+      if (result.pending === true) {
+        await fetchProjectData({ silent: true })
+      } else {
+        await fetchProjectData()
+      }
     } catch (error) {
       console.error('Error generating:', error)
       alert(error instanceof Error ? error.message : 'Failed to generate')
@@ -1028,6 +1037,9 @@ export default function ProjectDetailPage() {
     failed: 'bg-red-500/20 text-red-400 border-red-500/30',
   }
 
+  const isOutputWorkflowRunning = (o: DiffuseProjectOutput) =>
+    o.workflow_status === 'pending' || o.workflow_status === 'processing'
+
   const generatingIsAd = project?.project_type === 'advertisement'
   const generatingOutputColor = generatingIsAd ? 'text-amber-400' : 'text-teal-400'
   const generatingOutputLabel = generatingIsAd ? 'ADVERTISEMENT' : 'ARTICLE'
@@ -1080,7 +1092,8 @@ export default function ProjectDetailPage() {
             }
           >
             {/* Generating placeholder card — shown as first item */}
-            {generatingArticle && (
+            {/* Shown while POST /api/workflow is in flight, until the pending DB row is visible (async n8n ack). */}
+            {generatingArticle && !primaryOutputAwaitingWorkflow && (
               <div className="glass-container p-5 mb-4">
                 <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${generatingOutputColor} mb-2`}>
                   <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">
@@ -1104,43 +1117,73 @@ export default function ProjectDetailPage() {
                 {/* First output — primary card */}
                 {outputs.length > 0 && (() => {
                   const output = outputs[0]
-                  const info = getOutputInfo(output)
+                  const workflowRunning = isOutputWorkflowRunning(output)
+                  const info = workflowRunning
+                    ? {
+                        title: `Generating output${loadingDots}`,
+                        subtitle: null as string | null,
+                        excerpt: null as string | null,
+                        author: 'Diffuse.AI',
+                        photo_caption: null as string | null,
+                        photo_credit: null as string | null,
+                      }
+                    : getOutputInfo(output)
                   const isAd = output.output_type === 'ad'
                   const outputLabel = isAd ? 'ADVERTISEMENT' : 'ARTICLE'
                   const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
                   return (
                     <div
                       key={output.id}
-                      onClick={() => router.push(hrefToOutputDetail(output.id))}
-                      className="glass-container p-5 hover:bg-white/10 transition-colors cursor-pointer"
+                      role={workflowRunning ? 'status' : undefined}
+                      aria-busy={workflowRunning || undefined}
+                      onClick={() => {
+                        if (workflowRunning) return
+                        router.push(hrefToOutputDetail(output.id))
+                      }}
+                      className={`glass-container p-5 transition-colors ${
+                        workflowRunning
+                          ? 'cursor-wait opacity-95'
+                          : 'hover:bg-white/10 cursor-pointer'
+                      }`}
                     >
                       <div className={`flex items-center gap-2 text-caption uppercase tracking-wider ${outputColor} mb-2`}>
                         <span className="flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5">
-                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
+                          {workflowRunning ? (
+                            <svg fill="none" viewBox="0 0 24 24" className="animate-spin">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                          ) : (
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          )}
                         </span>
                         <span>{outputLabel}</span>
-                        {output.workflow_status && output.workflow_status !== 'completed' && (
+                        {output.workflow_status &&
+                          output.workflow_status !== 'completed' &&
+                          !workflowRunning && (
                           <span className={`ml-auto px-2 py-0.5 rounded text-caption border ${workflowStatusColors[output.workflow_status as keyof typeof workflowStatusColors] || ''}`}>
                             {output.workflow_status.toUpperCase()}
                           </span>
                         )}
                       </div>
                       <h3 className="text-body-md text-secondary-white font-semibold mb-1 line-clamp-2">{info.title}</h3>
-                      {info.subtitle && (
+                      {!workflowRunning && info.subtitle && (
                         <p className={`text-caption uppercase tracking-wider mb-2 line-clamp-2 ${outputColor}`}>{info.subtitle.toUpperCase()}</p>
                       )}
-                      {info.excerpt && (
+                      {!workflowRunning && info.excerpt && (
                         <p className="text-body-sm text-medium-gray mb-3 line-clamp-3">{info.excerpt}</p>
                       )}
-                      <div className="text-caption uppercase tracking-wider">
-                        <span className={outputColor}>{info.author.toUpperCase()}</span>
-                        <span className="text-medium-gray"> • </span>
-                        <span className="text-medium-gray">
-                          {new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
-                        </span>
-                      </div>
+                      {!workflowRunning && (
+                        <div className="text-caption uppercase tracking-wider">
+                          <span className={outputColor}>{info.author.toUpperCase()}</span>
+                          <span className="text-medium-gray"> • </span>
+                          <span className="text-medium-gray">
+                            {new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )
                 })()}
@@ -1150,7 +1193,10 @@ export default function ProjectDetailPage() {
                   <div className="mt-4 border-t border-white/10 pt-3">
                     <p className="text-caption text-medium-gray uppercase tracking-wider mb-1">Past Outputs</p>
                     {outputs.slice(1).map((output) => {
-                      const info = getOutputInfo(output)
+                      const pastWorkflowRunning = isOutputWorkflowRunning(output)
+                      const listTitle = pastWorkflowRunning
+                        ? `Generating output${loadingDots}`
+                        : getOutputInfo(output).title
                       const isAd = output.output_type === 'ad'
                       const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
                       const isExpanded = expandedOutputId === output.id
@@ -1162,11 +1208,18 @@ export default function ProjectDetailPage() {
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span className={`flex-shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5 ${outputColor}`}>
-                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
+                                {pastWorkflowRunning ? (
+                                  <svg fill="none" viewBox="0 0 24 24" className="animate-spin">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                  </svg>
+                                ) : (
+                                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                )}
                               </span>
-                              <span className="text-body-sm text-secondary-white truncate">{info.title}</span>
+                              <span className="text-body-sm text-secondary-white truncate">{listTitle}</span>
                               <span className="text-caption text-medium-gray flex-shrink-0">
                                 {new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
                               </span>
@@ -1176,15 +1229,34 @@ export default function ProjectDetailPage() {
                             </svg>
                           </button>
                           {isExpanded && (
-                            <div onClick={() => router.push(hrefToOutputDetail(output.id))} className="pb-3 px-1 cursor-pointer group/expanded">
-                              <div className="group-hover/expanded:bg-white/5 transition-colors rounded p-2 -m-2">
-                                {info.subtitle && <p className={`text-caption uppercase tracking-wider mb-1 ${outputColor}`}>{info.subtitle.toUpperCase()}</p>}
-                                {info.excerpt && <p className="text-body-sm text-medium-gray mb-2 line-clamp-3">{info.excerpt}</p>}
-                                <div className="text-caption uppercase tracking-wider">
-                                  <span className={outputColor}>{info.author.toUpperCase()}</span>
-                                  <span className="text-medium-gray"> • </span>
-                                  <span className="text-medium-gray">{new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}</span>
-                                </div>
+                            <div
+                              onClick={() => {
+                                if (pastWorkflowRunning) return
+                                router.push(hrefToOutputDetail(output.id))
+                              }}
+                              className={`pb-3 px-1 group/expanded ${pastWorkflowRunning ? 'cursor-wait' : 'cursor-pointer'}`}
+                            >
+                              <div className={`transition-colors rounded p-2 -m-2 ${pastWorkflowRunning ? '' : 'group-hover/expanded:bg-white/5'}`}>
+                                {pastWorkflowRunning ? (
+                                  <p className="text-body-sm text-medium-gray">This output is still generating. It will open when ready.</p>
+                                ) : (() => {
+                                  const fullInfo = getOutputInfo(output)
+                                  return (
+                                    <>
+                                      {fullInfo.subtitle && (
+                                        <p className={`text-caption uppercase tracking-wider mb-1 ${outputColor}`}>{fullInfo.subtitle.toUpperCase()}</p>
+                                      )}
+                                      {fullInfo.excerpt && (
+                                        <p className="text-body-sm text-medium-gray mb-2 line-clamp-3">{fullInfo.excerpt}</p>
+                                      )}
+                                      <div className="text-caption uppercase tracking-wider">
+                                        <span className={outputColor}>{fullInfo.author.toUpperCase()}</span>
+                                        <span className="text-medium-gray"> • </span>
+                                        <span className="text-medium-gray">{new Date(output.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}</span>
+                                      </div>
+                                    </>
+                                  )
+                                })()}
                               </div>
                             </div>
                           )}

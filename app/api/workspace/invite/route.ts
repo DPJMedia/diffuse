@@ -3,6 +3,7 @@ import { checkRateLimit } from '@/lib/security/rate-limit'
 import { forbiddenResponse, requireAuth, unauthorizedResponse, verifyWorkspaceAccess } from '@/lib/security/authorization'
 import { sanitizeString, validateUUID } from '@/lib/security/validation'
 import { createAdminClient } from '@/lib/supabase/server'
+import { getRedirectBaseUrl } from '@/lib/site-url'
 import type { UserRole } from '@/types/database'
 
 const EMAIL_MAX_LENGTH = 254
@@ -56,12 +57,6 @@ function normalizeRole(input: unknown): UserRole {
   const role = input.toLowerCase()
   if (ALLOWED_ROLES.includes(role as UserRole)) return role as UserRole
   return 'viewer'
-}
-
-function getSiteUrl(): string {
-  // Used for Supabase auth redirect links.
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
-  return process.env.NODE_ENV === 'production' ? 'https://www.diffuse.press' : 'http://localhost:3000'
 }
 
 export async function POST(request: NextRequest) {
@@ -130,7 +125,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const siteUrl = getSiteUrl()
+    const siteUrl = getRedirectBaseUrl(request)
     const redirectTo = `${siteUrl}/api/auth/callback?invite_code=${encodeURIComponent(workspace.invite_code)}&role=${encodeURIComponent(role)}`
 
     const invited: string[] = []

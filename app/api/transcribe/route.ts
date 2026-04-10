@@ -548,10 +548,24 @@ export async function POST(request: NextRequest) {
     const shouldAutoGenerateTitle = !currentTitle || currentTitle === 'Processing...' || currentTitle === ''
     const finalTitle = shouldAutoGenerateTitle ? suggestedTitle : currentTitle
 
+    // Persist length in seconds for UI (same audio as AssemblyAI; utterances are fallback).
+    let durationSeconds: number | undefined
+    const ad = transcript.audio_duration
+    if (ad != null && Number.isFinite(ad) && ad > 0) {
+      durationSeconds = Math.round(ad)
+    }
+    if ((durationSeconds == null || durationSeconds <= 0) && utterances?.length) {
+      const lastMs = Math.max(...utterances.map((u) => u.end ?? 0))
+      if (lastMs > 0) durationSeconds = Math.max(1, Math.ceil(lastMs / 1000))
+    }
+
     // If autoSave is true and we have a recordingId, save directly to the database
     if (autoSave && recordingId) {
       console.log('Auto-saving transcription to database for recording:', recordingId)
       console.log('Final title:', finalTitle)
+      if (durationSeconds != null && durationSeconds > 0) {
+        console.log('Saving duration (seconds):', durationSeconds)
+      }
       
       const { data: updateData, error: updateError } = await supabase
         .from('diffuse_recordings')
@@ -563,6 +577,7 @@ export async function POST(request: NextRequest) {
           utterances: utterances ?? null,
           original_utterances: utterances ?? null,
           detected_speaker_names: detectedSpeakerNames ?? null,
+          ...(durationSeconds != null && durationSeconds > 0 ? { duration: durationSeconds } : {}),
         })
         .eq('id', recordingId)
         .select()

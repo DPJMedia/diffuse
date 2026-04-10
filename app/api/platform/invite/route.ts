@@ -3,6 +3,7 @@ import { checkRateLimit } from '@/lib/security/rate-limit'
 import { requireAuth, unauthorizedResponse } from '@/lib/security/authorization'
 import { createAdminClient } from '@/lib/supabase/server'
 import { sanitizeString } from '@/lib/security/validation'
+import { getRedirectBaseUrl } from '@/lib/site-url'
 
 const EMAIL_MAX_LENGTH = 254
 const MAX_EMAILS = 25
@@ -46,11 +47,6 @@ function normalizeEmails(input: unknown): { emails: string[]; invalid: string[] 
   return { emails: valid.slice(0, MAX_EMAILS), invalid: invalid.slice(0, MAX_EMAILS) }
 }
 
-function getSiteUrl(): string {
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
-  return process.env.NODE_ENV === 'production' ? 'https://www.diffuse.press' : 'http://localhost:3000'
-}
-
 export async function POST(request: NextRequest) {
   try {
     const rateLimitResponse = await checkRateLimit(request, 'authenticated')
@@ -84,7 +80,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const siteUrl = getSiteUrl()
+    const siteUrl = getRedirectBaseUrl(request)
     const redirectTo = `${siteUrl}/api/auth/callback`
 
     const invited: string[] = []

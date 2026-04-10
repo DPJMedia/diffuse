@@ -4,8 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:3000": "next dev -p 3000",
+    "dev:3001": "next dev -p 3001",
     "clean": "node -e \"const fs=require('fs'); if (fs.existsSync('.next')) fs.rmSync('.next', { recursive: true, force: true })\"",
     "dev:clean": "npm run clean && next dev",
+    "dev:fresh": "npm run clean && next dev -p 3000",
+    "dev:fresh:3001": "npm run clean && next dev -p 3001",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

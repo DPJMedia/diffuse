@@ -1,0 +1,2 @@
+ALTER TABLE diffuse_recordings
+ADD COLUMN IF NOT EXISTS speaker_map JSONB DEFAULT NULL;;

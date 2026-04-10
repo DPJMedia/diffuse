@@ -18,6 +18,16 @@ export function formatDateTime(date: string | Date): string {
   })
 }
 
+/** ISO timestamp for display: prefer source recording date, else row creation time. */
+export function recordingDisplayTimestamp(rec: {
+  recorded_at?: string | null
+  created_at: string
+}): string {
+  const r = rec.recorded_at?.trim()
+  if (r) return r
+  return rec.created_at
+}
+
 export function formatRelativeTime(date: string | Date): string {
   const d = typeof date === 'string' ? new Date(date) : date
   const now = new Date()
@@ -66,6 +76,22 @@ export function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60
   return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+/**
+ * Seconds to show for a recording: DB `duration` when set, else infer from utterance end times (ms).
+ * Covers older rows transcribed before we persisted AssemblyAI `audio_duration`.
+ */
+export function effectiveRecordingDurationSeconds(rec: {
+  duration: number
+  utterances?: Array<{ end?: number }> | null
+}): number {
+  if (rec.duration > 0) return rec.duration
+  if (rec.utterances?.length) {
+    const lastMs = Math.max(...rec.utterances.map((u) => u.end ?? 0))
+    if (lastMs > 0) return Math.max(1, Math.ceil(lastMs / 1000))
+  }
+  return 0
 }
 
 /**

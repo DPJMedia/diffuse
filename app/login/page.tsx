@@ -5,9 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useBodyScrollLock } from '@/components/dashboard/ModalShell'
-
-// Production site URL for email redirects (used in Supabase signUp emailRedirectTo)
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.diffuse.press'
+import { getSiteUrlForAuthClient } from '@/lib/site-url'
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login')
@@ -96,7 +94,7 @@ export default function LoginPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${SITE_URL}/api/auth/callback`,
+          emailRedirectTo: `${getSiteUrlForAuthClient()}/api/auth/callback`,
           data: {
             full_name: fullName,
           },
@@ -192,7 +190,7 @@ export default function LoginPage() {
                 type: 'signup',
                 email: pendingEmail,
                 options: {
-                  emailRedirectTo: `${SITE_URL}/api/auth/callback`,
+                  emailRedirectTo: `${getSiteUrlForAuthClient()}/api/auth/callback`,
                 },
               })
               setMessage({

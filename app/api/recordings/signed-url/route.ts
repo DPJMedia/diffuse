@@ -51,6 +51,18 @@ export async function POST(request: NextRequest) {
 
     const { filePath } = validatedData
 
+    // Placeholder path from "pull from URL" before upload completes — nothing exists in storage.
+    if (filePath.includes('/pending-pull-')) {
+      return NextResponse.json(
+        {
+          error:
+            'No audio file for this recording. The URL pull never finished or failed before upload. Delete this entry and try again.',
+          code: 'PULL_INCOMPLETE',
+        },
+        { status: 422 }
+      )
+    }
+
     // Get a signed URL for the audio file (valid for 1 hour)
     const { data, error } = await supabase.storage
       .from('recordings')
@@ -58,10 +70,26 @@ export async function POST(request: NextRequest) {
 
     if (error || !data?.signedUrl) {
       console.error('Error getting signed URL:', error)
-      return NextResponse.json(
-        { error: 'Failed to get audio URL' },
-        { status: 500 }
-      )
+      const statusCode =
+        typeof (error as { statusCode?: string })?.statusCode === 'string'
+          ? (error as { statusCode: string }).statusCode
+          : ''
+      const msg = (error as { message?: string })?.message ?? ''
+      const looksMissing =
+        statusCode === '404' ||
+        /not\s*found/i.test(msg) ||
+        /object\s+not\s+found/i.test(msg)
+      if (looksMissing) {
+        return NextResponse.json(
+          {
+            error:
+              'That audio file is not in storage. It may have been deleted or the recording was never fully uploaded.',
+            code: 'AUDIO_NOT_IN_STORAGE',
+          },
+          { status: 404 }
+        )
+      }
+      return NextResponse.json({ error: 'Failed to get audio URL' }, { status: 500 })
     }
 
     const response = NextResponse.json({
