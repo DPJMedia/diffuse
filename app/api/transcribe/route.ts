@@ -535,8 +535,13 @@ export async function POST(request: NextRequest) {
       : null
     const suggestedTitle = openRouterTitle ?? generateTitleFallback(transcriptionText)
 
-    // Use user-provided title if they entered one, otherwise use AI-generated
-    const shouldAutoGenerateTitle = !currentTitle || currentTitle === 'Processing...' || currentTitle === ''
+    // Use user-provided title if they entered one, otherwise use AI-generated.
+    // Treat URL-pull placeholders as “no title yet”.
+    const shouldAutoGenerateTitle =
+      !currentTitle ||
+      currentTitle === '' ||
+      currentTitle === 'Processing...' ||
+      currentTitle === 'Pulling audio...'
     const finalTitle = shouldAutoGenerateTitle ? suggestedTitle : currentTitle
 
     // Persist length in seconds for UI (same audio as AssemblyAI; utterances are fallback).
