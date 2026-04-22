@@ -24,10 +24,17 @@ const nextConfig = {
   // Image optimization
   images: {
     formats: ['image/avif', 'image/webp'],
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    // Include common layout widths so /_next/image?w=... is always allowed (missing sizes → 400).
+    deviceSizes: [384, 400, 500, 640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     remotePatterns: [
-      { protocol: 'https', hostname: '**.supabase.co', pathname: '/storage/**' },
+      // Supabase Storage: public + signed URLs are under /storage/v1/object/...
+      {
+        protocol: 'https',
+        hostname: 'ddwcafuxatmejxcfkwhu.supabase.co',
+        pathname: '/storage/v1/**',
+      },
+      { protocol: 'https', hostname: '*.supabase.co', pathname: '/storage/v1/**' },
       { protocol: 'https', hostname: '**.blob.core.windows.net', pathname: '/**' },
     ],
   },

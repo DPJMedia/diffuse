@@ -3,10 +3,9 @@
 import { useState } from 'react'
 import { ModalShell, ModalHeader, ModalBody, ModalScrollRegion, ModalFooter } from './ModalShell'
 
-const TONE_OPTIONS = ['Professional', 'Conversational', 'Urgent', 'Neutral', 'Friendly'] as const
+const TONE_OPTIONS = ['Neutral', 'Professional', 'Conversational', 'Friendly'] as const
 const LENGTH_OPTIONS = ['Short', 'Medium', 'Long'] as const
 const AUDIENCE_OPTIONS = ['General reader', 'Local community', 'Expert/industry', 'Youth-friendly'] as const
-const ARTICLE_COUNT_OPTIONS = ['One', 'Two', 'Three'] as const
 
 export const WORKFLOW_PREFERENCES_KEY = 'diffuse_workflow_preferences'
 
@@ -45,11 +44,13 @@ export default function GenerateOptionsModal({
 }: GenerateOptionsModalProps) {
   const [step, setStep] = useState(0)
   const [tonePreset, setTonePreset] = useState<string>(() => {
-    const t = initialValues?.tone ?? ''
-    return TONE_OPTIONS.includes(t as any) ? t : ''
+    // Always start on Neutral; user can pick something else.
+    // This overrides any previously saved default (e.g. "Professional").
+    return 'Neutral'
   })
   const [toneOther, setToneOther] = useState<string>(() => {
     const t = initialValues?.tone ?? ''
+    // Preserve only custom tones (not in our preset list) in the Other field.
     return TONE_OPTIONS.includes(t as any) ? '' : t
   })
   const [lengthPreset, setLengthPreset] = useState<string>(() => {
@@ -62,7 +63,7 @@ export default function GenerateOptionsModal({
   })
   const [audiencePreset, setAudiencePreset] = useState<string>(() => {
     const a = initialValues?.audience ?? ''
-    return AUDIENCE_OPTIONS.includes(a as any) ? a : ''
+    return AUDIENCE_OPTIONS.includes(a as any) ? a : 'General reader'
   })
   const [audienceOther, setAudienceOther] = useState<string>(() => {
     const a = initialValues?.audience ?? ''
@@ -75,14 +76,6 @@ export default function GenerateOptionsModal({
   const [toneOtherFocused, setToneOtherFocused] = useState(false)
   const [lengthOtherFocused, setLengthOtherFocused] = useState(false)
   const [audienceOtherFocused, setAudienceOtherFocused] = useState(false)
-  const [numberOfOutputs, setNumberOfOutputs] = useState<number>(() => initialValues?.numberOfOutputs ?? 1)
-  const [numberOfOutputsOther, setNumberOfOutputsOther] = useState<string>(() => {
-    const n = initialValues?.numberOfOutputs
-    return n != null && n > 3 ? String(n) : ''
-  })
-  const [numberOfOutputsOtherFocused, setNumberOfOutputsOtherFocused] = useState(false)
-  const [articleTopicsFocused, setArticleTopicsFocused] = useState(false)
-  const [articleTopics, setArticleTopics] = useState<string>('')
   const [commentsFocused, setCommentsFocused] = useState(false)
 
   const SELECT_DELAY_MS = 320
@@ -106,7 +99,7 @@ export default function GenerateOptionsModal({
   const handleAudiencePreset = (value: string) => {
     setAudiencePreset(value)
     setAudienceOther('')
-    setTimeout(() => setStep(4), SELECT_DELAY_MS)
+    setTimeout(() => setStep(2), SELECT_DELAY_MS)
   }
 
   const handleToneOtherEnter = () => {
@@ -121,44 +114,12 @@ export default function GenerateOptionsModal({
 
   const handleAudienceOtherEnter = () => {
     if (!audienceOther.trim()) return
-    setTimeout(() => setStep(4), SELECT_DELAY_MS)
+    setTimeout(() => setStep(2), SELECT_DELAY_MS)
   }
-
-  const handleArticleCountSelect = (value: 'One' | 'Two' | 'Three') => {
-    const num = value === 'One' ? 1 : value === 'Two' ? 2 : 3
-    setNumberOfOutputs(num)
-    setNumberOfOutputsOther('')
-    if (value === 'One') {
-      setTimeout(() => setStep(3), SELECT_DELAY_MS)
-    }
-  }
-
-  const handleArticleCountOther = () => {
-    const parsed = parseInt(numberOfOutputsOther, 10)
-    if (Number.isNaN(parsed) || parsed < 4 || parsed > 10 || !Number.isInteger(parsed)) return
-    setNumberOfOutputs(parsed)
-  }
-
-  const finalNumberOfOutputs = numberOfOutputsOther.trim()
-    ? (() => {
-        const n = parseInt(numberOfOutputsOther, 10)
-        return Number.isNaN(n) || n < 4 || n > 10 ? 0 : n
-      })()
-    : numberOfOutputs
-
-  const showSpecifyTopics = finalNumberOfOutputs >= 2 || numberOfOutputsOtherFocused || numberOfOutputsOther.trim().length > 0
-
-  const isOtherInvalid =
-    numberOfOutputsOther.trim().length > 0 &&
-    (() => {
-      const n = parseInt(numberOfOutputsOther, 10)
-      return Number.isNaN(n) || n < 4 || n > 10
-    })()
 
   const stepTitles = [
     'What tone do you want?',
     'How long should the article be?',
-    'How many articles do you want generated from this?',
     'Who is the audience?',
     'Choose output type',
   ]
@@ -169,7 +130,6 @@ export default function GenerateOptionsModal({
       if (finalTone) prefs.tone = finalTone
       if (finalLength) prefs.length = finalLength
       if (finalAudience) prefs.audience = finalAudience
-      if (finalNumberOfOutputs > 1) prefs.numberOfOutputs = finalNumberOfOutputs
       if (onSavePreferences) {
         setSavingPrefs(true)
         try {
@@ -188,8 +148,6 @@ export default function GenerateOptionsModal({
       ...(finalLength && { length: finalLength }),
       ...(finalAudience && { audience: finalAudience }),
       ...(comments.trim() && { comments: comments.trim() }),
-      ...(finalNumberOfOutputs > 1 && { numberOfOutputs: finalNumberOfOutputs }),
-      ...(articleTopics.trim() && { articleTopics: articleTopics.trim() }),
     })
     onClose()
   }
@@ -325,85 +283,6 @@ export default function GenerateOptionsModal({
 
         {step === 2 && (
           <div key={2} className="modal-step-enter space-y-2">
-            {ARTICLE_COUNT_OPTIONS.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => handleArticleCountSelect(opt)}
-                className={`${optionRowClass} ${
-                  !numberOfOutputsOther && numberOfOutputs === (opt === 'One' ? 1 : opt === 'Two' ? 2 : 3)
-                    ? 'border-cosmic-orange bg-white/10 text-secondary-white'
-                    : 'border-white/10 hover:bg-white/5 text-secondary-white'
-                }`}
-              >
-                {!numberOfOutputsOther && numberOfOutputs === (opt === 'One' ? 1 : opt === 'Two' ? 2 : 3) && checkIcon}
-                <span>{opt}</span>
-              </button>
-            ))}
-            <div
-              className={`${optionRowClass} ${
-                isOtherInvalid
-                  ? 'border-red-500 bg-red-500/5 text-secondary-white'
-                  : numberOfOutputsOther.trim() || numberOfOutputsOtherFocused
-                    ? 'border-cosmic-orange bg-white/10 text-secondary-white'
-                    : 'border-white/10 hover:bg-white/5 text-secondary-white'
-              }`}
-            >
-              {isOtherInvalid ? xIcon : (numberOfOutputsOther.trim() || numberOfOutputsOtherFocused) && checkIcon}
-              <input
-                type="text"
-                inputMode="numeric"
-                value={numberOfOutputsOther}
-                onChange={(e) => {
-                  setNumberOfOutputsOther(e.target.value.replace(/\D/g, '').slice(0, 2))
-                  if (e.target.value.trim()) setNumberOfOutputs(0)
-                }}
-                onFocus={() => {
-                  setNumberOfOutputsOtherFocused(true)
-                  setNumberOfOutputs(0)
-                }}
-                onBlur={() => setNumberOfOutputsOtherFocused(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    handleArticleCountOther()
-                  }
-                }}
-                placeholder="Other (4–10)"
-                className={otherInputClass}
-              />
-            </div>
-            {showSpecifyTopics && (
-              <>
-                <label htmlFor="article-topics" className="block text-body-sm text-secondary-white mb-2 mt-4">
-                  Specify Topics <span className="text-medium-gray">(optional)</span>
-                </label>
-                <div
-                  className={`${optionRowClass} ${
-                    articleTopics.trim() || articleTopicsFocused
-                      ? 'border-cosmic-orange bg-white/10 text-secondary-white'
-                      : 'border-white/10 hover:bg-white/5 text-secondary-white'
-                  }`}
-                >
-                  {(articleTopics.trim() || articleTopicsFocused) && checkIcon}
-                  <input
-                    id="article-topics"
-                    type="text"
-                    value={articleTopics}
-                    onChange={(e) => setArticleTopics(e.target.value)}
-                    onFocus={() => setArticleTopicsFocused(true)}
-                    onBlur={() => setArticleTopicsFocused(false)}
-                    placeholder="Leave blank and Diffuse will decide"
-                    className={otherInputClass}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {step === 3 && (
-          <div key={3} className="modal-step-enter space-y-2">
             {AUDIENCE_OPTIONS.map((opt) => (
               <button
                 key={opt}
@@ -454,8 +333,8 @@ export default function GenerateOptionsModal({
           </div>
         )}
 
-        {step === 4 && (
-          <div key={4} className="modal-step-enter space-y-4">
+        {step === 3 && (
+          <div key={3} className="modal-step-enter space-y-4">
             <button
               type="button"
               onClick={() => setOutputType('article')}
@@ -531,7 +410,7 @@ export default function GenerateOptionsModal({
         </ModalScrollRegion>
       </ModalBody>
       <ModalFooter>
-        {step < 4 ? (
+        {step < 3 ? (
           <>
             {step > 0 && (
               <button type="button" onClick={() => setStep((s) => s - 1)} className="btn-secondary flex-1 py-3">
@@ -543,8 +422,7 @@ export default function GenerateOptionsModal({
               onClick={() => setStep((s) => s + 1)}
               disabled={
                 (step === 1 && !finalLength) ||
-                (step === 2 && finalNumberOfOutputs < 1) ||
-                (step === 3 && !finalAudience)
+                (step === 2 && !finalAudience)
               }
               className="btn-primary flex-1 py-3 disabled:opacity-50"
             >
@@ -553,7 +431,7 @@ export default function GenerateOptionsModal({
           </>
         ) : (
           <>
-            <button type="button" onClick={() => setStep(3)} className="btn-secondary flex-1 py-3">
+            <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1 py-3">
               Back
             </button>
             <button

@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   formatRelativeTime,
   formatDuration,
+  formatTimestampFromMs,
   recordingDisplayTimestamp,
   effectiveRecordingDurationSeconds,
 } from '@/lib/utils/format'
@@ -160,32 +161,27 @@ function AddRecordingButton({
 
 type SubscriptionTier = 'free' | 'pro' | 'pro_max' | 'contractor_pro'
 
-/** Format minute as "[0 min]" or "[1:05 min]" for display and save */
+// NOTE: Keep `formatMinuteLabel` around only for legacy transcripts that already contain `[N min]` markers.
+/** Format minute as "[0 min]" or "[1:05 min]" for display and legacy transcripts */
 function formatMinuteLabel(minute: number): string {
   const hours = Math.floor(minute / 60)
   const mins = minute % 60
   return hours > 0 ? `[${hours}:${mins.toString().padStart(2, '0')} min]` : `[${minute} min]`
 }
 
-/** Build full transcript string with minute markers at the right spots (for save and for use as input) */
+/** Build full transcript string with per-utterance timestamps (for save and for use as input). */
 function buildTranscriptWithMinuteMarkers(
   utterances: Array<{ speaker: string; text: string; start: number; end?: number }>,
   speakerMap: Record<string, { name: string; position?: string }>
 ): string {
   if (!utterances.length) return ''
   const lines: string[] = []
-  let lastMinute = -1
   for (const u of utterances) {
-    const startMinute = Math.floor(u.start / 60000)
-    if (startMinute > lastMinute) {
-      lines.push(formatMinuteLabel(startMinute))
-      lastMinute = startMinute
-    }
     const mapped = speakerMap[u.speaker]
     const displayName = mapped
       ? (mapped.position ? `${mapped.name} (${mapped.position})` : mapped.name)
       : u.speaker
-    lines.push(`${displayName}: ${u.text}`)
+    lines.push(`[${formatTimestampFromMs(u.start)}] ${displayName}: ${u.text}`)
   }
   return lines.join('\n\n')
 }
@@ -1096,7 +1092,9 @@ export default function RecordingsPageClient() {
       // We refetch the list so the card never regresses to "generating" when opened.
       const newTitle = data.suggestedTitle || data.finalTitle || recording.title
       const rawTranscript = data.utterances?.length
-        ? data.utterances.map((u: { speaker: string; text: string }) => `${u.speaker}: ${u.text}`).join('\n\n')
+        ? data.utterances
+            .map((u: { speaker: string; text: string; start: number }) => `[${formatTimestampFromMs(u.start)}] ${u.speaker}: ${u.text}`)
+            .join('\n\n')
         : data.transcription
       await fetchRecordings()
 
@@ -2708,12 +2706,7 @@ placeholder="First Last"
                       <div className="space-y-2">
                         {(() => {
                           const utterancesToShow = isEditingUtterances && editedUtterances ? editedUtterances : displayUtterances
-                          let lastMinute = -1
                           return utterancesToShow.map((u, i) => {
-                            const startMinute = Math.floor(u.start / 60000)
-                            const showMinuteMarker = startMinute > lastMinute
-                            if (showMinuteMarker) lastMinute = startMinute
-                            const minuteLabel = showMinuteMarker ? formatMinuteLabel(startMinute) : null
                             const displayName = speakerMap[u.speaker]
                               ? (speakerMap[u.speaker].position
                                   ? `${speakerMap[u.speaker].name} (${speakerMap[u.speaker].position})`
@@ -2750,9 +2743,7 @@ placeholder="First Last"
                                   isHighlight ? 'bg-cosmic-orange/15 text-cosmic-orange' : 'text-secondary-white ' + (isEditingUtterances ? 'cursor-text' : 'hover:bg-white/5 cursor-pointer')
                                 }`}
                               >
-                                {minuteLabel && (
-                                  <span className="text-medium-gray text-body-md mr-2">{minuteLabel}</span>
-                                )}
+                                <span className="text-medium-gray text-body-md mr-2">[{formatTimestampFromMs(u.start)}]</span>
                                 <span className={`font-medium ${isHighlight ? 'text-cosmic-orange/90' : 'text-medium-gray'}`}>{displayName}: </span>
                                 {isEditingUtterances && editedUtterances ? (
                                   <textarea

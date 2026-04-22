@@ -34,35 +34,26 @@ function sanitizeGeneratedTitle(raw: string): string {
     .trim()
 }
 
-/** Build transcript with minute markers from utterances with timestamps */
+/** Build transcript with per-utterance timestamps from utterances. */
 function buildTranscriptWithMinuteMarkers(
   utterances: Array<{ speaker: string; text: string; start: number; end?: number }>
 ): string {
   if (!utterances || utterances.length === 0) return ''
 
-  let result = ''
-  let lastMinuteMarker = -1
-
-  for (const utterance of utterances) {
-    const startMinute = Math.floor(utterance.start / 60000) // Convert ms to minutes
-    
-    // Add minute marker if we've crossed into a new minute
-    if (startMinute > lastMinuteMarker) {
-      const hours = Math.floor(startMinute / 60)
-      const minutes = startMinute % 60
-      const timestamp = hours > 0 
-        ? `${hours}:${minutes.toString().padStart(2, '0')}`
-        : `${minutes}`
-      
-      result += `\n[${timestamp} min]\n\n`
-      lastMinuteMarker = startMinute
-    }
-
-    // Add the utterance
-    result += `${utterance.speaker}: ${utterance.text}\n\n`
+  const formatTimestampFromMs = (ms: number) => {
+    if (!Number.isFinite(ms) || ms <= 0) return '0:00'
+    const totalSeconds = Math.floor(ms / 1000)
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
-  return result.trim()
+  return utterances
+    .map((u) => `[${formatTimestampFromMs(u.start)}] ${u.speaker}: ${u.text}`.trim())
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 /** Common false positives from entity detection on phrases like "my name is …" */

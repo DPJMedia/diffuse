@@ -24,9 +24,19 @@ export function getSpeakerLabel(
   return speaker
 }
 
+function formatTimestampFromMs(ms: number | undefined): string {
+  if (!Number.isFinite(ms) || (ms ?? 0) <= 0) return '0:00'
+  const totalSeconds = Math.floor((ms as number) / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 /** Plain text: one block per utterance, “Name: text”, for clipboard export. */
 export function buildUtteranceTranscriptCopy(
-  utterances: Array<{ speaker: string; text: string }> | null | undefined,
+  utterances: Array<{ speaker: string; text: string; start?: number }> | null | undefined,
   speakerMap: Record<string, { name: string; position?: string }> | null | undefined,
   detectedNames: Record<string, string> | null | undefined,
   fallbackTranscription: string | null | undefined
@@ -36,6 +46,6 @@ export function buildUtteranceTranscriptCopy(
     return (fallbackTranscription ?? '').trim()
   }
   return rows
-    .map((u) => `${getSpeakerLabel(u.speaker, speakerMap, detectedNames)}: ${u.text.trim()}`)
+    .map((u) => `[${formatTimestampFromMs(u.start)}] ${getSpeakerLabel(u.speaker, speakerMap, detectedNames)}: ${u.text.trim()}`)
     .join('\n\n')
 }

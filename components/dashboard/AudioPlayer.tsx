@@ -8,10 +8,12 @@ interface AudioPlayerProps {
   initialDuration?: number // Duration in seconds from database
   onTimeUpdate?: (currentTimeSec: number) => void
   compact?: boolean // no border, single line full width (e.g. in recording modal)
+  playbackRate?: number
+  onPlaybackRateChange?: (rate: number) => void
 }
 
 const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(function AudioPlayer(
-  { src, onError, initialDuration, onTimeUpdate, compact },
+  { src, onError, initialDuration, onTimeUpdate, compact, playbackRate: controlledPlaybackRate, onPlaybackRateChange },
   forwardedRef
 ) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -30,6 +32,8 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1)
+  const playbackRate = controlledPlaybackRate ?? localPlaybackRate
   const rafRef = useRef<number | null>(null)
 
   // Update duration if initialDuration prop changes
@@ -42,6 +46,8 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
+
+    audio.playbackRate = playbackRate
 
     const handleLoadedMetadata = () => {
       setIsLoading(false)
@@ -128,7 +134,18 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
       audio.removeEventListener('durationchange', handleDurationChange)
       audio.removeEventListener('seeked', handleSeeked)
     }
-  }, [onError, isDragging, duration, onTimeUpdate])
+  }, [onError, isDragging, duration, onTimeUpdate, playbackRate])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.playbackRate = playbackRate
+  }, [playbackRate])
+
+  const setPlaybackRate = (rate: number) => {
+    if (onPlaybackRateChange) onPlaybackRateChange(rate)
+    if (controlledPlaybackRate == null) setLocalPlaybackRate(rate)
+  }
 
   // Smooth playback: use requestAnimationFrame when playing so progress updates at ~60fps
   useEffect(() => {
@@ -335,6 +352,27 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
             {effectiveDuration > 0 ? formatTime(effectiveDuration) : '--:--'}
           </span>
         </div>
+
+        {/* Playback Speed */}
+        {!compact && (
+          <div className="flex-shrink-0 ml-2 flex items-center rounded-glass border border-white/10 bg-white/5 overflow-hidden">
+            {([1, 1.25, 1.5, 1.75, 2] as const).map((rate) => (
+              <button
+                key={rate}
+                type="button"
+                onClick={() => setPlaybackRate(rate)}
+                className={`px-2.5 py-1 text-caption transition-colors border-r border-white/10 last:border-r-0 flex items-center justify-center text-center ${
+                  playbackRate === rate
+                    ? 'bg-white/10 text-secondary-white'
+                    : 'text-medium-gray hover:text-secondary-white hover:bg-white/5'
+                }`}
+                aria-pressed={playbackRate === rate}
+              >
+                {rate}x
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

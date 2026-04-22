@@ -79,6 +79,23 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Format a millisecond timestamp (e.g. AssemblyAI utterance start) as `m:ss` or `h:mm:ss`.
+ * Returns `0:00` for invalid / negative inputs.
+ */
+export function formatTimestampFromMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '0:00'
+  const totalSeconds = Math.floor(ms / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+/**
  * Seconds to show for a recording: DB `duration` when set, else infer from utterance end times (ms).
  * Covers older rows transcribed before we persisted AssemblyAI `audio_duration`.
  */

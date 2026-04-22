@@ -9,6 +9,7 @@ import {
   formatDuration,
   recordingDisplayTimestamp,
   effectiveRecordingDurationSeconds,
+  formatTimestampFromMs,
 } from '@/lib/utils/format'
 import { useAuth } from '@/contexts/AuthContext'
 import LoadingSpinner from '@/components/dashboard/LoadingSpinner'
@@ -107,6 +108,7 @@ export default function RecordingDetailPage() {
   const [savingTranscription, setSavingTranscription] = useState(false)
   const [currentPlaybackTimeMs, setCurrentPlaybackTimeMs] = useState<number | null>(null)
   const [frozenHighlightIndex, setFrozenHighlightIndex] = useState<number | null>(null)
+  const [playbackRate, setPlaybackRate] = useState<number>(1)
   
   // Transcript search state
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('')
@@ -137,6 +139,13 @@ export default function RecordingDetailPage() {
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null)
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null)
   const utteranceLineRefs = useRef<(HTMLParagraphElement | null)[]>([])
+
+  // Keep the audio element in sync with the selected playback speed.
+  useEffect(() => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.playbackRate = playbackRate
+    }
+  }, [playbackRate])
   
   // User scroll override state
   const [userScrollOverride, setUserScrollOverride] = useState(false)
@@ -1040,6 +1049,8 @@ export default function RecordingDetailPage() {
                 }}
                 initialDuration={effectiveRecordingDurationSeconds(recording)}
                 onTimeUpdate={(sec) => setCurrentPlaybackTimeMs(sec * 1000)}
+                playbackRate={playbackRate}
+                onPlaybackRateChange={setPlaybackRate}
                 compact
               />
             ) : (
@@ -1343,6 +1354,7 @@ export default function RecordingDetailPage() {
                             </>
                           ) : (
                             <p className="text-body-sm text-secondary-white">
+                              <span className="text-medium-gray mr-2">[{formatTimestampFromMs(utterance.start)}]</span>
                               <span className="text-cosmic-orange font-semibold">{speakerLabel}:</span>{' '}
                               <span className="whitespace-pre-wrap">
                                 {transcriptSearchQuery && activeMode === 'search'
@@ -1520,6 +1532,37 @@ export default function RecordingDetailPage() {
                   <span className="text-body-sm text-secondary-white">Copy Full Transcript</span>
                 </button>
               )}
+            </div>
+          </div>
+
+          {/* Playback speed section (non-collapsible) */}
+          <div className="border-b border-white/10">
+            <div className="px-4 py-3">
+              <p className="text-body-sm text-secondary-white font-medium">Playback speed</p>
+            </div>
+            <div className="px-4 pb-3">
+              <div className="grid grid-cols-5 gap-2">
+                {([1, 1.25, 1.5, 1.75, 2] as const).map((rate) => (
+                  <button
+                    key={rate}
+                    type="button"
+                    onClick={() => {
+                      setPlaybackRate(rate)
+                      if (audioPlayerRef.current) {
+                        audioPlayerRef.current.playbackRate = rate
+                      }
+                    }}
+                    className={`py-2 px-2 rounded border text-body-sm transition-colors flex items-center justify-center text-center ${
+                      playbackRate === rate
+                        ? 'border-cosmic-orange bg-white/10 text-secondary-white'
+                        : 'border-white/10 bg-white/5 text-medium-gray hover:bg-white/10 hover:text-secondary-white'
+                    }`}
+                    aria-pressed={playbackRate === rate}
+                  >
+                    {rate}x
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
