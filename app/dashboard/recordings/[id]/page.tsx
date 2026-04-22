@@ -1538,7 +1538,7 @@ export default function RecordingDetailPage() {
           {/* Playback speed section (non-collapsible) */}
           <div className="border-b border-white/10">
             <div className="px-4 py-3">
-              <p className="text-body-sm text-secondary-white font-medium">Playback speed</p>
+              <p className="text-body-sm text-secondary-white font-medium">Playback Speed</p>
             </div>
             <div className="px-4 pb-3">
               <div className="grid grid-cols-5 gap-2">
