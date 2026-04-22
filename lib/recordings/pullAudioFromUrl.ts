@@ -115,7 +115,8 @@ function extFromContentType(ct: string): string {
   const main = ct.split(';')[0].trim().toLowerCase()
   if (main.includes('mpeg') || main === 'audio/mp3') return '.mp3'
   if (main.includes('wav')) return '.wav'
-  if (main.includes('m4a') || main === 'audio/mp4' || main === 'video/mp4') return '.m4a'
+  if (main.includes('m4a') || main === 'audio/mp4') return '.m4a'
+  if (main === 'video/mp4') return '.mp4'
   if (main.includes('webm')) return '.webm'
   return '.bin'
 }
@@ -263,18 +264,27 @@ export async function downloadDirectOrPageAudio(
     .trim()
     .toLowerCase()
 
+  // Some hosts (notably S3) return mp4 as binary/octet-stream. Use the final URL as a hint so
+  // we can treat it as video for audio extraction upstream.
+  const hintedCt =
+    (finalCt === 'application/octet-stream' || finalCt === 'binary/octet-stream') &&
+    /\.(mp4)(\?|$)/i.test(finalUrl)
+      ? 'video/mp4'
+      : finalCt
+
   const body = res.body
   if (!body) {
     throw new Error('Empty response body')
   }
 
-  const isAudioLike =
-    finalCt.startsWith('audio/') ||
-    finalCt.startsWith('video/') ||
-    finalCt === 'application/octet-stream' ||
-    finalCt === 'binary/octet-stream'
+  // We allow `video/*` here as an *extraction source*; the API route will extract audio-only before storage.
+  const isMediaLike =
+    hintedCt.startsWith('audio/') ||
+    hintedCt.startsWith('video/') ||
+    hintedCt === 'application/octet-stream' ||
+    hintedCt === 'binary/octet-stream'
 
-  if (!isAudioLike) {
+  if (!isMediaLike) {
     throw new Error(
       'This URL did not return audio. Try a direct .mp3, .m4a, or video link.'
     )
@@ -285,13 +295,13 @@ export async function downloadDirectOrPageAudio(
     throw new Error('Downloaded file is empty')
   }
 
-  let ext = extFromContentType(finalCt)
-  if (finalCt === 'application/octet-stream' || finalCt === 'binary/octet-stream') {
+  let ext = extFromContentType(hintedCt)
+  if (hintedCt === 'application/octet-stream' || hintedCt === 'binary/octet-stream') {
     ext = sniffAudioExt(buffer)
   }
 
   const contentType =
-    finalCt === 'binary/octet-stream' ? 'application/octet-stream' : finalCt
+    hintedCt === 'binary/octet-stream' ? 'application/octet-stream' : hintedCt
 
   return { buffer, contentType, ext, sourceRecordedAt }
 }

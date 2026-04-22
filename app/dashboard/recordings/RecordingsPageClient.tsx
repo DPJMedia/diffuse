@@ -1193,7 +1193,7 @@ export default function RecordingsPageClient() {
         .from('diffuse_recordings')
         .insert({
           user_id: user.id,
-          title: 'Processing...',
+          title: 'Pulling audio...',
           duration: 0,
           file_path: pendingPath,
           status: 'recorded',

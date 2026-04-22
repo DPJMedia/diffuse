@@ -6,6 +6,11 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
 
+  // Ensure ffmpeg-static binary is included in server file tracing for URL pulls.
+  outputFileTracingIncludes: {
+    '/api/recordings/pull-from-url': ['node_modules/ffmpeg-static/ffmpeg'],
+  },
+
   experimental: {
     // Externalize Supabase only. Including `diff` here broke the server chunk layout (require("./1682.js")
     // next to webpack-runtime while files lived under chunks/), causing "Cannot find module './1682.js'".
@@ -18,6 +23,13 @@ const nextConfig = {
       // chunk maps for large client pages (e.g. recordings + `diff`); full disable is slower but stable.
       config.cache = false
     }
+
+    // Keep ffmpeg-static as a runtime dependency so Next's tracing can pick up the binary.
+    config.externals = config.externals || []
+    if (Array.isArray(config.externals)) {
+      config.externals.push('ffmpeg-static')
+    }
+
     return config
   },
 

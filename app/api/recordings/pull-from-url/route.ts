@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { promises as fs } from 'fs'
+import os from 'os'
+import path from 'path'
+import { spawn } from 'child_process'
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, unauthorizedResponse } from '@/lib/security/authorization'
 import { validateSchema, validateScrapeUrl, validateUUID } from '@/lib/security/validation'
@@ -13,6 +17,8 @@ export async function POST(request: NextRequest) {
   if (rateLimitResponse) {
     return rateLimitResponse
   }
+
+  const tStart = Date.now()
 
   let authResult: Awaited<ReturnType<typeof requireAuth>>
   try {
@@ -66,14 +72,67 @@ export async function POST(request: NextRequest) {
     sourceRecordedAt?: string | null
   }
 
+  async function extractMp3FromVideoBuffer(video: Buffer): Promise<Buffer> {
+    // Resolve at runtime so Next file tracing can include the binary.
+    // eslint-disable-next-line no-eval
+    const ffmpegPath = (eval('require')('ffmpeg-static') as string | null)
+    if (!ffmpegPath) throw new Error('ffmpeg is not available in this environment')
+    try {
+      await fs.access(ffmpegPath)
+    } catch {
+      throw new Error(`ffmpeg binary missing at path: ${ffmpegPath}`)
+    }
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diffuse-pull-'))
+    const inPath = path.join(dir, 'input')
+    const outPath = path.join(dir, 'output.mp3')
+    await fs.writeFile(inPath, video)
+
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(ffmpegPath as string, [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-y',
+        '-i',
+        inPath,
+        '-vn',
+        '-map',
+        'a:0',
+        '-ac',
+        '1',
+        '-ar',
+        '44100',
+        '-b:a',
+        '64k',
+        outPath,
+      ])
+      let stderr = ''
+      proc.stderr.on('data', (d) => {
+        stderr += String(d)
+      })
+      proc.on('error', reject)
+      proc.on('close', (code) => {
+        if (code === 0) return resolve()
+        reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`))
+      })
+    })
+
+    const mp3 = await fs.readFile(outPath)
+    // Best-effort cleanup
+    void fs.rm(dir, { recursive: true, force: true })
+    return mp3
+  }
+
   try {
     let audio: AudioPayload | undefined
     let usedFallback = false
 
     if (isYouTubeUrl(urlString)) {
       try {
+        const t0 = Date.now()
         const a = await extractYouTubeAudio(urlString, controller.signal)
         audio = { ...a, sourceRecordedAt: null }
+        console.log('[pull-from-url] youtube download bytes=', audio.buffer.length, 'ct=', audio.contentType, 'ms=', Date.now() - t0)
       } catch (ytErr: unknown) {
         const message = ytErr instanceof YouTubeError ? ytErr.message : String(ytErr)
         const code = ytErr instanceof YouTubeError ? ytErr.code : 'YOUTUBE_FAILED'
@@ -88,7 +147,9 @@ export async function POST(request: NextRequest) {
       }
     } else {
       try {
+        const t0 = Date.now()
         audio = await downloadDirectOrPageAudio(urlString, controller.signal)
+        console.log('[pull-from-url] source download bytes=', audio.buffer.length, 'ct=', audio.contentType, 'ms=', Date.now() - t0)
       } catch (directErr: unknown) {
         const directMessage = directErr instanceof Error ? directErr.message : String(directErr)
         console.error('[pull-from-url] Direct fetch failed:', directMessage)
@@ -109,6 +170,19 @@ export async function POST(request: NextRequest) {
         { error: 'Could not download audio from this URL.', code: 'PULL_EMPTY' },
         { status: 502 }
       )
+    }
+
+    // Never store video: if upstream returned video, extract audio-only and store that.
+    if (audio.contentType.startsWith('video/')) {
+      const t0 = Date.now()
+      const mp3 = await extractMp3FromVideoBuffer(audio.buffer)
+      console.log('[pull-from-url] extracted mp3 bytes=', mp3.length, 'ms=', Date.now() - t0)
+      audio = {
+        ...audio,
+        buffer: mp3,
+        contentType: 'audio/mpeg',
+        ext: '.mp3',
+      }
     }
 
     const fileName = `${user.id}/${Date.now()}${audio.ext}`
@@ -146,11 +220,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const tUpload = Date.now()
     const { error: uploadError } = await supabase.storage.from('recordings').upload(fileName, audio.buffer, {
       cacheControl: '3600',
       upsert: false,
       contentType: audio.contentType,
     })
+    console.log('[pull-from-url] upload ms=', Date.now() - tUpload)
 
     if (uploadError) {
       console.error('pull-from-url storage upload:', uploadError)
@@ -245,5 +321,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message, code: 'PULL_FAILED' }, { status: 502 })
   } finally {
     clearTimeout(timeout)
+    console.log('[pull-from-url] total_ms=', Date.now() - tStart)
   }
 }

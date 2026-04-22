@@ -22,6 +22,7 @@
     "cheerio": "^1.2.0",
     "clsx": "^2.1.0",
     "diff": "^8.0.3",
+    "ffmpeg-static": "^5.2.0",
     "framer-motion": "^11.0.0",
     "mammoth": "^1.11.0",
     "next": "^14.2.0",
