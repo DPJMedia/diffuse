@@ -375,22 +375,22 @@ export default function GenerateOptionsModal({
               Additional Comments <span className="text-medium-gray">(optional)</span>
             </label>
             <div
-              className={`${optionRowClass} ${
+              className={`w-full px-4 py-3 flex items-start gap-3 rounded-glass border transition-colors ${
                 comments.trim() || commentsFocused
                   ? 'border-cosmic-orange bg-white/10 text-secondary-white'
                   : 'border-white/10 hover:bg-white/5 text-secondary-white'
               }`}
             >
-              {(comments.trim() || commentsFocused) && checkIcon}
-              <input
+              {(comments.trim() || commentsFocused) && <span className="mt-0.5 flex-shrink-0">{checkIcon}</span>}
+              <textarea
                 id="generate-comments"
-                type="text"
                 value={comments}
                 onChange={(e) => setComments(e.target.value)}
                 onFocus={() => setCommentsFocused(true)}
                 onBlur={() => setCommentsFocused(false)}
                 placeholder="Any extra instructions for Diffuse..."
-                className={otherInputClass}
+                rows={5}
+                className={`${otherInputClass} resize-y min-h-[7rem]`}
               />
             </div>
             <button
