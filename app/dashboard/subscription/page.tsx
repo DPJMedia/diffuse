@@ -19,7 +19,7 @@ interface UserProfile {
 const individualPlans = {
   free: { name: 'Free', projects: 3, price: '$0/mo', isEnterprise: false },
   pro: { name: 'Pro', projects: 15, price: '$20/mo', isEnterprise: false },
-  pro_max: { name: 'Pro Max', projects: 40, price: '$60/mo', isEnterprise: false },
+  pro_max: { name: 'Pro Max', projects: 'Unlimited', price: '$60/mo', isEnterprise: false },
   contractor_pro: { name: 'Contractor Pro', projects: 40, price: '$0/mo', isEnterprise: false },
 }
 

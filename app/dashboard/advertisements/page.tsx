@@ -53,7 +53,7 @@ export default function AdvertisementsPage() {
   const subscriptionLimits: Record<SubscriptionTier, number> = {
     free: 3,
     pro: 15,
-    pro_max: 40,
+    pro_max: Infinity, // Pro Max: unlimited projects/generations
     contractor_pro: 40,
   }
 
