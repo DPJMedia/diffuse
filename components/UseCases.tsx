@@ -29,10 +29,10 @@ export default function UseCases() {
                     <span className="text-[#dbdbdb]">Spring-Ford</span> <span className="text-[#3391af]">Press</span>
                   </h3>
                   <p className="text-body-md text-secondary-white mb-4 leading-relaxed">
-                    Spring-Ford Press is a local news site covering the Spring-Ford community in Pennsylvania. It serves as the first live newsroom built on Diffuse, demonstrating how AI-assisted workflows can help small teams produce consistent local coverage.
+                    Spring-Ford Press is a local news site covering the Spring-Ford community in Pennsylvania. It is the first live newsroom built on Diffuse, showing how a small team can produce consistent local coverage with a human editor in the loop.
                   </p>
                   <p className="text-body-md text-secondary-white mb-4 leading-relaxed">
-                    Diffuse captures municipal meetings, generates transcripts, and produces structured draft articles that flow directly into the CMS, with headlines, bylines, and body text ready for editorial review and scheduling.
+                    Diffuse captures municipal meetings and turns the audio and documents into structured drafts with headlines, bylines, and body text. An editor reviews, verifies, and publishes. The recordings and source documents stay attached to each story.
                   </p>
                   <p className="text-body-md text-secondary-white mb-6 leading-relaxed">
                     Spring-Ford Press isn&apos;t a demo. It&apos;s a working newsroom powered by Diffuse in production.

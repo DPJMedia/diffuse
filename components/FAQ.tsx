@@ -2,33 +2,7 @@
 
 import { motion, useInView, AnimatePresence } from 'framer-motion'
 import { useRef, useState } from 'react'
-
-const faqs = [
-  {
-    question: 'What is Diffuse?',
-    answer: 'Diffuse turns recordings, documents, and web pages into publication-ready articles and ads in one place. You get transcription with speaker names, the ability to mix multiple sources per project, and optional publishing integrations so you can go from record to live article without switching tools.',
-  },
-  {
-    question: 'How does the recording to publish process work?',
-    answer: 'Record in the app or upload audio, add documents or web links if you want. We transcribe and optionally identify speakers so you can name them. Edit the transcript, then click Generate to get an article or ad. Connect your site to auto-fill fields, or copy and paste. Same flow for solo use or teams.',
-  },
-  {
-    question: 'What can I use as input?',
-    answer: 'Audio (record or upload MP3, WAV, M4A), documents (PDF, DOCX, TXT), images, and URLs for web scraping. You can combine several inputs in one project so one piece can pull from a meeting, a press release, and a scraped page.',
-  },
-  {
-    question: 'Can I edit the transcription and the generated content?',
-    answer: 'Yes. You can fix the transcript and speaker names before generating. Every output is fully editable: headline, excerpt, body, SEO fields. You can also re-edit and create new versions so the tool adapts to your edits instead of locking you in.',
-  },
-  {
-    question: 'Who is Diffuse for?',
-    answer: 'Freelancers, small newsrooms, and content teams who need to turn meetings, interviews, or documents into articles or ads quickly. Free tier gets you started; paid plans add more projects and team features. No organization required to try it.',
-  },
-  {
-    question: 'How is this different from using ChatGPT or other AI writing tools?',
-    answer: 'Diffuse is built for the full path from source to published piece. You get recording and upload, transcription with speaker ID, multi-input projects, and article or ad generation in one workflow. If you connect a publishing frontend, articles can auto-populate there so you are not copy-pasting. It is one product for the job, not a generic chatbot plus manual steps.',
-  },
-]
+import { faqs } from '@/lib/content/diffuse'
 
 export default function FAQ() {
   const ref = useRef(null)

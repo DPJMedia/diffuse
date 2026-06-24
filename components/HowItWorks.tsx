@@ -2,49 +2,35 @@
 
 import { motion, useInView } from 'framer-motion'
 import { useRef } from 'react'
+import { howItWorks } from '@/lib/content/diffuse'
 
-const steps = [
-  {
-    number: '01',
-    title: 'Record',
-    description: 'Record or upload. Add docs, images, or a URL. One piece can use multiple sources.',
-    icon: (
-      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-      </svg>
-    ),
-  },
-  {
-    number: '02',
-    title: 'Transcribe',
-    description: 'We separate speakers; you name them. Edit the transcript, then generate.',
-    icon: (
-      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    ),
-  },
-  {
-    number: '03',
-    title: 'Generate',
-    description: 'Pick article or ad. Get headline, excerpt, body. Edit and re-run when you want a new version.',
-    icon: (
-      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    ),
-  },
-  {
-    number: '04',
-    title: 'Publish',
-    description: 'Connect your site to auto-fill, or copy and paste. Record to live in one flow.',
-    icon: (
-      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-      </svg>
-    ),
-  },
+// Step copy lives in lib/content/diffuse.ts (shared with the MCP server and llms.txt).
+// Icons are presentational and stay here, matched to the steps by index.
+const stepIcons = [
+  // Capture
+  <svg key="capture" className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+  </svg>,
+  // Transcribe and review
+  <svg key="transcribe" className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>,
+  // Draft with AI
+  <svg key="draft" className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+  </svg>,
+  // Verify and publish
+  <svg key="verify" className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>,
 ]
+
+const steps = howItWorks.map((step, i) => ({
+  number: String(i + 1).padStart(2, '0'),
+  title: step.title,
+  description: step.body,
+  icon: stepIcons[i],
+}))
 
 export default function HowItWorks() {
   const ref = useRef(null)
@@ -88,10 +74,10 @@ export default function HowItWorks() {
               How it works
             </span>
             <h2 className="text-display-sm font-bold mb-4">
-              Recording to <span className="text-secondary-white">published</span> in four steps
+              From raw material to <span className="text-secondary-white">verified story</span>, in four steps
             </h2>
             <p className="text-body-lg text-medium-gray max-w-2xl mx-auto">
-              Record, transcribe, generate, publish. Same flow for articles and ads.
+              Capture the source, review the transcript, draft with AI, then verify and publish. The recordings and documents stay with the story.
             </p>
           </motion.div>
 

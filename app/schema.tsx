@@ -1,4 +1,8 @@
-// Comprehensive structured data schemas for SEO and AI discoverability
+// Comprehensive structured data schemas for SEO and AI discoverability.
+// Positioning: a context-to-publication system for local news with a human
+// verification layer. AI does the labor. People verify before anything publishes.
+import { seoDescription } from '@/lib/content/diffuse'
+
 export const faqSchema = {
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
@@ -8,7 +12,7 @@ export const faqSchema = {
       name: 'What is Diffuse.AI?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse.AI is an AI-powered platform that turns meeting recordings, documents (PDF, DOCX, TXT), images, and web pages into publication-ready articles and advertisements. You can combine multiple inputs in one project, get AI transcription with speaker identification and article or ad generation with headlines and SEO metadata, and publish via integrations or copy-paste. Free to start, with team collaboration and publishing integrations.',
+        text: 'Diffuse is a context-to-publication system for local news. It pulls the raw material of reporting, meeting audio, public documents, images, and web pages, into one workspace and drafts articles and ads from it. AI does the labor of transcription and drafting. People review the transcript, verify the facts, and decide what is newsworthy before anything publishes. Free to start, with team collaboration and publishing integrations.',
       },
     },
     {
@@ -16,7 +20,7 @@ export const faqSchema = {
       name: 'How does Diffuse.AI work?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse.AI works in four steps: (1) Record or upload: capture audio in-app or upload recordings, documents, images, or add web scrapes; (2) Transcribe: AI transcribes audio and extracts text from documents; (3) Generate: create articles from one or many inputs with one click; (4) Publish: connect to your publishing frontend to auto-populate articles, or copy and paste. You can edit transcriptions and outputs, and re-edit generated articles.',
+        text: 'Diffuse works in four steps. (1) Capture: record audio in the app or upload recordings, documents, images, or a source URL into one project. (2) Transcribe and review: AI transcribes the audio and separates speakers, and you read and correct the transcript. (3) Draft with AI: generate a draft article or ad with a headline, excerpt, and body. (4) Verify and publish: check the facts, approve, then connect your site to auto-fill or copy and paste. The source material stays attached to the story.',
       },
     },
     {
@@ -24,7 +28,7 @@ export const faqSchema = {
       name: 'What input types does Diffuse support?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse supports recordings (in-app or upload: MP3, WAV, M4A), documents (PDF, DOCX, TXT), images (JPG, PNG), web scraping, and cover photos. You can combine multiple inputs in a single project to generate articles or advertisements.',
+        text: 'Diffuse supports recordings (in-app or upload: MP3, WAV, M4A), documents (PDF, DOCX, TXT), images (JPG, PNG), web pages, and cover photos. You can combine multiple inputs in a single project so one draft can pull from a meeting, a document, and a web page.',
       },
     },
     {
@@ -32,7 +36,7 @@ export const faqSchema = {
       name: 'How is Diffuse different from using ChatGPT?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse is built for the full workflow: record or upload, transcribe, generate, and publish. It supports multiple input types in one article, team collaboration with roles, and publishing integrations so articles auto-populate your frontend. No copy-paste. One tool instead of juggling ChatGPT and manual steps.',
+        text: 'Diffuse covers the full path from raw material to published piece and keeps a human verification layer. It supports multiple input types in one draft, team collaboration with roles, and publishing integrations so articles auto-populate your frontend. People verify before anything publishes. One tool instead of juggling ChatGPT and manual steps.',
       },
     },
     {
@@ -40,7 +44,7 @@ export const faqSchema = {
       name: 'Who can use Diffuse.AI?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse.AI is for local newsrooms, journalists, freelancers, content teams, municipalities, and anyone who needs to turn meetings, interviews, press conferences, or documents into articles quickly. Individuals and teams can use it; free tier available, with paid plans for more usage and team features.',
+        text: 'Diffuse is for local newsrooms, journalists, freelancers, content teams, municipalities, and anyone who turns meetings, interviews, press conferences, or documents into verified local coverage. Individuals and teams can use it. A free tier is available, with paid plans for more usage and team features.',
       },
     },
     {
@@ -48,15 +52,15 @@ export const faqSchema = {
       name: 'Can I edit the generated articles?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Yes. You can edit transcriptions before generating, and every generated article is fully editable: title, subtitle, excerpt, content, and SEO fields. You can also re-edit and create revisions of outputs.',
+        text: 'Yes. You can edit transcriptions before generating, and every draft is fully editable, including the title, subtitle, excerpt, content, and SEO fields. You can also re-edit and create revisions, and nothing publishes until a person approves it.',
       },
     },
     {
       '@type': 'Question',
-      name: 'How accurate is the AI-generated content?',
+      name: 'Who verifies the AI-generated content?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Diffuse.AI produces publication-ready articles from your sources. We recommend reviewing and editing before publish to add your voice and verify accuracy. Human-in-the-loop is built into the workflow.',
+        text: 'You do. AI does the labor of drafting from your sources, and people review and verify accuracy before publish and add their own voice. Human judgment and verification are built into the workflow, and nothing publishes until a person approves it.',
       },
     },
   ],
@@ -66,7 +70,7 @@ export const productSchema = {
   '@context': 'https://schema.org',
   '@type': 'Product',
   name: 'Diffuse.AI',
-  description: 'Turn meetings, documents, and web pages into publication-ready articles and ads in minutes. AI transcription, multi-input projects (recordings, PDFs, images, web scrape), article and advertisement generation, team collaboration, and publishing integrations. Built for local news, journalists, and content teams.',
+  description: seoDescription,
   brand: {
     '@type': 'Brand',
     name: 'Diffuse.AI',
@@ -94,7 +98,7 @@ export const productSchema = {
 export const serviceSchema = {
   '@context': 'https://schema.org',
   '@type': 'Service',
-  serviceType: 'AI Journalism & Article Automation',
+  serviceType: 'Context-to-Publication System for Local News',
   provider: {
     '@type': 'Organization',
     name: 'Diffuse.AI',
@@ -104,7 +108,7 @@ export const serviceSchema = {
     '@type': 'Country',
     name: 'United States',
   },
-  description: 'Turn meetings, documents, and web pages into publication-ready articles and ads. AI transcription, multi-input article and ad generation, team collaboration, and publishing integrations. For local news, journalists, and content teams.',
+  description: seoDescription,
   offers: {
     '@type': 'Offer',
     availability: 'https://schema.org/InStock',
@@ -118,15 +122,15 @@ export const serviceSchema = {
         itemOffered: {
           '@type': 'Service',
           name: 'Recording & Document Transcription',
-          description: 'AI transcription with speaker identification; extraction from PDF, DOCX, TXT; web scraping for URLs',
+          description: 'AI transcription with speaker identification, extraction from PDF, DOCX, and TXT, and web pages for URLs, with editable transcripts',
         },
       },
       {
         '@type': 'Offer',
         itemOffered: {
           '@type': 'Service',
-          name: 'AI Article & Ad Generation',
-          description: 'Generate publication-ready articles and advertisements from one or many inputs (recordings, documents, images, web scrapes) with headlines and SEO metadata',
+          name: 'AI Drafting With Human Verification',
+          description: 'Draft articles and ads from one or many inputs (recordings, documents, images, web pages) with headlines and SEO metadata, then verify and edit before publish',
         },
       },
       {
@@ -142,7 +146,7 @@ export const serviceSchema = {
         itemOffered: {
           '@type': 'Service',
           name: 'Publishing Integrations',
-          description: 'Connect to publishing frontends to auto-populate articles; edit and re-edit outputs',
+          description: 'Connect to publishing frontends to auto-populate articles, and edit and re-edit outputs',
         },
       },
     ],
@@ -152,37 +156,37 @@ export const serviceSchema = {
 export const howToSchema = {
   '@context': 'https://schema.org',
   '@type': 'HowTo',
-  name: 'How to Turn Meetings and Documents Into Articles and Ads with Diffuse.AI',
-  description: 'Use Diffuse.AI to turn recordings, documents, images, or web pages into publication-ready articles or advertisements in minutes',
+  name: 'How to Turn Meetings and Documents Into Verified Local Coverage with Diffuse.AI',
+  description: 'Use Diffuse to draft articles and ads from recordings, documents, images, or web pages, then verify and publish with editorial judgment kept human',
   image: 'https://www.diffuse.press/socialcover.png',
   totalTime: 'PT15M',
   step: [
     {
       '@type': 'HowToStep',
       position: 1,
-      name: 'Record or add inputs',
-      text: 'Record in the app, upload audio (MP3, WAV, M4A), add documents (PDF, DOCX, TXT), images (JPG, PNG), or scrape a URL. Combine multiple inputs in one project.',
+      name: 'Capture',
+      text: 'Record in the app, upload audio (MP3, WAV, M4A), add documents (PDF, DOCX, TXT), images (JPG, PNG), or a source URL. Combine multiple inputs in one project.',
       url: 'https://www.diffuse.press#how-it-works',
     },
     {
       '@type': 'HowToStep',
       position: 2,
-      name: 'Transcribe',
-      text: 'Diffuse.AI transcribes audio and extracts text from documents. Edit the transcription and title before generating if needed.',
+      name: 'Transcribe and review',
+      text: 'Diffuse transcribes audio and separates speakers. Read and correct the transcript before anything is drafted.',
       url: 'https://www.diffuse.press#how-it-works',
     },
     {
       '@type': 'HowToStep',
       position: 3,
-      name: 'Generate',
-      text: 'Click Generate to create publication-ready articles or advertisements with headline, excerpt, and content. Edit and re-edit outputs as needed.',
+      name: 'Draft with AI',
+      text: 'Generate a draft article or ad with a headline, excerpt, and body. AI does the writing, and you can edit and re-run for a new version.',
       url: 'https://www.diffuse.press#how-it-works',
     },
     {
       '@type': 'HowToStep',
       position: 4,
-      name: 'Publish',
-      text: 'Connect your publishing frontend to auto-populate articles, or copy and paste. You can publish in minutes.',
+      name: 'Verify and publish',
+      text: 'Check the facts and approve. Connect your publishing frontend to auto-fill, or copy and paste. The source material stays attached to the story.',
       url: 'https://www.diffuse.press#how-it-works',
     },
   ],
@@ -192,10 +196,9 @@ export const videoSchema = {
   '@context': 'https://schema.org',
   '@type': 'VideoObject',
   name: 'Diffuse.AI Platform Demo',
-  description: 'See how Diffuse.AI turns recordings, documents, and web pages into publication-ready articles and ads with AI transcription and multi-input generation',
+  description: 'See how Diffuse drafts articles and ads from recordings, documents, and web pages, with AI transcription, multi-input projects, and a human verification step before publish',
   thumbnailUrl: 'https://www.diffuse.press/socialcover.png',
   uploadDate: '2024-11-01',
   contentUrl: 'https://www.diffuse.press#demo',
   embedUrl: 'https://www.diffuse.press#demo',
 }
-

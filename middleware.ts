@@ -22,8 +22,10 @@ export const config = {
     /*
      * Skip all Next internals (including dev HMR / any _next/* path), static assets, favicon.
      * Running Supabase session refresh on _next/* can break dev chunk serving and adds latency.
+     * Also skip the public, unauthenticated agent-readable routes (the MCP transport endpoints
+     * under /api/mcp|sse|message and /llms.txt) so we don't run a Supabase round-trip on them.
      */
-    '/((?!_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/|favicon.ico|llms\\.txt|api/(?:mcp|sse|message)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
 

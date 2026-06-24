@@ -42,7 +42,7 @@ export default function Footer() {
                 diffuse<span className="text-cosmic-orange">.ai</span>
               </h2>
               <p className="text-sm text-medium-gray mb-6">
-                Meeting recordings to published articles. In minutes, not hours.
+                The raw material of local reporting, organized, drafted, and verified by people.
               </p>
               <Link 
                 href="/login" 

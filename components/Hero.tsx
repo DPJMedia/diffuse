@@ -5,27 +5,28 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 
-// Mock article for output phase (same story, publication-ready)
+// Mock article for the output phase: a realistic local story drafted from a meeting,
+// reviewed and bylined by a person. Shows real coverage, not a pitch for Diffuse.
 const mockArticle = {
-  title: "Local Startup Diffuse.AI Revolutionizes How Newsrooms Create Content",
-  subtitle: "AI-powered platform cuts article production time by 80%",
+  title: "Limerick Township Approves 2026 Budget After Public Comment",
+  subtitle: "Supervisors voted 4 to 1, holding the tax rate flat",
   author: "Jane Smith",
-  excerpt: "A Philadelphia-based technology startup is transforming the way local newsrooms operate with an innovative AI platform that converts meeting recordings directly into publication-ready articles.",
-  content: "A Philadelphia-based technology startup is transforming the way local newsrooms operate with an innovative AI platform that converts meeting recordings directly into publication-ready articles.\n\nDiffuse.AI has developed a workflow tool that allows journalists to record public meetings, press conferences, and interviews, then automatically generates structured news articles complete with headlines, quotes, and proper formatting.\n\nThe response has been strong. One reporter said she now covers three times as many meetings. The AI handles transcription and drafting so journalists can focus on reporting and editing."
+  excerpt: "Limerick Township supervisors approved a 2026 budget on Tuesday after an hour of public comment, holding the tax rate flat while shifting funds toward road repairs.",
+  content: "Limerick Township supervisors approved a 2026 budget on Tuesday after an hour of public comment, holding the tax rate flat while shifting funds toward road repairs.\n\nThe board voted 4 to 1, with one supervisor opposed over the pace of the road plan. Residents who spoke were split between faster paving and keeping reserves for the new public works building.\n\nThe approved budget takes effect January 1. A full schedule of road projects is due at the February meeting."
 }
 
 // Short mock for mobile hero: one-line title, one-line subtitle, three-line body
 const mockArticleMobile = {
-  title: "Local startup transforms newsroom workflow",
-  subtitle: "AI platform cuts article production time by 80%",
+  title: "Limerick approves 2026 budget",
+  subtitle: "Supervisors vote 4 to 1, tax rate held flat",
   author: "Jane Smith",
-  content: "A Philadelphia startup is transforming how local newsrooms operate.\nThe AI platform converts meetings and sources into publication-ready articles.\nJournalists can focus on reporting and editing instead of transcription."
+  content: "Limerick Township supervisors approved a 2026 budget on Tuesday.\nThe board voted 4 to 1 after an hour of public comment.\nThe tax rate stays flat, with more money going to road repairs."
 }
 
 // Match real project page: label, color, icon path, title, optional sub (e.g. duration), date
 const INPUT_TYPES = [
   { type: 'recording', label: 'RECORDING', title: 'Board meeting 3.12', sub: '4:32', color: 'text-rose-400', date: 'Mar 10, 2025', path: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z' },
-  { type: 'text', label: 'TEXT', title: 'Press release – Series A', sub: '', color: 'text-indigo-400', date: 'Mar 10, 2025', path: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+  { type: 'text', label: 'TEXT', title: 'Budget memo, FY2026', sub: '', color: 'text-indigo-400', date: 'Mar 10, 2025', path: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
   { type: 'web_scrape', label: 'WEB SCRAPE', title: 'diffuse.ai/blog', sub: '', color: 'text-sky-400', date: 'Mar 11, 2025', path: 'M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9' },
   { type: 'document', label: 'DOCUMENT', title: 'Q1 Report.pdf', sub: '', color: 'text-emerald-400', date: 'Mar 11, 2025', path: 'M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z' },
   { type: 'image', label: 'IMAGE', title: 'Product screenshot', sub: '', color: 'text-yellow-400', date: 'Mar 11, 2025', path: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' },
@@ -492,10 +493,10 @@ export default function Hero() {
           className="text-center mb-8 md:mb-10 px-4"
         >
           <h1 className="text-display-sm font-bold mb-4 leading-tight max-w-4xl mx-auto text-secondary-white">
-            Instant local journalism.
+            More local coverage. Judgment kept human.
           </h1>
-          <p className="text-body-lg text-medium-gray max-w-2xl mx-auto lg:whitespace-nowrap">
-            From source to story in one workflow, meetings, docs, and more, ready to publish.
+          <p className="text-body-lg text-medium-gray max-w-2xl mx-auto">
+            Diffuse pulls the raw material of local reporting into one workspace. AI does the labor of drafting. People decide what is newsworthy and verify what is true.
           </p>
         </motion.div>
 

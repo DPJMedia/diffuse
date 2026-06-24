@@ -1,15 +1,16 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { faqSchema, productSchema, serviceSchema, howToSchema } from './schema'
+import { seoDescription } from '@/lib/content/diffuse'
 
 const siteUrl = 'https://www.diffuse.press'
 const siteName = 'Diffuse.AI'
-const siteDescription = 'Turn meetings, documents, and web pages into publication-ready articles and ads in minutes. AI transcription, multi-input projects (recordings, PDFs, images, web scrape), article and advertisement generation, team collaboration, and publishing integrations. Built for local news, journalists, and content teams.'
+const siteDescription = seoDescription
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'Diffuse.AI - AI Content Generation for News & Journalism',
+    default: 'Diffuse.AI - AI for Local News, Judgment Kept Human',
     template: '%s | Diffuse.AI',
   },
   description: siteDescription,
@@ -69,14 +70,14 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: siteUrl,
     siteName: siteName,
-    title: 'Diffuse.AI - AI Content Generation for News & Journalism',
+    title: 'Diffuse.AI - AI for Local News, Judgment Kept Human',
     description: siteDescription,
     images: [
       {
         url: '/socialcover.png',
         width: 1200,
         height: 630,
-        alt: 'Diffuse.AI - Turn meetings, documents, and web pages into articles and ads with AI',
+        alt: 'Diffuse.AI - context to publication for local news, with a human verification layer',
         type: 'image/png',
       },
     ],
@@ -85,7 +86,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@DiffuseAI',
     creator: '@DiffuseAI',
-    title: 'Diffuse.AI - AI Content Generation for News & Journalism',
+    title: 'Diffuse.AI - AI for Local News, Judgment Kept Human',
     description: siteDescription,
     images: ['/socialcover.png'],
   },
@@ -174,7 +175,7 @@ export default function RootLayout({
               operatingSystem: 'Web',
               description: siteDescription,
               featureList: [
-                'Turn recordings, documents, images, and web pages into publication-ready articles and advertisements',
+                'Draft articles and ads from recordings, documents, images, and web pages, with a person verifying before publish',
                 'AI transcription with speaker identification and editable transcripts',
                 'Multiple input types: recordings, documents (PDF, DOCX, TXT), images, web scrape, cover photos',
                 'Multiple output types: articles and ads; combine multiple sources per project',
