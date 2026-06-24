@@ -474,10 +474,31 @@ export async function POST(request: NextRequest) {
 
     // Recursively find base64 image (workflow can send image bytes so we never need to fetch from Azure)
     const BASE64_PATTERN = /^[A-Za-z0-9+/]+=*$/
+    // A loose base64 match (long alnum string) is NOT enough: payloads carry long IDs, tokens,
+    // and hashes that pass the pattern but decode to garbage. Require the decoded bytes to start
+    // with a real image magic number and be plausibly image-sized, so non-image fields never win
+    // over the reliable generated_image_url download path.
+    const isLikelyImageBase64 = (raw: string): boolean => {
+      const cleaned = raw.replace(/\s/g, '')
+      if (cleaned.length < 100 || !BASE64_PATTERN.test(cleaned)) return false
+      let buf: Buffer
+      try {
+        buf = Buffer.from(cleaned, 'base64')
+      } catch {
+        return false
+      }
+      if (buf.length < 1024) return false // real cover images are KBs+, not a few bytes
+      const isJPEG = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff
+      const isPNG = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
+      const isGIF = buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46
+      const isWEBP =
+        buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP'
+      return isJPEG || isPNG || isGIF || isWEBP
+    }
     function findBase64ImageInPayload(obj: unknown, depth = 0): { data: string; contentType?: string } | undefined {
       if (depth > 20) return undefined
       if (typeof obj === 'string') {
-        if (obj.length > 100 && BASE64_PATTERN.test(obj.replace(/\s/g, ''))) return { data: obj }
+        if (isLikelyImageBase64(obj)) return { data: obj }
         return undefined
       }
       if (Array.isArray(obj)) {
@@ -491,13 +512,13 @@ export async function POST(request: NextRequest) {
         const o = obj as Record<string, unknown>
         for (const key of ['image_base64', 'imageBase64', 'image_base64_data', 'image_data']) {
           const v = o[key]
-          if (typeof v === 'string' && v.length > 100 && BASE64_PATTERN.test(v.replace(/\s/g, ''))) {
+          if (typeof v === 'string' && isLikelyImageBase64(v)) {
             return { data: v, contentType: typeof o.content_type === 'string' ? o.content_type : undefined }
           }
         }
         if (o.image && typeof o.image === 'object' && o.image !== null && typeof (o.image as Record<string, unknown>).data === 'string') {
           const d = (o.image as Record<string, unknown>).data as string
-          if (d.length > 100 && BASE64_PATTERN.test(d.replace(/\s/g, ''))) return { data: d }
+          if (isLikelyImageBase64(d)) return { data: d }
         }
         for (const value of Object.values(o)) {
           const b = findBase64ImageInPayload(value, depth + 1)
