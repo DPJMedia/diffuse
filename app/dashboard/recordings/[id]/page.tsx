@@ -228,6 +228,23 @@ export default function RecordingDetailPage() {
     }
   }, [recordingId, user, fetchRecording])
 
+  // Re-mint a signed URL for the open recording so the player can recover if the current one expires mid-session.
+  const refreshAudioUrl = useCallback(async (): Promise<string | null> => {
+    const filePath = recording?.file_path
+    if (!filePath || filePath.includes('/pending-pull-')) return null
+    try {
+      const res = await fetch('/api/recordings/signed-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath }),
+      })
+      const audioData = (await res.json()) as { signedUrl?: string }
+      return audioData.signedUrl ?? null
+    } catch {
+      return null
+    }
+  }, [recording?.file_path])
+
   // Search transcript functionality
   useEffect(() => {
     if (!transcriptSearchQuery) {
@@ -917,6 +934,13 @@ export default function RecordingDetailPage() {
   }
 
   const displayUtterances = isEditingUtterances && editedUtterances ? editedUtterances : (recording?.utterances || [])
+  // All speaker ids available to reassign a clip to (from diarization + any named speakers).
+  const availableSpeakers = (() => {
+    const set = new Set<string>()
+    for (const u of (recording?.utterances || [])) set.add(u.speaker)
+    for (const k of Object.keys(recording?.speaker_map || {})) set.add(k)
+    return [...set].sort()
+  })()
   const displayTranscription = editedTranscription !== null ? editedTranscription : (recording?.transcription || '')
 
   const handleCopyFullTranscript = async () => {
@@ -1043,6 +1067,7 @@ export default function RecordingDetailPage() {
               <AudioPlayer
                 ref={audioPlayerRef}
                 src={audioUrl}
+                refreshSrc={refreshAudioUrl}
                 onError={() => {
                   setAudioUrl(null)
                   setAudioUnavailableReason('Playback failed — the signed link may have expired. Refresh the page or download again.')
@@ -1338,9 +1363,26 @@ export default function RecordingDetailPage() {
                         >
                           {isEditingUtterances && editedUtterances ? (
                             <>
-                              <p className="text-caption text-cosmic-orange uppercase tracking-wider mb-1 font-semibold">
-                                {speakerLabel}
-                              </p>
+                              <div className="flex items-center gap-2 mb-1" onClick={(e) => e.stopPropagation()}>
+                                <span className="text-caption text-medium-gray uppercase tracking-wider">Speaker</span>
+                                <select
+                                  value={utterance.speaker}
+                                  onChange={(e) => {
+                                    const newUtterances = [...editedUtterances]
+                                    newUtterances[index] = { ...utterance, speaker: e.target.value }
+                                    setEditedUtterances(newUtterances)
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="bg-white/5 border border-white/10 rounded px-2 py-1 text-cosmic-orange text-caption font-semibold uppercase tracking-wider focus:outline-none focus:border-cosmic-orange"
+                                  title="Reassign this clip to a different speaker"
+                                >
+                                  {availableSpeakers.map((sp) => (
+                                    <option key={sp} value={sp} className="bg-dark-gray text-secondary-white normal-case">
+                                      {getSpeakerLabel(sp, recording.speaker_map, recording.detected_speaker_names)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                               <textarea
                                 value={utterance.text}
                                 onChange={(e) => {

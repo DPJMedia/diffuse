@@ -418,12 +418,65 @@ export async function POST(request: NextRequest) {
     const assemblyai = getAssemblyAIClient()
     // Use Universal-2 (free tier standard model) for speaker diarization
     // Universal-3 Pro requires paid plan or special free tier access
-    console.log('Submitting to AssemblyAI with speaker_labels: true...')
-    const transcript = await assemblyai.transcripts.transcribe({
-      audio: audioUrl,
-      speaker_labels: true,
-      entity_detection: true, // Enable entity detection to extract person names
-    })
+
+    // Give up polling cleanly before Vercel kills the function at maxDuration (300s),
+    // leaving headroom for the title generation + DB writes that follow.
+    const POLLING_OPTIONS = { pollingInterval: 3000, pollingTimeout: 240_000 }
+
+    // Resume a prior AssemblyAI job if we already have one for this recording. After a Vercel
+    // timeout the job usually finishes server-side; re-running should reuse that SAME diarization
+    // rather than submitting a fresh transcription (which re-diarizes and can place speakers
+    // differently). transcript_id may not exist yet (migration pending) — any failure here is
+    // treated as "no prior job" so transcription still works.
+    let existingTranscriptId: string | null = null
+    if (recordingId) {
+      try {
+        const { data: rec, error: recErr } = await supabase
+          .from('diffuse_recordings')
+          .select('transcript_id')
+          .eq('id', recordingId)
+          .single()
+        if (!recErr) existingTranscriptId = (rec as { transcript_id?: string | null })?.transcript_id ?? null
+      } catch {
+        existingTranscriptId = null
+      }
+    }
+
+    let transcript: Awaited<ReturnType<typeof assemblyai.transcripts.get>> | undefined
+    if (existingTranscriptId) {
+      try {
+        const existing = await assemblyai.transcripts.get(existingTranscriptId)
+        if (existing.status === 'completed') {
+          console.log('Reusing completed AssemblyAI transcript:', existingTranscriptId)
+          transcript = existing
+        } else if (existing.status === 'queued' || existing.status === 'processing') {
+          console.log('Resuming in-flight AssemblyAI transcript:', existingTranscriptId)
+          transcript = await assemblyai.transcripts.waitUntilReady(existingTranscriptId, POLLING_OPTIONS)
+        }
+      } catch (e) {
+        console.warn('Could not reuse existing transcript; submitting a fresh one.', e)
+      }
+    }
+
+    if (!transcript) {
+      console.log('Submitting to AssemblyAI with speaker_labels: true...')
+      const submitted = await assemblyai.transcripts.submit({
+        audio: audioUrl,
+        speech_model: 'universal', // Use AssemblyAI's flagship model (more accurate than the default 'best')
+        speaker_labels: true,
+        entity_detection: true, // Enable entity detection to extract person names
+      })
+      // Persist the id immediately so a re-run (e.g. after a timeout) can resume this same job.
+      // Best-effort: ignore failures such as the column not being migrated yet.
+      if (recordingId && submitted?.id) {
+        try {
+          await supabase.from('diffuse_recordings').update({ transcript_id: submitted.id }).eq('id', recordingId)
+        } catch (e) {
+          console.warn('Could not persist transcript_id (migration may be pending):', e)
+        }
+      }
+      transcript = await assemblyai.transcripts.waitUntilReady(submitted.id, POLLING_OPTIONS)
+    }
     console.log('AssemblyAI processing complete')
 
     if (transcript.status === 'error') {
@@ -455,49 +508,11 @@ export async function POST(request: NextRequest) {
     console.log('AssemblyAI response - text length:', transcript.text?.length ?? 0)
     console.log('AssemblyAI response - audio_duration:', transcript.audio_duration)
     
-    // Detect failed diarization: single utterance spanning most/all of the file
-    const isSingleGiantUtterance = 
-      transcript.utterances?.length === 1 && 
-      transcript.audio_duration && 
-      transcript.utterances[0].end && 
-      (transcript.utterances[0].end / 1000) > (transcript.audio_duration * 0.95)
-    
-    if (isSingleGiantUtterance) {
-      console.log('⚠️  FAILED DIARIZATION DETECTED: Single utterance spans entire file')
-      console.log('Retrying with speakers_expected hint...')
-      
-      // Retry with speakers_expected to force better diarization
-      const retryTranscript = await assemblyai.transcripts.transcribe({
-        audio: audioUrl,
-        speaker_labels: true,
-        speakers_expected: 4, // Hint: look for at least 4 speakers
-        entity_detection: true, // Enable entity detection to extract person names
-      })
-      
-      console.log('Retry complete - utterances:', retryTranscript.utterances?.length ?? 0)
-      
-      if (retryTranscript.status === 'completed' && retryTranscript.utterances && retryTranscript.utterances.length > 1) {
-        console.log('✅ Retry successful! Using retry result.')
-        // Use retry result
-        const uniqueSpeakers = new Set(retryTranscript.utterances.map(u => u.speaker))
-        console.log('Retry detected speakers:', Array.from(uniqueSpeakers).sort())
-        console.log('Total unique speakers:', uniqueSpeakers.size)
-        
-        // Build transcript with minute markers
-        transcriptionText = buildTranscriptWithMinuteMarkers(retryTranscript.utterances)
-        utterances = retryTranscript.utterances.map((u) => ({
-          speaker: u.speaker,
-          text: u.text,
-          start: u.start ?? 0,
-          end: u.end ?? 0,
-        }))
-        entitiesForNames = retryTranscript.entities as typeof entitiesForNames
-      } else {
-        console.log('❌ Retry also failed - falling back to plain transcript')
-        transcriptionText = transcript.text ?? null
-        utterances = undefined
-      }
-    } else if (transcript.utterances && transcript.utterances.length > 0) {
+    // Store whatever diarization AssemblyAI returned. We intentionally do NOT re-run with a
+    // forced speakers_expected hint: forcing a fixed speaker count over-segments or merges
+    // speakers and corrupts assignments (notably the first segment). Mis-tagged segments are
+    // corrected by the user in the "Identify Speakers" wizard (reassign), not by re-diarizing.
+    if (transcript.utterances && transcript.utterances.length > 0) {
       // Count unique speakers
       const uniqueSpeakers = new Set(transcript.utterances.map(u => u.speaker))
       console.log('AssemblyAI detected speakers:', Array.from(uniqueSpeakers).sort())

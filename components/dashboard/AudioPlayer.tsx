@@ -5,6 +5,8 @@ import { useState, useRef, useEffect, useCallback, forwardRef } from 'react'
 interface AudioPlayerProps {
   src: string
   onError?: () => void
+  /** Re-fetch a fresh playback URL (e.g. a new signed URL) when the current one fails mid-session. */
+  refreshSrc?: () => Promise<string | null>
   initialDuration?: number // Duration in seconds from database
   onTimeUpdate?: (currentTimeSec: number) => void
   compact?: boolean // no border, single line full width (e.g. in recording modal)
@@ -13,7 +15,7 @@ interface AudioPlayerProps {
 }
 
 const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(function AudioPlayer(
-  { src, onError, initialDuration, onTimeUpdate, compact, playbackRate: controlledPlaybackRate, onPlaybackRateChange },
+  { src, onError, refreshSrc, initialDuration, onTimeUpdate, compact, playbackRate: controlledPlaybackRate, onPlaybackRateChange },
   forwardedRef
 ) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -35,6 +37,12 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
   const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1)
   const playbackRate = controlledPlaybackRate ?? localPlaybackRate
   const rafRef = useRef<number | null>(null)
+  // Recovery bookkeeping: refresh the playback URL on error without losing the listener's place.
+  const [currentSrc, setCurrentSrc] = useState(src)
+  const lastTimeRef = useRef(0)
+  const wasPlayingRef = useRef(false)
+  const recoveringRef = useRef(false)
+  const recoverAttemptsRef = useRef(0)
 
   // Update duration if initialDuration prop changes
   useEffect(() => {
@@ -42,6 +50,22 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
       setDuration(initialDuration)
     }
   }, [initialDuration])
+
+  // Follow parent src changes (e.g. a different recording) and reset recovery state.
+  useEffect(() => {
+    setCurrentSrc(src)
+    recoveringRef.current = false
+    recoverAttemptsRef.current = 0
+    setHasError(false)
+  }, [src])
+
+  // When a recovered URL is applied, force the element to load it (then position is restored on metadata).
+  useEffect(() => {
+    const audio = audioRef.current
+    if (audio && recoveringRef.current) {
+      audio.load()
+    }
+  }, [currentSrc])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -54,12 +78,24 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
       if (audio.duration && isFinite(audio.duration) && audio.duration !== Infinity) {
         setDuration(audio.duration)
       }
+      // After a recovery (fresh URL applied), jump back to where playback died and resume.
+      if (recoveringRef.current) {
+        recoveringRef.current = false
+        const t = lastTimeRef.current
+        if (t > 0) {
+          try { audio.currentTime = t } catch {}
+        }
+        if (wasPlayingRef.current) {
+          audio.play().catch(() => {})
+        }
+      }
     }
 
     const handleTimeUpdate = () => {
       if (!isDragging) {
         setCurrentTime(audio.currentTime)
       }
+      if (isFinite(audio.currentTime)) lastTimeRef.current = audio.currentTime
       onTimeUpdate?.(audio.currentTime)
       // Try to get duration if not set yet
       if (duration === 0 && audio.duration && isFinite(audio.duration) && audio.duration !== Infinity) {
@@ -76,6 +112,33 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
     const handlePause = () => setIsPlaying(false)
 
     const handleError = () => {
+      // Before surfacing an error, try to recover seamlessly with a fresh URL — the previous
+      // signed URL may have expired during a long session. Capped to avoid an error loop.
+      if (refreshSrc && recoverAttemptsRef.current < 2) {
+        recoverAttemptsRef.current += 1
+        wasPlayingRef.current = !audio.paused
+        if (isFinite(audio.currentTime) && audio.currentTime > 0) lastTimeRef.current = audio.currentTime
+        recoveringRef.current = true
+        setIsLoading(true)
+        refreshSrc()
+          .then((fresh) => {
+            if (fresh) {
+              setCurrentSrc(fresh)
+            } else {
+              recoveringRef.current = false
+              setHasError(true)
+              setIsLoading(false)
+              onError?.()
+            }
+          })
+          .catch(() => {
+            recoveringRef.current = false
+            setHasError(true)
+            setIsLoading(false)
+            onError?.()
+          })
+        return
+      }
       setHasError(true)
       setIsLoading(false)
       onError?.()
@@ -86,6 +149,8 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
       if (audio.duration && isFinite(audio.duration) && audio.duration !== Infinity) {
         setDuration(audio.duration)
       }
+      // A clean load means the source works again — re-arm recovery for future failures.
+      if (!recoveringRef.current) recoverAttemptsRef.current = 0
     }
 
     const handleDurationChange = () => {
@@ -134,7 +199,7 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
       audio.removeEventListener('durationchange', handleDurationChange)
       audio.removeEventListener('seeked', handleSeeked)
     }
-  }, [onError, isDragging, duration, onTimeUpdate, playbackRate])
+  }, [onError, refreshSrc, isDragging, duration, onTimeUpdate, playbackRate])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -286,7 +351,7 @@ const AudioPlayer = forwardRef<HTMLAudioElement | null, AudioPlayerProps>(functi
 
   return (
     <div className={compact ? 'w-full' : 'bg-white/5 rounded-glass p-4 border border-white/10'}>
-      <audio ref={setRef} src={src} preload="auto" />
+      <audio ref={setRef} src={currentSrc} preload="auto" />
       <div className={`flex items-center w-full ${compact ? 'gap-3' : 'gap-4'}`}>
         {/* Play/Pause Button */}
         <button

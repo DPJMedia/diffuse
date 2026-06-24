@@ -18,7 +18,11 @@ export async function saveRecordingToStorageAndDb(options: {
   const { supabase, userId, blob, duration, title } = options
 
   const fileName = `${userId}/${Date.now()}.webm`
-  const { error: uploadError } = await supabase.storage.from('recordings').upload(fileName, blob)
+  // Set an explicit content-type so the stored object serves as audio (not octet-stream),
+  // which lets the browser seek/scrub recorded .webm reliably.
+  const { error: uploadError } = await supabase.storage
+    .from('recordings')
+    .upload(fileName, blob, { contentType: blob.type || 'audio/webm' })
 
   if (uploadError) throw uploadError
 

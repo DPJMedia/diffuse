@@ -63,10 +63,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get a signed URL for the audio file (valid for 1 hour)
+    // Get a signed URL for the audio file (valid for 6 hours).
+    // Long recordings can be listened to across an extended session; a 1-hour TTL
+    // expired mid-playback and broke the player. AudioPlayer also re-fetches on error.
     const { data, error } = await supabase.storage
       .from('recordings')
-      .createSignedUrl(filePath, 3600)
+      .createSignedUrl(filePath, 21600)
 
     if (error || !data?.signedUrl) {
       console.error('Error getting signed URL:', error)

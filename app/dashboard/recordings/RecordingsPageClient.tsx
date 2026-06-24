@@ -539,9 +539,10 @@ export default function RecordingsPageClient() {
     if (!user) throw new Error('Not authenticated')
 
     const fileName = `${user.id}/${Date.now()}.webm`
+    // Explicit content-type so the recorded .webm serves as audio and stays seekable.
     const { error: uploadError } = await supabase.storage
       .from('recordings')
-      .upload(fileName, blob)
+      .upload(fileName, blob, { contentType: blob.type || 'audio/webm' })
 
     if (uploadError) throw uploadError
 
@@ -1421,7 +1422,7 @@ export default function RecordingsPageClient() {
     try {
       const { data, error } = await supabase.storage
         .from('recordings')
-        .createSignedUrl(filePath, 3600)
+        .createSignedUrl(filePath, 21600) // 6h: survive long listening sessions; player re-fetches on error
 
       if (error) throw error
 
@@ -1437,6 +1438,21 @@ export default function RecordingsPageClient() {
       setLoadingAudio(false)
     }
   }, [supabase])
+
+  // Re-mint a signed URL for the open recording so the player can recover if the current one expires mid-session.
+  const refreshAudioUrl = useCallback(async (): Promise<string | null> => {
+    const filePath = selectedRecording?.file_path
+    if (!filePath) return null
+    try {
+      const { data, error } = await supabase.storage
+        .from('recordings')
+        .createSignedUrl(filePath, 21600)
+      if (error || !data?.signedUrl) return null
+      return data.signedUrl
+    } catch {
+      return null
+    }
+  }, [supabase, selectedRecording?.file_path])
 
   // Auto-load audio whenever a recording is selected (works for any status: recorded, generating, transcribed)
   useEffect(() => {
@@ -2431,6 +2447,7 @@ export default function RecordingsPageClient() {
                 <AudioPlayer
                   ref={audioPlayerRef}
                   src={audioUrl}
+                  refreshSrc={refreshAudioUrl}
                   onError={() => setAudioUrl(null)}
                   initialDuration={
                     selectedRecording ? effectiveRecordingDurationSeconds(selectedRecording) : 0
@@ -2706,6 +2723,14 @@ placeholder="First Last"
                       <div className="space-y-2">
                         {(() => {
                           const utterancesToShow = isEditingUtterances && editedUtterances ? editedUtterances : displayUtterances
+                          // Speaker ids available to reassign a clip to (diarization + any named speakers).
+                          const availableSpeakers = (() => {
+                            const set = new Set<string>()
+                            for (const u of displayUtterances) set.add(u.speaker)
+                            for (const k of Object.keys(speakerMap || {})) set.add(k)
+                            for (const k of Object.keys(selectedRecording?.speaker_map || {})) set.add(k)
+                            return [...set].sort()
+                          })()
                           return utterancesToShow.map((u, i) => {
                             const displayName = speakerMap[u.speaker]
                               ? (speakerMap[u.speaker].position
@@ -2744,7 +2769,28 @@ placeholder="First Last"
                                 }`}
                               >
                                 <span className="text-medium-gray text-body-md mr-2">[{formatTimestampFromMs(u.start)}]</span>
-                                <span className={`font-medium ${isHighlight ? 'text-cosmic-orange/90' : 'text-medium-gray'}`}>{displayName}: </span>
+                                {isEditingUtterances && editedUtterances ? (
+                                  <select
+                                    value={u.speaker}
+                                    onChange={(e) => {
+                                      const next = [...editedUtterances]
+                                      next[i] = { ...u, speaker: e.target.value }
+                                      setEditedUtterances(next)
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="font-medium text-cosmic-orange bg-white/5 border border-white/10 rounded px-1 py-0.5 mr-1 focus:outline-none focus:border-cosmic-orange"
+                                    title="Reassign this clip to a different speaker"
+                                  >
+                                    {availableSpeakers.map((sp) => {
+                                      const nm = speakerMap[sp]
+                                        ? (speakerMap[sp].position ? `${speakerMap[sp].name} (${speakerMap[sp].position})` : speakerMap[sp].name)
+                                        : sp
+                                      return <option key={sp} value={sp} className="bg-dark-gray text-secondary-white">{nm}</option>
+                                    })}
+                                  </select>
+                                ) : (
+                                  <span className={`font-medium ${isHighlight ? 'text-cosmic-orange/90' : 'text-medium-gray'}`}>{displayName}: </span>
+                                )}
                                 {isEditingUtterances && editedUtterances ? (
                                   <textarea
                                     value={currentText}
