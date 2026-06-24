@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import https from 'https'
+import { isLikelyImageBase64, isValidImageBytes, imageExtFromBuffer } from '@/lib/workflowImage'
 
 // Callback route receives the completed workflow result from n8n when running in async mode.
 // n8n should POST here with the same payload it would normally return synchronously, plus output_id.
@@ -83,7 +84,6 @@ function extractArticleContent(n8nResult: any): string {
 const IMAGE_URL_PATTERN = /^https?:\/\/|^\/\/|\.blob\.|\.amazonaws\.|\.(png|jpg|jpeg|webp|gif)(\?|$)/i
 const UUID_PATH =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/.+$/i
-const BASE64_PATTERN = /^[A-Za-z0-9+/]+=*$/
 
 function normalizeImageUrl(u: string | undefined): string | undefined {
   if (!u || typeof u !== 'string') return undefined
@@ -129,7 +129,7 @@ function findImageUrlInPayload(obj: unknown, depth = 0): string | undefined {
 function findBase64ImageInPayload(obj: unknown, depth = 0): { data: string; contentType?: string } | undefined {
   if (depth > 20) return undefined
   if (typeof obj === 'string') {
-    if (obj.length > 100 && BASE64_PATTERN.test(obj.replace(/\s/g, ''))) return { data: obj }
+    if (isLikelyImageBase64(obj)) return { data: obj }
     return undefined
   }
   if (Array.isArray(obj)) {
@@ -143,7 +143,7 @@ function findBase64ImageInPayload(obj: unknown, depth = 0): { data: string; cont
     const o = obj as Record<string, unknown>
     for (const key of ['image_base64', 'imageBase64', 'image_base64_data', 'image_data']) {
       const v = o[key]
-      if (typeof v === 'string' && v.length > 100 && BASE64_PATTERN.test(v.replace(/\s/g, ''))) {
+      if (typeof v === 'string' && isLikelyImageBase64(v)) {
         return { data: v, contentType: typeof o.content_type === 'string' ? o.content_type : undefined }
       }
     }
@@ -154,7 +154,7 @@ function findBase64ImageInPayload(obj: unknown, depth = 0): { data: string; cont
       typeof (o.image as Record<string, unknown>).data === 'string'
     ) {
       const d = (o.image as Record<string, unknown>).data as string
-      if (d.length > 100 && BASE64_PATTERN.test(d.replace(/\s/g, ''))) return { data: d }
+      if (isLikelyImageBase64(d)) return { data: d }
     }
     for (const value of Object.values(o)) {
       const b = findBase64ImageInPayload(value, depth + 1)
@@ -366,22 +366,29 @@ export async function POST(request: NextRequest) {
     if (imageBase64) {
       try {
         const buf = Buffer.from(imageBase64.data.replace(/\s/g, ''), 'base64')
-        const contentType = imageBase64.contentType || 'image/png'
-        const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
-        const storagePath = `${createdBy}/${existingOutput.project_id}/cover-${output_id}-generated.${ext}`
-        const { error: uploadError } = await supabase.storage
-          .from('project-files')
-          .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
-        if (!uploadError) {
-          savedImagePath = storagePath
-          console.log('[workflow/callback] Base64 image uploaded:', storagePath)
+        const decodedLen = buf.length
+        if (!isValidImageBytes(buf)) {
+          // Should not happen (detection already validates), but never persist non-image bytes.
+          console.error('[workflow/callback] Decoded base64 is not a valid image; skipping. bytes:', decodedLen)
         } else {
-          console.error('[workflow/callback] Base64 upload failed:', uploadError.message)
+          const ext = imageExtFromBuffer(buf)
+          const contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`
+          const storagePath = `${createdBy}/${existingOutput.project_id}/cover-${output_id}-generated.${ext}`
+          const { error: uploadError } = await supabase.storage
+            .from('project-files')
+            .upload(storagePath, buf, { contentType, upsert: true })
+          if (!uploadError) {
+            savedImagePath = storagePath
+            console.log('[workflow/callback] Base64 image uploaded:', storagePath)
+          } else {
+            console.error('[workflow/callback] Base64 upload failed:', uploadError.message)
+          }
         }
       } catch (e) {
         console.error('[workflow/callback] Base64 decode/upload error:', e instanceof Error ? e.message : e)
       }
-    } else if (generatedImageUrl) {
+    }
+    if (!savedImagePath && generatedImageUrl) {
       const TIMEOUT_MS = 25000
       let lastError: Error | null = null
       for (let attempt = 1; attempt <= 2; attempt++) {
@@ -419,16 +426,19 @@ export async function POST(request: NextRequest) {
               throw fetchErr
             }
           }
-          if (!buf || buf.length === 0) {
-            lastError = new Error('Empty image body')
+          const dlLen = buf?.length ?? 0
+          if (!isValidImageBytes(buf)) {
+            // A 200 response can still be an HTML error page or a truncated body — never persist it.
+            lastError = new Error(`Downloaded body is not a valid image (bytes: ${dlLen}, ct: ${contentType})`)
             if (attempt === 2) break
             continue
           }
-          const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+          const ext = imageExtFromBuffer(buf)
+          const uploadContentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`
           const storagePath = `${createdBy}/${existingOutput.project_id}/cover-${output_id}-generated.${ext}`
           const { error: uploadError } = await supabase.storage
             .from('project-files')
-            .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
+            .upload(storagePath, buf, { contentType: uploadContentType, upsert: true })
           if (!uploadError) {
             savedImagePath = storagePath
             console.log('[workflow/callback] URL image uploaded:', storagePath)

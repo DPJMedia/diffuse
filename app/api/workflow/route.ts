@@ -6,6 +6,7 @@ import { requireAuth, requireProjectOwnership, unauthorizedResponse, forbiddenRe
 import { validateSchema, validateProjectId, validateOutputType, sanitizeString } from '@/lib/security/validation'
 import { getN8nWebhookUrl } from '@/lib/n8n'
 import { parseOutputContentToStructuredArticle } from '@/lib/output-content'
+import { isLikelyImageBase64, isValidImageBytes, imageExtFromBuffer } from '@/lib/workflowImage'
 
 // Workflow timeout: 5 minutes. Same limit locally and when deployed.
 // When deployed: Vercel Pro allows up to 300s; Hobby is 10s. Other hosts may differ.
@@ -473,28 +474,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Recursively find base64 image (workflow can send image bytes so we never need to fetch from Azure)
-    const BASE64_PATTERN = /^[A-Za-z0-9+/]+=*$/
-    // A loose base64 match (long alnum string) is NOT enough: payloads carry long IDs, tokens,
-    // and hashes that pass the pattern but decode to garbage. Require the decoded bytes to start
-    // with a real image magic number and be plausibly image-sized, so non-image fields never win
-    // over the reliable generated_image_url download path.
-    const isLikelyImageBase64 = (raw: string): boolean => {
-      const cleaned = raw.replace(/\s/g, '')
-      if (cleaned.length < 100 || !BASE64_PATTERN.test(cleaned)) return false
-      let buf: Buffer
-      try {
-        buf = Buffer.from(cleaned, 'base64')
-      } catch {
-        return false
-      }
-      if (buf.length < 1024) return false // real cover images are KBs+, not a few bytes
-      const isJPEG = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff
-      const isPNG = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
-      const isGIF = buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46
-      const isWEBP =
-        buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP'
-      return isJPEG || isPNG || isGIF || isWEBP
-    }
+    // Image-bytes validation (base64 + magic-number checks) is shared with the async callback
+    // route via @/lib/workflowImage so the two paths cannot drift apart again.
     function findBase64ImageInPayload(obj: unknown, depth = 0): { data: string; contentType?: string } | undefined {
       if (depth > 20) return undefined
       if (typeof obj === 'string') {
@@ -700,17 +681,22 @@ export async function POST(request: NextRequest) {
       let savedPath: string | null = null
       if (imageBinaryFromMultipart) {
         try {
-          const { buffer: buf, contentType } = imageBinaryFromMultipart
-          const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
-          const storagePath = `${user.id}/${project_id}/cover-${output.id}-generated.${ext}`
-          const { error: uploadError } = await storageClient.storage
-            .from('project-files')
-            .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
-          if (!uploadError) {
-            savedPath = storagePath
-            console.log('[workflow] Multipart image uploaded to project-files at', storagePath)
+          const { buffer: buf } = imageBinaryFromMultipart
+          const mpLen = buf.length
+          if (!isValidImageBytes(buf)) {
+            console.error('[workflow] Multipart binary is not a valid image; skipping. bytes:', mpLen)
           } else {
-            console.error('[workflow] Multipart binary image upload failed:', uploadError.message)
+            const ext = imageExtFromBuffer(buf)
+            const storagePath = `${user.id}/${project_id}/cover-${output.id}-generated.${ext}`
+            const { error: uploadError } = await storageClient.storage
+              .from('project-files')
+              .upload(storagePath, buf, { contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`, upsert: true })
+            if (!uploadError) {
+              savedPath = storagePath
+              console.log('[workflow] Multipart image uploaded to project-files at', storagePath)
+            } else {
+              console.error('[workflow] Multipart binary image upload failed:', uploadError.message)
+            }
           }
         } catch (e) {
           console.error('[workflow] Multipart binary image upload failed:', e instanceof Error ? e.message : e)
@@ -719,14 +705,18 @@ export async function POST(request: NextRequest) {
       if (!savedPath && imageBase64) {
         try {
           const buf = Buffer.from(imageBase64.data.replace(/\s/g, ''), 'base64')
-          const contentType = imageBase64.contentType || 'image/png'
-          const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
-          const storagePath = `${user.id}/${project_id}/cover-${output.id}-generated.${ext}`
-          const { error: uploadError } = await storageClient.storage
-            .from('project-files')
-            .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
-          if (!uploadError) savedPath = storagePath
-          else console.error('[workflow] Base64 image upload failed:', uploadError.message, 'code:', uploadError.name, uploadError)
+          const decodedLen = buf.length
+          if (!isValidImageBytes(buf)) {
+            console.error('[workflow] Decoded base64 is not a valid image; skipping. bytes:', decodedLen)
+          } else {
+            const ext = imageExtFromBuffer(buf)
+            const storagePath = `${user.id}/${project_id}/cover-${output.id}-generated.${ext}`
+            const { error: uploadError } = await storageClient.storage
+              .from('project-files')
+              .upload(storagePath, buf, { contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`, upsert: true })
+            if (!uploadError) savedPath = storagePath
+            else console.error('[workflow] Base64 image upload failed:', uploadError.message, 'code:', uploadError.name, uploadError)
+          }
         } catch (e) {
           console.error('[workflow] Base64 image decode/upload failed:', e instanceof Error ? e.message : e)
         }
@@ -772,16 +762,18 @@ export async function POST(request: NextRequest) {
                 throw fetchErr
               }
             }
-            if (!buf || buf.length === 0) {
-              lastError = new Error('Empty image body')
+            const dlLen = buf?.length ?? 0
+            if (!isValidImageBytes(buf)) {
+              // A 200 response can still be an HTML error page or a truncated body — never persist it.
+              lastError = new Error(`Downloaded body is not a valid image (bytes: ${dlLen}, ct: ${contentType})`)
               if (attempt === 2) break
               continue
             }
-            const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+            const ext = imageExtFromBuffer(buf)
             const storagePath = `${user.id}/${project_id}/cover-${output.id}-generated.${ext}`
             const { error: uploadError } = await storageClient.storage
               .from('project-files')
-              .upload(storagePath, buf, { contentType: contentType.split(';')[0].trim(), upsert: true })
+              .upload(storagePath, buf, { contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`, upsert: true })
             if (!uploadError) {
               savedPath = storagePath
               console.log('[workflow] Image uploaded to storage at', storagePath, '; updating output row')
