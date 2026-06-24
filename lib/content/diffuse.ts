@@ -144,8 +144,9 @@ export const useCases: UseCase[] = [
   {
     name: 'Spring-Ford Press',
     summary:
-      'Spring-Ford Press is a local news site covering the Spring-Ford community in ' +
-      'Pennsylvania, and the first live newsroom built on Diffuse. Diffuse captures ' +
+      'Spring-Ford Press is a local news site covering Royersford, Spring City, Limerick, ' +
+      'and Upper Providence in the Spring-Ford area of Pennsylvania, and the first live ' +
+      'newsroom built on Diffuse. Diffuse captures ' +
       'municipal meetings and turns the audio and documents into structured drafts with ' +
       'headlines, bylines, and body text. An editor reviews, verifies, and publishes. The ' +
       'recordings and source documents stay attached to each story. It is not a demo. It is ' +
