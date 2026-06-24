@@ -461,18 +461,14 @@ export async function POST(request: NextRequest) {
 
     if (!transcript) {
       console.log('Submitting to AssemblyAI (Universal-3 Pro) with speaker_labels: true...')
-      // The singular `speech_model` parameter is deprecated and REJECTED by the API; the
-      // `speech_models` array is required. Cast because the installed SDK's types predate it —
-      // the SDK forwards the field to the request body unchanged (verified).
-      const submitParams = {
+      // `speech_models` (array) replaces the deprecated singular `speech_model`. Universal-3 Pro
+      // is the newest/most accurate model; Universal-2 is the fallback for unsupported languages.
+      const submitted = await assemblyai.transcripts.submit({
         audio: audioUrl,
         speech_models: ['universal-3-pro', 'universal-2'],
         speaker_labels: true,
         entity_detection: true, // extract person names
-      }
-      const submitted = await assemblyai.transcripts.submit(
-        submitParams as Parameters<typeof assemblyai.transcripts.submit>[0]
-      )
+      })
       // Persist the id immediately so a re-run (e.g. after a timeout) can resume this same job.
       // Best-effort: ignore failures such as the column not being migrated yet.
       if (recordingId && submitted?.id) {
