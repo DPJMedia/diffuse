@@ -21,6 +21,19 @@ import { getRoleLevel } from '@/lib/projects/projectRoles'
 import { parseOutputContentToStructuredArticle } from '@/lib/output-content'
 // tus-js-client will be dynamically imported when needed
 
+// An output stuck on pending/processing past this long is treated as failed in the UI,
+// even if the DB row never updated (e.g. n8n's async callback never arrived). Display-only:
+// if a late callback does land, realtime still refreshes the card to the real content.
+const OUTPUT_STALE_MS = 10 * 60 * 1000 // 10 minutes
+
+const isOutputStale = (o: DiffuseProjectOutput) => {
+  if (o.workflow_status !== 'pending' && o.workflow_status !== 'processing') return false
+  const created = new Date(o.created_at).getTime()
+  return !Number.isNaN(created) && Date.now() - created > OUTPUT_STALE_MS
+}
+
+const isOutputFailed = (o: DiffuseProjectOutput) => o.workflow_status === 'failed' || isOutputStale(o)
+
 export default function ProjectDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -90,7 +103,8 @@ export default function ProjectDetailPage() {
 
   const primaryOutputAwaitingWorkflow =
     outputs[0] &&
-    (outputs[0].workflow_status === 'pending' || outputs[0].workflow_status === 'processing')
+    (outputs[0].workflow_status === 'pending' || outputs[0].workflow_status === 'processing') &&
+    !isOutputStale(outputs[0])
 
   // Animate loading dots (generate in flight, or newest output still running async workflow)
   useEffect(() => {
@@ -1049,7 +1063,7 @@ export default function ProjectDetailPage() {
   }
 
   const isOutputWorkflowRunning = (o: DiffuseProjectOutput) =>
-    o.workflow_status === 'pending' || o.workflow_status === 'processing'
+    (o.workflow_status === 'pending' || o.workflow_status === 'processing') && !isOutputStale(o)
 
   const generatingIsAd = project?.project_type === 'advertisement'
   const generatingOutputColor = generatingIsAd ? 'text-amber-400' : 'text-teal-400'
@@ -1129,9 +1143,19 @@ export default function ProjectDetailPage() {
                 {outputs.length > 0 && (() => {
                   const output = outputs[0]
                   const workflowRunning = isOutputWorkflowRunning(output)
+                  const failed = isOutputFailed(output)
                   const info = workflowRunning
                     ? {
                         title: `Generating output${loadingDots}`,
+                        subtitle: null as string | null,
+                        excerpt: null as string | null,
+                        author: 'Diffuse.AI',
+                        photo_caption: null as string | null,
+                        photo_credit: null as string | null,
+                      }
+                    : failed
+                    ? {
+                        title: 'Output failed',
                         subtitle: null as string | null,
                         excerpt: null as string | null,
                         author: 'Diffuse.AI',
@@ -1173,11 +1197,14 @@ export default function ProjectDetailPage() {
                         <span>{outputLabel}</span>
                         {output.workflow_status &&
                           output.workflow_status !== 'completed' &&
-                          !workflowRunning && (
-                          <span className={`ml-auto px-2 py-0.5 rounded text-caption border ${workflowStatusColors[output.workflow_status as keyof typeof workflowStatusColors] || ''}`}>
-                            {output.workflow_status.toUpperCase()}
-                          </span>
-                        )}
+                          !workflowRunning && (() => {
+                            const badgeStatus = failed ? 'failed' : output.workflow_status
+                            return (
+                              <span className={`ml-auto px-2 py-0.5 rounded text-caption border ${workflowStatusColors[badgeStatus as keyof typeof workflowStatusColors] || ''}`}>
+                                {badgeStatus.toUpperCase()}
+                              </span>
+                            )
+                          })()}
                       </div>
                       <h3 className="text-body-md text-secondary-white font-semibold mb-1 line-clamp-2">{info.title}</h3>
                       {!workflowRunning && info.subtitle && (
@@ -1207,6 +1234,8 @@ export default function ProjectDetailPage() {
                       const pastWorkflowRunning = isOutputWorkflowRunning(output)
                       const listTitle = pastWorkflowRunning
                         ? `Generating output${loadingDots}`
+                        : isOutputFailed(output)
+                        ? 'Output failed'
                         : getOutputInfo(output).title
                       const isAd = output.output_type === 'ad'
                       const outputColor = isAd ? 'text-amber-400' : 'text-teal-400'
