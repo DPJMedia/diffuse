@@ -1,0 +1,12 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "press.diffuse/diffuse",
+  "description": "Read-only MCP server exposing structured facts about Diffuse, a context-to-publication system for local news with a human verification layer. Tools: get_overview, how_it_works, get_feature, search_faq, get_use_cases.",
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://www.diffuse.press/api/mcp"
+    }
+  ]
+}
