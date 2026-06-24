@@ -416,8 +416,9 @@ export async function POST(request: NextRequest) {
     console.log('Full audio URL for debugging:', audioUrl)
 
     const assemblyai = getAssemblyAIClient()
-    // Use Universal-2 (free tier standard model) for speaker diarization
-    // Universal-3 Pro requires paid plan or special free tier access
+    // Transcribe with Universal-3 Pro (newest, most accurate), falling back to Universal-2 for
+    // languages U3 Pro doesn't cover. Verified available on the current plan (uses the $50 free
+    // credit at ~$0.21/hr + $0.02/hr diarization, then pay-as-you-go).
 
     // Give up polling cleanly before Vercel kills the function at maxDuration (300s),
     // leaving headroom for the title generation + DB writes that follow.
@@ -459,13 +460,19 @@ export async function POST(request: NextRequest) {
     }
 
     if (!transcript) {
-      console.log('Submitting to AssemblyAI with speaker_labels: true...')
-      const submitted = await assemblyai.transcripts.submit({
+      console.log('Submitting to AssemblyAI (Universal-3 Pro) with speaker_labels: true...')
+      // The singular `speech_model` parameter is deprecated and REJECTED by the API; the
+      // `speech_models` array is required. Cast because the installed SDK's types predate it —
+      // the SDK forwards the field to the request body unchanged (verified).
+      const submitParams = {
         audio: audioUrl,
-        speech_model: 'universal', // Use AssemblyAI's flagship model (more accurate than the default 'best')
+        speech_models: ['universal-3-pro', 'universal-2'],
         speaker_labels: true,
-        entity_detection: true, // Enable entity detection to extract person names
-      })
+        entity_detection: true, // extract person names
+      }
+      const submitted = await assemblyai.transcripts.submit(
+        submitParams as Parameters<typeof assemblyai.transcripts.submit>[0]
+      )
       // Persist the id immediately so a re-run (e.g. after a timeout) can resume this same job.
       // Best-effort: ignore failures such as the column not being migrated yet.
       if (recordingId && submitted?.id) {
