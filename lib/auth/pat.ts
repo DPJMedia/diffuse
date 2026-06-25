@@ -49,8 +49,20 @@ export interface AgentTokenRow {
  * to an AuthInfo carrying the owning user id. Fails CLOSED: any miss, error, or
  * expiry returns undefined (→ 401), never a partially-trusted result.
  */
-export async function verifyPat(_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
-  const token = bearerToken?.trim()
+export async function verifyPat(req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
+  // Claude.ai's connector UI can't send custom headers, so also accept ?token= in the URL.
+  // The token is still hashed at rest and revocable; the tradeoff is it appears in server logs.
+  let raw = bearerToken?.trim()
+  if (!raw) {
+    try {
+      const url = new URL(req.url)
+      const q = url.searchParams.get('token')
+      if (q) raw = q.trim()
+    } catch {
+      // unparseable URL — fall through to undefined
+    }
+  }
+  const token = raw
   if (!token || !token.startsWith(PAT_PREFIX) || token.length < PAT_PREFIX.length + 16) {
     return undefined
   }
