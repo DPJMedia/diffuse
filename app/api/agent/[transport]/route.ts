@@ -283,4 +283,23 @@ const authHandler = withMcpAuth(handler, verifyPat, {
   resourceMetadataPath: '/.well-known/oauth-protected-resource/api/agent',
 })
 
-export { authHandler as GET, authHandler as POST }
+// Claude.ai's connector UI cannot send custom headers — it only supports OAuth fields.
+// If a ?token= query param is present and no Authorization header is set, lift it into
+// the header so withMcpAuth sees a proper Bearer token and never returns a 401 that
+// triggers Claude.ai's OAuth discovery flow.
+async function routeHandler(req: Request, ctx: unknown) {
+  try {
+    const url = new URL(req.url)
+    const queryToken = url.searchParams.get('token')
+    if (queryToken && !req.headers.get('authorization')) {
+      const patched = new Headers(req.headers)
+      patched.set('authorization', `Bearer ${queryToken}`)
+      return authHandler(new Request(req, { headers: patched }), ctx)
+    }
+  } catch {
+    // unparseable URL — fall through to normal handler
+  }
+  return authHandler(req, ctx)
+}
+
+export { routeHandler as GET, routeHandler as POST }
