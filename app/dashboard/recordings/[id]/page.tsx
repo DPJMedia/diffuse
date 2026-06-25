@@ -134,7 +134,9 @@ export default function RecordingDetailPage() {
   const [clipPlaying, setClipPlaying] = useState(false)
   const [clipError, setClipError] = useState(false)
   const [currentClipSegment, setCurrentClipSegment] = useState(0)
-  const clipStopHandlerRef = useRef<((this: HTMLAudioElement, ev: Event) => any) | null>(null)
+  // Tears down the "Play Sample" bound (clip-end stop + transport-takeover listeners) so a
+  // sample only ever stops itself, never the main play button.
+  const clipTeardownRef = useRef<(() => void) | null>(null)
 
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null)
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null)
@@ -223,10 +225,13 @@ export default function RecordingDetailPage() {
   }, [recordingId, router, supabase])
 
   useEffect(() => {
-    if (recordingId && user) {
+    if (recordingId && user?.id) {
       fetchRecording()
     }
-  }, [recordingId, user, fetchRecording])
+    // Depend on user?.id, not the user object: Supabase hands out a new user object on every
+    // token refresh / tab-focus event, and depending on the object would refetch the recording
+    // and reload the audio mid-playback.
+  }, [recordingId, user?.id, fetchRecording])
 
   // Re-mint a signed URL for the open recording so the player can recover if the current one expires mid-session.
   const refreshAudioUrl = useCallback(async (): Promise<string | null> => {
@@ -738,30 +743,44 @@ export default function RecordingDetailPage() {
     
     try {
       const audio = audioPlayerRef.current
-      // Remove any previous clip stop handler
-      if (clipStopHandlerRef.current) {
-        audio.removeEventListener('timeupdate', clipStopHandlerRef.current)
-        clipStopHandlerRef.current = null
-      }
+      // Drop any previous sample bound before starting a new one.
+      clipTeardownRef.current?.()
+      clipTeardownRef.current = null
       audio.currentTime = startTimeSec
       setClipPlaying(true)
       setClipError(false)
-      
+
+      const endTimeSec = startTimeSec + clipDuration
       const playPromise = audio.play()
-      
+
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            const stopClip = () => {
-              if (audio.currentTime >= startTimeSec + clipDuration) {
+            // A sample is only bounded while it plays uninterrupted. If the user takes over
+            // the transport — hits the main play/pause button (fires 'pause') or scrubs the
+            // progress bar (fires 'seeking') — release the bound so the main play button
+            // plays the whole recording from wherever it is instead of stopping at the clip.
+            const teardown = () => {
+              audio.removeEventListener('timeupdate', stopAtClipEnd)
+              audio.removeEventListener('pause', releaseBound)
+              audio.removeEventListener('seeking', releaseBound)
+              if (clipTeardownRef.current === teardown) clipTeardownRef.current = null
+            }
+            const stopAtClipEnd = () => {
+              if (audio.currentTime >= endTimeSec) {
                 audio.pause()
                 setClipPlaying(false)
-                audio.removeEventListener('timeupdate', stopClip)
-                if (clipStopHandlerRef.current === stopClip) clipStopHandlerRef.current = null
+                teardown()
               }
             }
-            clipStopHandlerRef.current = stopClip
-            audio.addEventListener('timeupdate', stopClip)
+            const releaseBound = () => {
+              setClipPlaying(false)
+              teardown()
+            }
+            clipTeardownRef.current = teardown
+            audio.addEventListener('timeupdate', stopAtClipEnd)
+            audio.addEventListener('pause', releaseBound)
+            audio.addEventListener('seeking', releaseBound)
           })
           .catch((error) => {
             console.warn('Autoplay failed:', error)
@@ -770,10 +789,8 @@ export default function RecordingDetailPage() {
             if (error.name !== 'NotAllowedError') {
               setClipError(true)
             }
-            if (clipStopHandlerRef.current) {
-              audio.removeEventListener('timeupdate', clipStopHandlerRef.current)
-              clipStopHandlerRef.current = null
-            }
+            clipTeardownRef.current?.()
+            clipTeardownRef.current = null
           })
       }
     } catch (error) {
@@ -785,10 +802,8 @@ export default function RecordingDetailPage() {
 
   const pauseCurrentSpeakerClip = () => {
     if (audioPlayerRef.current) {
-      if (clipStopHandlerRef.current) {
-        audioPlayerRef.current.removeEventListener('timeupdate', clipStopHandlerRef.current)
-        clipStopHandlerRef.current = null
-      }
+      clipTeardownRef.current?.()
+      clipTeardownRef.current = null
       audioPlayerRef.current.pause()
       setClipPlaying(false)
     }

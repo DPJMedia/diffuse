@@ -92,7 +92,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null)
+      // Keep the same `user` object reference across token refreshes and tab-focus events.
+      // Supabase re-emits auth events (TOKEN_REFRESHED, and again on visibility change), and
+      // handing out a fresh user object each time re-runs every effect that depends on `user`
+      // (e.g. the recording page refetches and reloads the audio, which stops playback).
+      setUser((prev) => {
+        const next = session?.user ?? null
+        if (prev && next && prev.id === next.id && event !== 'USER_UPDATED') {
+          return prev
+        }
+        return next
+      })
       if (session?.user) {
         // Only refetch on initial sign in, not on token refresh
         if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
