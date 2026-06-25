@@ -2,6 +2,8 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import https from 'https'
 import { isLikelyImageBase64, isValidImageBytes, imageExtFromBuffer } from '@/lib/workflowImage'
+import { safeEqual } from '@/lib/auth/pat'
+import { assertSafePublicUrl, safeFetch } from '@/lib/security/ssrf'
 
 // Callback route receives the completed workflow result from n8n when running in async mode.
 // n8n should POST here with the same payload it would normally return synchronously, plus output_id.
@@ -199,12 +201,18 @@ function findStoragePathInPayload(obj: unknown, depth = 0): string | undefined {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  // Verify shared secret when configured. Set WORKFLOW_CALLBACK_SECRET in env and send
-  // "Authorization: Bearer <secret>" from the n8n HTTP Request node.
+  // Verify shared secret. MANDATORY in production (fail closed if unset). Set
+  // WORKFLOW_CALLBACK_SECRET in env and send "Authorization: Bearer <secret>" from n8n.
   const secret = process.env.WORKFLOW_CALLBACK_SECRET
-  if (secret) {
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[workflow/callback] WORKFLOW_CALLBACK_SECRET is not set; refusing callbacks in production')
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    }
+    console.warn('[workflow/callback] WORKFLOW_CALLBACK_SECRET not set (permitted in non-production only)')
+  } else {
     const authHeader = request.headers.get('authorization')
-    if (!authHeader || authHeader !== `Bearer ${secret}`) {
+    if (!authHeader || !safeEqual(authHeader, `Bearer ${secret}`)) {
       console.warn('[workflow/callback] Unauthorized callback attempt (missing or invalid secret)')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -232,7 +240,7 @@ export async function POST(request: NextRequest) {
   // Fetch the pending output row to verify it exists.
   const { data: existingOutput, error: fetchError } = await supabase
     .from('diffuse_project_outputs')
-    .select('id, project_id, workflow_status')
+    .select('id, project_id, workflow_status, callback_nonce')
     .eq('id', output_id)
     .single()
 
@@ -241,13 +249,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Output not found' }, { status: 404 })
   }
 
+  // Defense-in-depth: if n8n echoes the per-output nonce, it MUST match (binds the callback
+  // to that specific row). When n8n does not send one, the mandatory shared secret above is
+  // the authentication. This lets the nonce be adopted in n8n without a breaking flag-day for
+  // existing callbacks. To enforce it strictly later, have n8n always echo `callback_nonce`.
+  if (
+    existingOutput.callback_nonce &&
+    typeof body.callback_nonce === 'string' &&
+    body.callback_nonce.length > 0
+  ) {
+    if (!safeEqual(body.callback_nonce, existingOutput.callback_nonce)) {
+      console.warn('[workflow/callback] Invalid callback_nonce for output:', output_id)
+      return NextResponse.json({ error: 'Invalid callback nonce' }, { status: 401 })
+    }
+  }
+
   if (existingOutput.workflow_status === 'completed') {
     console.warn('[workflow/callback] Output already completed, ignoring duplicate callback:', output_id)
     return NextResponse.json({ success: true, message: 'Already completed' })
   }
 
   // Strip routing fields from body to get the raw n8n result payload.
-  const { output_id: _oid, callback_url: _cburl, ...n8nResult } = body
+  const { output_id: _oid, callback_url: _cburl, callback_nonce: _cbn, ...n8nResult } = body
 
   // Find image in payload (same logic as main workflow route).
   const workflowStoragePath = findStoragePathInPayload(n8nResult)
@@ -388,6 +411,16 @@ export async function POST(request: NextRequest) {
         console.error('[workflow/callback] Base64 decode/upload error:', e instanceof Error ? e.message : e)
       }
     }
+    // SSRF guard: never fetch a payload-derived URL that resolves to a private/internal
+    // address (e.g. 169.254.169.254 metadata). Skip the download entirely if unsafe.
+    if (!savedImagePath && generatedImageUrl) {
+      try {
+        await assertSafePublicUrl(generatedImageUrl)
+      } catch (e) {
+        console.error('[workflow/callback] Refusing to fetch unsafe image URL:', e instanceof Error ? e.message : e)
+        generatedImageUrl = undefined
+      }
+    }
     if (!savedImagePath && generatedImageUrl) {
       const TIMEOUT_MS = 25000
       let lastError: Error | null = null
@@ -400,7 +433,8 @@ export async function POST(request: NextRequest) {
             new URL(generatedImageUrl).hostname
           )
           try {
-            const imageRes = await fetch(generatedImageUrl, {
+            // safeFetch re-validates every redirect hop against the SSRF allowlist.
+            const imageRes = await safeFetch(generatedImageUrl, {
               signal: AbortSignal.timeout(TIMEOUT_MS),
               headers: { Accept: 'image/*', 'User-Agent': 'DiffuseWorkflow/1.0 (image-fetch)' },
             })

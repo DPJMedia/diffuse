@@ -5,10 +5,17 @@ still need a human (DNS records, account logins, directory submissions).
 
 ## What is already live on diffuse.press
 
-- **MCP server** at `https://www.diffuse.press/api/mcp` (read-only, no auth). Tools:
+- **Read MCP server** at `https://www.diffuse.press/api/mcp` (read-only, no auth). Tools:
   `get_overview`, `how_it_works`, `get_feature`, `search_faq`, `get_use_cases`.
   Source of truth: `lib/content/diffuse.ts`.
-- **llms.txt** at `https://www.diffuse.press/llms.txt` points agents to the MCP server.
+- **Authenticated agent MCP** at `https://www.diffuse.press/api/agent/mcp` (read + write,
+  Personal Access Token required). Lets a logged-in Diffuse user drive their OWN account
+  from an AI agent. Tools: `whoami`, `list_projects`, `get_project`, `list_inputs`,
+  `list_outputs`, `get_output`, `create_project`, `add_text_input`, `generate_output`.
+  Auth: a PAT minted in Settings → AI agent access, sent as `Authorization: Bearer <token>`.
+  Verified by `lib/auth/pat.ts`; per-user scoping enforced in `lib/agent/*`. This is a
+  separate route segment from the public read MCP so the auth boundary is physical.
+- **llms.txt** at `https://www.diffuse.press/llms.txt` points agents to both MCP servers.
 - **JSON-LD** structured data in `app/schema.tsx` (FAQ, Product, Service, HowTo) so AI
   overviews and rich results read the correct, reframed positioning.
 - **robots.ts** posture: search engines and on-behalf-of-reader agents are allowed,

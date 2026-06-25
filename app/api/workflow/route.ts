@@ -7,6 +7,7 @@ import { validateSchema, validateProjectId, validateOutputType, sanitizeString }
 import { getN8nWebhookUrl } from '@/lib/n8n'
 import { parseOutputContentToStructuredArticle } from '@/lib/output-content'
 import { isLikelyImageBase64, isValidImageBytes, imageExtFromBuffer } from '@/lib/workflowImage'
+import { assertArticleQuota, generateCallbackNonce } from '@/lib/workflow/run'
 
 // Workflow timeout: 5 minutes. Same limit locally and when deployed.
 // When deployed: Vercel Pro allows up to 300s; Hobby is 10s. Other hosts may differ.
@@ -197,46 +198,22 @@ export async function POST(request: NextRequest) {
 
     const { project_id, output_type, mode, tone, length, audience, comments, number_of_outputs, article_topics } = validatedData
 
-    // Contractor Pro: enforce 50 articles/month (articles only)
-    if (output_type === 'article') {
-      try {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('subscription_tier')
-          .eq('id', user.id)
-          .single()
-
-        if (profile?.subscription_tier === 'contractor_pro') {
-          const monthStart = new Date()
-          monthStart.setUTCDate(1)
-          monthStart.setUTCHours(0, 0, 0, 0)
-
-          const { count, error: countError } = await supabase
-            .from('diffuse_project_outputs')
-            .select('id, diffuse_projects!inner(created_by)', { count: 'exact', head: true })
-            .eq('output_type', 'article')
-            .gte('created_at', monthStart.toISOString())
-            .eq('diffuse_projects.created_by', user.id)
-
-          if (countError) {
-            console.warn('[workflow] Could not check Contractor Pro limit:', countError.message)
-          } else if ((count ?? 0) >= 50) {
-            return NextResponse.json(
-              { error: 'Monthly article limit reached for Contractor Pro (50 articles/month).' },
-              { status: 429 }
-            )
-          }
-        }
-      } catch (e) {
-        console.warn('[workflow] Contractor Pro limit check failed:', e instanceof Error ? e.message : e)
-      }
-    }
-
     // Authorization check - verify user owns the project
     try {
       await requireProjectOwnership(project_id, user.id, supabase)
     } catch (error: any) {
       return forbiddenResponse(error.message)
+    }
+
+    // Article quota (Contractor Pro 50/month), counted by UNITS and fail-closed.
+    // Shared with the agent MCP path via lib/workflow/run so the two cannot drift.
+    const quota = await assertArticleQuota({
+      userId: user.id,
+      outputType: output_type ?? 'article',
+      requestedUnits: number_of_outputs != null && number_of_outputs >= 2 ? number_of_outputs : 1,
+    })
+    if (!quota.ok) {
+      return NextResponse.json({ error: quota.message ?? 'Quota check failed' }, { status: quota.status ?? 429 })
     }
 
     // Fetch all inputs for this project
@@ -289,6 +266,9 @@ export async function POST(request: NextRequest) {
     // Compute the primary input ID now so we can include it in the pending row before calling n8n.
     const primaryInputId = inputsForWorkflow[0]?.id ?? inputs[0]?.id ?? null
 
+    // Per-output callback nonce so a guessed output_id alone cannot drive /api/workflow/callback.
+    const callbackNonce = generateCallbackNonce()
+
     // Create a pending output row before calling n8n. This gives the UI something to show immediately
     // and lets the async callback route update it when n8n finishes (instead of the HTTP response).
     const { data: pendingOutput, error: pendingCreateError } = await supabase
@@ -300,6 +280,7 @@ export async function POST(request: NextRequest) {
         output_type,
         workflow_status: 'pending',
         cover_photo_path: coverPhotoPathFromDb ?? null,
+        callback_nonce: callbackNonce,
       })
       .select()
       .single()
@@ -338,6 +319,7 @@ export async function POST(request: NextRequest) {
       article_topics: (article_topics != null && article_topics !== '') ? article_topics : null,
       output_id: pendingOutput.id,  // echoed back in async callbacks so the callback route knows which row to update
       callback_url: callbackUrl,    // where n8n should POST the final result when running in async mode
+      callback_nonce: callbackNonce, // echoed back and verified by the callback route (binds the callback to this row)
     }
 
     // Call n8n webhook

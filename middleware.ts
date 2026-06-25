@@ -24,8 +24,12 @@ export const config = {
      * Running Supabase session refresh on _next/* can break dev chunk serving and adds latency.
      * Also skip the public, unauthenticated agent-readable routes (the MCP transport endpoints
      * under /api/mcp|sse|message and /llms.txt) so we don't run a Supabase round-trip on them.
+     *
+     * The authenticated agent MCP transport (/api/agent/mcp|sse|message) authenticates via a
+     * Bearer PAT, not a cookie, so skip session refresh there too — but NOT /api/agent/tokens,
+     * which is cookie-authed and needs the session. Also skip /.well-known/* (public metadata).
      */
-    '/((?!_next/|favicon.ico|llms\\.txt|api/(?:mcp|sse|message)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/|favicon.ico|llms\\.txt|\\.well-known/|api/(?:mcp|sse|message)|api/agent/(?:mcp|sse|message)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
 

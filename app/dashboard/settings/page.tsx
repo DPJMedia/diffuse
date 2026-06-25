@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useWalkthrough } from '@/contexts/WalkthroughContext'
 import { createClient } from '@/lib/supabase/client'
 import { SettingsPageSkeleton } from '@/components/dashboard/Skeletons'
+import AgentAccessSection from '@/components/dashboard/AgentAccessSection'
 
 type SubscriptionTier = 'free' | 'pro' | 'pro_max' | 'contractor_pro'
 
@@ -244,6 +245,9 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* AI agent access (MCP) */}
+      <AgentAccessSection />
 
       {/* Help & Support */}
       <div className="glass-container p-6 mb-6">

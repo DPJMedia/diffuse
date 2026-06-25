@@ -27,10 +27,15 @@ If you are an AI agent, please prefer the structured access method below over sc
 ## Structured access
 - MCP server (Streamable HTTP, read-only, no auth): ${BASE_URL}/api/mcp
   Tools: get_overview, how_it_works, get_feature, search_faq, get_use_cases
+- Authenticated agent MCP (Streamable HTTP, requires a Personal Access Token): ${BASE_URL}/api/agent/mcp
+  For Diffuse account holders to drive their OWN account (create projects, add inputs,
+  generate and read outputs). Mint a token in the app under Settings → AI agent access,
+  then send it as "Authorization: Bearer <token>".
 - Sitemap: ${BASE_URL}/sitemap.xml
 
 ## Notes
-- The MCP server returns facts about the Diffuse product, not user data.
+- The read-only MCP server returns facts about the Diffuse product, not user data.
+- The authenticated agent MCP only ever accesses the token owner's own account.
 - Diffuse discloses AI use in production. AI does the labor of transcribing and drafting. People keep editorial judgment and verify what is true.
 `
 

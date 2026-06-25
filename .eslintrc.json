@@ -1,4 +1,22 @@
 {
-  "extends": "next/core-web-vitals"
+  "extends": "next/core-web-vitals",
+  "overrides": [
+    {
+      "files": ["app/api/agent/**/*.ts", "app/api/agent/**/*.tsx"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/lib/supabase/server",
+                "importNames": ["createAdminClient"],
+                "message": "Agent MCP tools must not use the service-role client directly (it bypasses RLS). Use the scoped helpers in lib/agent/* which force created_by = userId."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }
-

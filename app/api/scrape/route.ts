@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio'
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/security/rate-limit'
 import { requireAuth, unauthorizedResponse } from '@/lib/security/authorization'
 import { validateSchema, validateScrapeUrl } from '@/lib/security/validation'
+import { safeFetch, SsrfError } from '@/lib/security/ssrf'
 
 const SCRAPE_TIMEOUT_MS = 15000
 const MIN_CONTENT_LENGTH = 100
@@ -56,13 +57,18 @@ export async function POST(request: NextRequest) {
 
     let response: Response
     try {
-      response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': USER_AGENT },
-        redirect: 'follow',
-      })
+      // safeFetch resolves the host and blocks private/loopback/reserved addresses, and
+      // re-validates every redirect hop (prevents SSRF to internal services / metadata).
+      response = await safeFetch(
+        url,
+        { signal: controller.signal, headers: { 'User-Agent': USER_AGENT } },
+        { allowHttp: true }
+      )
     } catch (err) {
       clearTimeout(timeout)
+      if (err instanceof SsrfError) {
+        return NextResponse.json({ error: 'This URL is not allowed.' }, { status: 400 })
+      }
       if (err instanceof Error && err.name === 'AbortError') {
         return NextResponse.json(
           { error: 'Request timed out - site took too long to respond' },
