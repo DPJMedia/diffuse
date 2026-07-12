@@ -2253,6 +2253,7 @@ export default function RecordingsPageClient() {
                       type="text"
                       value={editedTitle}
                       onChange={(e) => setEditedTitle(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           updateRecordingTitle(editedTitle)

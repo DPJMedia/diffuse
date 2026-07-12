@@ -8,6 +8,7 @@ import { getN8nWebhookUrl } from '@/lib/n8n'
 import { parseOutputContentToStructuredArticle } from '@/lib/output-content'
 import { isLikelyImageBase64, isValidImageBytes, imageExtFromBuffer } from '@/lib/workflowImage'
 import { assertArticleQuota, generateCallbackNonce } from '@/lib/workflow/run'
+import { fetchLatestRecordingTranscripts, resolveInputContent } from '@/lib/workflow/inputs'
 
 // Workflow timeout: 5 minutes. Same limit locally and when deployed.
 // When deployed: Vercel Pro allows up to 300s; Hobby is 10s. Other hosts may differ.
@@ -294,6 +295,10 @@ export async function POST(request: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     const callbackUrl = `${appUrl}/api/workflow/callback`
 
+    // Refresh recording-sourced inputs from the current recording transcript so speaker names
+    // identified after the recording was added still reach the workflow (see lib/workflow/inputs).
+    const latestRecordingTranscripts = await fetchLatestRecordingTranscripts(inputsForWorkflow, supabase)
+
     // Prepare payload for n8n - all fields always present for clean consumption by AI nodes.
     // See docs/N8N_WEBHOOK_PAYLOAD.md for schema.
     const n8nPayload = {
@@ -304,7 +309,7 @@ export async function POST(request: NextRequest) {
       inputs: inputsForWorkflow.map((input: any) => ({
         id: input.id,
         type: input.type,
-        content: input.content || '',
+        content: resolveInputContent(input, latestRecordingTranscripts),
         file_name: input.file_name || 'Untitled',
         image_url: input.type === 'image' ? (input.metadata?.storage_url ?? null) : null,
         file_path: input.file_path ?? null,

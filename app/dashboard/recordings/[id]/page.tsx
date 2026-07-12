@@ -1750,8 +1750,10 @@ export default function RecordingDetailPage() {
                   type="text"
                   value={editedTitle}
                   onChange={(e) => setEditedTitle(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
                   className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-glass text-secondary-white text-body-sm focus:outline-none focus:border-cosmic-orange transition-colors"
                   placeholder="Recording title"
+                  autoFocus
                 />
               </div>
             </div>

@@ -13,6 +13,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { getN8nWebhookUrl } from '@/lib/n8n'
 import { consumeMonthlyUnits } from '@/lib/agent/usage'
 import { AgentError } from '@/lib/agent/context'
+import { fetchLatestRecordingTranscripts, resolveInputContent } from '@/lib/workflow/inputs'
 
 export const MONTHLY_ARTICLE_LIMIT = 50
 
@@ -157,6 +158,10 @@ export async function triggerAgentGeneration(args: {
     throw new AgentError('server', 'Workflow service is currently unavailable')
   }
 
+  // Refresh recording-sourced inputs from the current recording transcript so speaker names
+  // identified after the recording was added still reach the workflow (see lib/workflow/inputs).
+  const latestRecordingTranscripts = await fetchLatestRecordingTranscripts(contentInputs, admin)
+
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const payload = {
     project_id: projectId,
@@ -166,7 +171,7 @@ export async function triggerAgentGeneration(args: {
     inputs: contentInputs.map((input: Record<string, unknown>) => ({
       id: input.id,
       type: input.type,
-      content: input.content || '',
+      content: resolveInputContent(input, latestRecordingTranscripts),
       file_name: input.file_name || 'Untitled',
       image_url: input.type === 'image' ? ((input.metadata as { storage_url?: string } | null)?.storage_url ?? null) : null,
       file_path: input.file_path ?? null,
