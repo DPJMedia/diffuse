@@ -287,19 +287,21 @@ const authHandler = withMcpAuth(handler, verifyPat, {
 // If a ?token= query param is present and no Authorization header is set, lift it into
 // the header so withMcpAuth sees a proper Bearer token and never returns a 401 that
 // triggers Claude.ai's OAuth discovery flow.
-async function routeHandler(req: Request, ctx: unknown) {
+// withMcpAuth returns a single-argument handler `(req: Request) => Promise<Response>`; it derives the
+// transport from the request URL, so the Next.js route context is unused and intentionally not forwarded.
+async function routeHandler(req: Request) {
   try {
     const url = new URL(req.url)
     const queryToken = url.searchParams.get('token')
     if (queryToken && !req.headers.get('authorization')) {
       const patched = new Headers(req.headers)
       patched.set('authorization', `Bearer ${queryToken}`)
-      return authHandler(new Request(req, { headers: patched }), ctx)
+      return authHandler(new Request(req, { headers: patched }))
     }
   } catch {
     // unparseable URL — fall through to normal handler
   }
-  return authHandler(req, ctx)
+  return authHandler(req)
 }
 
 export { routeHandler as GET, routeHandler as POST }
