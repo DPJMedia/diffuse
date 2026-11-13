@@ -1,7 +1,14 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import https from 'https'
-import { isLikelyImageBase64, isValidImageBytes, imageExtFromBuffer } from '@/lib/workflowImage'
+import { isValidImageBytes, imageExtFromBuffer } from '@/lib/workflowImage'
+import {
+  downloadImageViaHttps,
+  extractArticleContent,
+  normalizeImageUrl,
+  findImageUrlInPayload,
+  findBase64ImageInPayload,
+  findStoragePathInPayload,
+} from '@/lib/workflow/n8nResult'
 import { safeEqual } from '@/lib/auth/pat'
 import { assertSafePublicUrl, safeFetch } from '@/lib/security/ssrf'
 
@@ -9,194 +16,6 @@ import { assertSafePublicUrl, safeFetch } from '@/lib/security/ssrf'
 // n8n should POST here with the same payload it would normally return synchronously, plus output_id.
 // Set WORKFLOW_CALLBACK_SECRET in environment and send it as "Authorization: Bearer <secret>" from n8n.
 export const maxDuration = 120
-
-// ── Helpers (mirror of app/api/workflow/route.ts) ──────────────────────────────
-
-function downloadImageViaHttps(url: string, timeoutMs: number): Promise<{ buffer: Buffer; contentType: string }> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'https:') {
-      reject(new Error('Only https URLs supported'))
-      return
-    }
-    const req = https.get(
-      url,
-      { headers: { Accept: 'image/*', 'User-Agent': 'DiffuseWorkflow/1.0 (image-fetch)' } },
-      (res) => {
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`Image fetch ${res.statusCode}`))
-          return
-        }
-        const chunks: Buffer[] = []
-        res.on('data', (chunk: Buffer) => chunks.push(chunk))
-        res.on('end', () =>
-          resolve({ buffer: Buffer.concat(chunks), contentType: res.headers['content-type'] || 'image/png' })
-        )
-      }
-    )
-    req.on('error', reject)
-    req.setTimeout(timeoutMs, () => {
-      req.destroy()
-      reject(new Error('Image fetch timeout'))
-    })
-  })
-}
-
-function extractArticleContent(n8nResult: any): string {
-  try {
-    if (typeof n8nResult.output === 'string') return n8nResult.output
-
-    if (Array.isArray(n8nResult)) {
-      const firstItem = n8nResult[0]
-      if (firstItem?.output && Array.isArray(firstItem.output)) {
-        const message = firstItem.output.find((o: any) => o.type === 'message')
-        if (message?.content && Array.isArray(message.content)) {
-          const textContent = message.content.find((c: any) => c.type === 'output_text')
-          if (textContent?.text) return textContent.text
-        }
-      }
-      if (firstItem?.content) {
-        if (Array.isArray(firstItem.content)) {
-          const textContent = firstItem.content.find((c: any) => c.type === 'output_text' || c.text)
-          if (textContent?.text) return textContent.text
-        }
-        return typeof firstItem.content === 'string' ? firstItem.content : JSON.stringify(firstItem.content)
-      }
-    }
-
-    if (n8nResult.output && Array.isArray(n8nResult.output)) {
-      const message = n8nResult.output.find((o: any) => o.type === 'message')
-      if (message?.content && Array.isArray(message.content)) {
-        const textContent = message.content.find((c: any) => c.type === 'output_text')
-        if (textContent?.text) return textContent.text
-      }
-    }
-
-    if (n8nResult.content) {
-      return typeof n8nResult.content === 'string' ? n8nResult.content : JSON.stringify(n8nResult.content)
-    }
-
-    return JSON.stringify(n8nResult)
-  } catch (error) {
-    console.error('[workflow/callback] Error extracting content:', error)
-    return JSON.stringify(n8nResult)
-  }
-}
-
-const IMAGE_URL_PATTERN = /^https?:\/\/|^\/\/|\.blob\.|\.amazonaws\.|\.(png|jpg|jpeg|webp|gif)(\?|$)/i
-const UUID_PATH =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/.+$/i
-
-function normalizeImageUrl(u: string | undefined): string | undefined {
-  if (!u || typeof u !== 'string') return undefined
-  const t = u.trim()
-  if (t.startsWith('https://') || t.startsWith('http://')) return t
-  if (t.startsWith('//')) return `https:${t}`
-  if (
-    t.includes('.') &&
-    (t.includes('blob.') || t.includes('amazonaws.') || /^[a-z0-9.-]+\.[a-z]{2,}\//i.test(t))
-  )
-    return `https://${t}`
-  return undefined
-}
-
-function findImageUrlInPayload(obj: unknown, depth = 0): string | undefined {
-  if (depth > 20) return undefined
-  if (typeof obj === 'string') {
-    const normalized = normalizeImageUrl(obj)
-    if (normalized && IMAGE_URL_PATTERN.test(normalized)) return normalized
-    return undefined
-  }
-  if (Array.isArray(obj)) {
-    for (const item of obj) {
-      const u = findImageUrlInPayload(item, depth + 1)
-      if (u) return u
-    }
-    return undefined
-  }
-  if (obj && typeof obj === 'object') {
-    const o = obj as Record<string, unknown>
-    for (const key of ['url', 'image_url', 'image', 'generated_image_url', 'src', 'href']) {
-      const u = findImageUrlInPayload(o[key], depth + 1)
-      if (u) return u
-    }
-    for (const value of Object.values(o)) {
-      const u = findImageUrlInPayload(value, depth + 1)
-      if (u) return u
-    }
-  }
-  return undefined
-}
-
-function findBase64ImageInPayload(obj: unknown, depth = 0): { data: string; contentType?: string } | undefined {
-  if (depth > 20) return undefined
-  if (typeof obj === 'string') {
-    if (isLikelyImageBase64(obj)) return { data: obj }
-    return undefined
-  }
-  if (Array.isArray(obj)) {
-    for (const item of obj) {
-      const b = findBase64ImageInPayload(item, depth + 1)
-      if (b) return b
-    }
-    return undefined
-  }
-  if (obj && typeof obj === 'object') {
-    const o = obj as Record<string, unknown>
-    for (const key of ['image_base64', 'imageBase64', 'image_base64_data', 'image_data']) {
-      const v = o[key]
-      if (typeof v === 'string' && isLikelyImageBase64(v)) {
-        return { data: v, contentType: typeof o.content_type === 'string' ? o.content_type : undefined }
-      }
-    }
-    if (
-      o.image &&
-      typeof o.image === 'object' &&
-      o.image !== null &&
-      typeof (o.image as Record<string, unknown>).data === 'string'
-    ) {
-      const d = (o.image as Record<string, unknown>).data as string
-      if (isLikelyImageBase64(d)) return { data: d }
-    }
-    for (const value of Object.values(o)) {
-      const b = findBase64ImageInPayload(value, depth + 1)
-      if (b) return b
-    }
-  }
-  return undefined
-}
-
-function findStoragePathInPayload(obj: unknown, depth = 0): string | undefined {
-  if (depth > 20) return undefined
-  if (typeof obj === 'string') {
-    const t = obj.trim()
-    if (t.length > 10 && t.length < 500 && !t.startsWith('http') && UUID_PATH.test(t) && !t.includes('..'))
-      return t
-    return undefined
-  }
-  if (Array.isArray(obj)) {
-    for (const item of obj) {
-      const p = findStoragePathInPayload(item, depth + 1)
-      if (p) return p
-    }
-    return undefined
-  }
-  if (obj && typeof obj === 'object') {
-    const o = obj as Record<string, unknown>
-    for (const key of ['cover_photo_path', 'storage_path', 'supabase_path', 'image_storage_path', 'image_path']) {
-      const v = o[key]
-      if (typeof v === 'string') {
-        const p = findStoragePathInPayload(v, depth + 1)
-        if (p) return p
-      }
-    }
-    for (const value of Object.values(o)) {
-      const p = findStoragePathInPayload(value, depth + 1)
-      if (p) return p
-    }
-  }
-  return undefined
-}
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
